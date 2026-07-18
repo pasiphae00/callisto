@@ -9,6 +9,22 @@ changes; `v1.0.0` marks the first stable, documented release.
 
 ## [Unreleased]
 
+### Added
+- Default RPC endpoint with startup auto-connect (opt-in checkbox when adding an
+  endpoint; the default is exclusive and marked in the list).
+- Berkeley Mono is embedded and applied to addresses, hashes, and numeric amounts
+  (list rows, the pre-sign review, and resolved-address status) via a custom Fyne
+  theme; a user font can override it via `CALLISTO_FONT_DIR`.
+
+### Changed
+- Token amounts display with at most 5 fractional digits (truncated, never
+  rounded up); exact values are still used for signing.
+- The Assets page hides non-native tokens below a dust threshold (0.00005) and
+  notes how many were hidden; the native asset is always shown, and the Send
+  picker still lists everything.
+- The active wallet is marked with a green indicator; the connection status dot
+  is color-coded (green/amber/gray).
+
 ## [0.2.0] - 2026-07-18
 
 Completes the v1 basic-transaction feature set: end-to-end ETH/ERC-20 sends

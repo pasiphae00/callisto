@@ -41,7 +41,7 @@ func newWalletsPane(a *App) *walletsPane {
 func (p *walletsPane) build() fyne.CanvasObject {
 	p.list = widget.NewList(
 		func() int { return len(p.app.cfg.Wallets) },
-		func() fyne.CanvasObject { return widget.NewLabel("template") },
+		func() fyne.CanvasObject { return monoLabel("template") },
 		func(i widget.ListItemID, o fyne.CanvasObject) {
 			o.(*widget.Label).SetText(p.rowLabel(p.app.cfg.Wallets[i]))
 		},

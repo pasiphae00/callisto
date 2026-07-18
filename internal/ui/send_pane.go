@@ -278,7 +278,7 @@ func (p *sendPane) showReview(prep tx.Prepared, info chain.Info) {
 	for _, r := range rows {
 		key := widget.NewLabelWithStyle(r[0], fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
 		grid.Add(key)
-		grid.Add(widget.NewLabel(r[1]))
+		grid.Add(monoLabel(r[1])) // values: addresses, amounts, fees
 	}
 
 	// Determine whether we can sign right now.

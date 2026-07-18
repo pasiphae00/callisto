@@ -2,6 +2,14 @@
 
 ## bugs
 
+- trezor not connected. when plugged in and unlocked, callisto seems not to detect it
+  - ⏳ likely-fix shipped: was probing only the HID transport, but modern Trezors
+    (Model T, Safe 3, recent Model One firmware) enumerate over **WebUSB**.
+    Callisto now probes both WebUSB and HID. **Please retest.**
+  - If it still doesn't detect: quit **Trezor Suite** and stop the **Trezor Bridge**
+    daemon first — they hold an exclusive USB claim that blocks other apps. (A
+    future option is to talk to Bridge's local HTTP API instead of USB directly.)
+
 ## minor
 - ~~clarify: when connected to an RPC, there's a little gray dot. is that supposed to be green?~~
   - Resolved: the dot is now color-coded by connection state:
@@ -17,14 +25,14 @@
     checkbox; the default is exclusive (marked ⭐ in the list) and auto-connects
     when the app launches.
 
-### font — ⏳ pending licensing decision
-- lets use `BerkeleyMono` for the font for addresses and numerical values (e.g. token amounts) in the GUI
-- please organize the font's i uploaded to the main directory to where they should be
-  - NOTE: BerkeleyMono is a commercial, non-redistributable font. The mechanism
-    (custom Fyne theme applying it to monospace-tagged text) is ready to wire up,
-    but committing the .otf files to a public repo may violate the license —
-    awaiting a decision on how to handle the font files (embed+commit vs
-    gitignore+build-tag vs runtime path).
+### font — ✅ done
+- ~~lets use `BerkeleyMono` for the font for addresses and numerical values~~
+  - Berkeley Mono is now embedded (go:embed, under the project's indie license)
+    and applied via a custom Fyne theme to monospace-tagged display text:
+    Assets/Wallets/History rows, the pre-sign review values, and resolved-address
+    status. A user override is supported via `CALLISTO_FONT_DIR`.
+  - Fonts organized into `internal/ui/fonts/` (Regular + Bold embedded; the
+    oblique/light variants are kept there for future use).
 
 ### decimal trimming — ✅ done
 - ~~lets show 5 decimals of token amounts, no need for anything beyond that~~

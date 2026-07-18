@@ -385,3 +385,5 @@ myetherwallet/
 # cmd/callisto/ source directory.
 /callisto
 /dist/
+# Note: BerkeleyMono font files ARE tracked (bundled/embedded under the project's
+# indie license) — see internal/ui/fonts/.

@@ -74,13 +74,32 @@ func DerivationPath(index uint32) accounts.DerivationPath {
 	return path
 }
 
-// newHub creates the usbwallet backend for a hardware kind.
-func newHub(kind signer.Kind) (accounts.Backend, error) {
+// newHubs creates the usbwallet backend(s) to probe for a hardware kind.
+//
+// Trezor is transport-dependent: newer models/firmware (Model T, Safe 3, recent
+// Model One) enumerate over WebUSB, while older Trezor One uses HID. We build
+// both hubs and probe each, so a connected device is found regardless of
+// transport. Ledger uses HID.
+func newHubs(kind signer.Kind) ([]accounts.Backend, error) {
 	switch kind {
 	case signer.KindLedger:
-		return usbwallet.NewLedgerHub()
+		h, err := usbwallet.NewLedgerHub()
+		if err != nil {
+			return nil, err
+		}
+		return []accounts.Backend{h}, nil
 	case signer.KindTrezor:
-		return usbwallet.NewTrezorHubWithHID()
+		var hubs []accounts.Backend
+		if h, err := usbwallet.NewTrezorHubWithWebUSB(); err == nil {
+			hubs = append(hubs, h)
+		}
+		if h, err := usbwallet.NewTrezorHubWithHID(); err == nil {
+			hubs = append(hubs, h)
+		}
+		if len(hubs) == 0 {
+			return nil, ErrNoDevice
+		}
+		return hubs, nil
 	case signer.KindLattice:
 		return nil, ErrLatticeUnsupported
 	default:
@@ -88,21 +107,25 @@ func newHub(kind signer.Kind) (accounts.Backend, error) {
 	}
 }
 
-// firstWallet opens a hub and returns its first connected, opened wallet.
+// firstWallet probes the backend(s) for a kind and returns the first connected,
+// opened wallet. For Trezor this covers both WebUSB and HID transports.
 func firstWallet(kind signer.Kind) (accounts.Wallet, error) {
-	hub, err := newHub(kind)
+	hubs, err := newHubs(kind)
 	if err != nil {
 		return nil, err
 	}
-	wallets := hub.Wallets()
-	if len(wallets) == 0 {
-		return nil, ErrNoDevice
+	for _, hub := range hubs {
+		wallets := hub.Wallets()
+		if len(wallets) == 0 {
+			continue
+		}
+		w := wallets[0]
+		if err := w.Open(""); err != nil {
+			return nil, fmt.Errorf("open %s: %w", kind, err)
+		}
+		return w, nil
 	}
-	w := wallets[0]
-	if err := w.Open(""); err != nil {
-		return nil, fmt.Errorf("open %s: %w", kind, err)
-	}
-	return w, nil
+	return nil, ErrNoDevice
 }
 
 // Open connects to the first available device of the given kind, derives the

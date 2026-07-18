@@ -55,6 +55,7 @@ func newAddressField(resolverFn func() *ens.Resolver, onChange func()) *addressF
 		resolverFn: resolverFn,
 		onChange:   onChange,
 	}
+	f.status.TextStyle = fyne.TextStyle{Monospace: true} // resolved addresses read as mono
 	f.entry.SetPlaceHolder("0x… address or ENS name")
 	f.entry.OnChanged = f.onEntryChanged
 	return f

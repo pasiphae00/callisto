@@ -168,8 +168,11 @@ Implemented above; still to come (designed for, not yet built):
 
 ## Credits
 
-The Callisto imagery is NASA/JPL's [Galileo](https://solarsystem.nasa.gov/)
-mosaic of Jupiter's moon Callisto (public domain).
+- Callisto imagery: NASA/JPL's [Galileo](https://solarsystem.nasa.gov/) mosaic of
+  Jupiter's moon Callisto (public domain).
+- Addresses and numeric values are set in
+  [Berkeley Mono](https://usgraphics.com/products/berkeley-mono) by U.S. Graphics
+  Company, bundled and embedded under the project's font license.
 
 ## License
 

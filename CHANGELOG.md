@@ -10,6 +10,19 @@ changes; `v1.0.0` marks the first stable, documented release.
 ## [Unreleased]
 
 ### Added
+- `internal/signer`: common `Signer` interface (`Address`/`SignTx`/`Kind`) that
+  all wallet types implement, plus `Lockable` for wiping in-memory key material.
+- `internal/signer/hot`: in-memory seed-derived signer. BIP-32/BIP-44 HD
+  derivation implemented in-house on decred secp256k1 (no btcutil), verified
+  against canonical vectors (Hardhat `test…junk`, `abandon…about`). The BIP-39
+  seed is held only while unlocked (to switch derived accounts) and, with the
+  selected private key, is zeroed on `Lock`; nothing secret is persisted.
+  Account switching, multi-account derivation, and signature round-trip covered
+  by tests (green under `-race`).
+- Wallets pane + signer-session management on the app: add / unlock / lock /
+  remove wallets; unlocking re-derives from a freshly entered phrase and only
+  installs the signer if it reproduces the stored address; the session is wiped
+  on lock, disconnect, or exit. Mnemonic entry is cleared after use.
 - `internal/address`: EIP-55 address validation (rejects bad-checksum mixed-case
   input) and canonical checksummed / truncated display formatting.
 - `internal/ens`: ENS forward (name→address) and reverse (address→name)

@@ -4,7 +4,9 @@ go 1.26.5
 
 require (
 	fyne.io/fyne/v2 v2.8.0
+	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.0.1
 	github.com/ethereum/go-ethereum v1.17.4
+	github.com/tyler-smith/go-bip39 v1.1.0
 	modernc.org/sqlite v1.54.0
 )
 
@@ -23,7 +25,6 @@ require (
 	github.com/crate-crypto/go-eth-kzg v1.5.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/deckarep/golang-set/v2 v2.6.0 // indirect
-	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.0.1 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/ethereum/c-kzg-4844/v2 v2.1.6 // indirect
 	github.com/fjl/jsonw v0.1.0 // indirect
@@ -68,6 +69,7 @@ require (
 	go.opentelemetry.io/otel v1.41.0 // indirect
 	go.opentelemetry.io/otel/metric v1.41.0 // indirect
 	go.opentelemetry.io/otel/trace v1.41.0 // indirect
+	golang.org/x/crypto v0.48.0 // indirect
 	golang.org/x/image v0.24.0 // indirect
 	golang.org/x/net v0.50.0 // indirect
 	golang.org/x/sync v0.21.0 // indirect

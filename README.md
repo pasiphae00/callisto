@@ -33,7 +33,7 @@ wiped on lock, and hardware-wallet keys never leave the device.
 - **Bring your own node.** Configure multiple Ethereum RPC endpoints
   (`https://` or `wss://`), and your selection is
   remembered. WebSocket endpoints get live block updates; HTTP endpoints are
-  polled. If you do not specify a node, (Flashbots Protect)[https://protectrpc.flashbots.net/about] (fast) is used by default.
+  polled. If you do not specify a node, [Flashbots Protect](https://protectrpc.flashbots.net/about) (fast) is used by default.
 - **Multiple wallets, multiple signers.**
   - *Hot wallets* — import a BIP-39 seed phrase, switch between derived accounts,
     with keys held in memory only while unlocked.
@@ -87,8 +87,9 @@ go build -o callisto ./cmd/callisto
 
 ## Quick start
 
-1. **Settings** → add an RPC endpoint (e.g. a Sepolia `https://…` or `wss://…`
-   URL) and click **Connect**. The status dot turns green.
+1. **Connect.** Callisto auto-connects to its default mainnet endpoint on first
+   launch (the status dot turns green). In **Settings** you can replace it, disable
+   auto-connect, or add your own `https://…` / `wss://…` endpoints (e.g. a testnet).
 2. **Wallets** → **Add hot wallet…** (use a *throwaway/test* seed for
    experimentation) or **Add hardware…** for a Ledger/Trezor. Trezor requires
    [Trezor Bridge](https://trezor.io/learn/a/what-is-trezor-bridge) or Trezor
@@ -98,7 +99,10 @@ go build -o callisto ./cmd/callisto
 3. **Assets** → view balances for the selected wallet; they refresh on each block.
 4. **Send** → choose an asset, enter a recipient (address or ENS) and amount,
    **Prepare transfer**, review, then **Sign & send**.
-5. **History** → track what you've sent; select a row to open it on a block
+5. **Safe** (optional) → **Import Safe…** by address, propose a transfer or an
+   owner/threshold change, collect owner signatures (unlock each owner in
+   **Wallets** and click **Sign**), then **Execute** once the threshold is met.
+6. **History** → track what you've sent; select a row to open it on a block
    explorer.
 
 ## Security model
@@ -112,8 +116,10 @@ go build -o callisto ./cmd/callisto
   extra dependencies in the signing path.
 - **Hardware wallets** keep keys on the device; Callisto only requests signatures
   you confirm on the device.
-- Callisto ships **no default RPC** and makes no outbound connections except to
-  the node and services you configure.
+- Callisto makes **no outbound connections except to the RPC endpoint and services
+  you use.** It ships with a default Flashbots Protect mainnet endpoint for
+  convenience (auto-connecting on first launch); you can replace it, disable
+  auto-connect, or point Callisto at your own node at any time in Settings.
 
 Treat this as pre-1.0 software: review transactions on-device, and prefer test
 networks and throwaway keys while the project matures.
@@ -123,10 +129,11 @@ networks and throwaway keys while the project matures.
 Stored under your OS config directory (e.g.
 `~/Library/Application Support/callisto/` on macOS):
 
-- `config.json` — RPC endpoints, wallet descriptors, and added tokens (no secrets;
+- `config.json` — RPC endpoints, wallet descriptors, imported Safes (address +
+  cached owners/threshold + local owner labels), and added tokens (no secrets;
   written atomically, `0600`).
-- `callisto.db` — SQLite database for transaction history and the contract
-  address book.
+- `callisto.db` — SQLite database for transaction history, Safe proposals and
+  collected signatures, and the contract address book.
 
 ## Development
 

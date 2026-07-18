@@ -1,6 +1,8 @@
 // Package rpc manages Ethereum JSON-RPC endpoints: the user-curated, persisted
-// list of backends (Callisto ships no default — see DESIGN.md) and, in later
-// phases, the live connection manager built on go-ethereum's ethclient.
+// list of backends and the live connection manager built on go-ethereum's
+// ethclient. A default endpoint (Flashbots Protect mainnet) is seeded on first
+// run by the config package (see config.defaultConfig); users can replace or
+// remove it.
 //
 // This file defines only the persisted Endpoint descriptor so it can be
 // referenced by the config schema; the connection logic lives alongside it.

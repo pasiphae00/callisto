@@ -20,7 +20,7 @@ Callisto SHOULD have a mechanism to both "add" (or "connect") and "remove" (or "
 
 Callisto MUST support the easy configuration, selection, and memory of different ethereum RPC backends for convenience and redudancy. For example, a user MUST be able to configure and add several different RPCs that they may select under different circumstances (e.g. if one is down, they can select their backup). 
 
-Callisto MUST not have a default RPC and SHOULD defer to the user to set up their prefered ethereum node configuration. 
+Callisto ships with a default RPC — a Flashbots Protect Ethereum Mainnet endpoint — configured and auto-connecting on first launch, so it works out of the box. Users MUST be able to replace it, disable its auto-connect, or add their own endpoints at any time; the default is a convenience, not a lock-in. (This supersedes the original requirement that Callisto have no default RPC — a deliberate product decision to give users a working kit immediately while preserving full user control.)
 
 Callisto MUST save the RPC configuration so that it does not have to be repeated at each lauch.
 

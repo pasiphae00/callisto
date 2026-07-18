@@ -152,10 +152,12 @@
     that was the actual complaint. The 🔒/🔓 lock icons were kept (explicitly
     requested back after the first pass over-corrected and dropped those too).
 
-### out of the box default rpc
-- lets actually ship callisto with a default mainnet endpoint 
-- lets use: `https://rpc.flashbots.net/fast?originId=callisto-system`, labeled `Ethereum Mainnet (via flashbots protect)`
-- this way, users have a working kit out of the box, but can still replace it with a different rpc if they like
+### out of the box default rpc — ✅ done (v0.4.0)
+- ~~lets actually ship callisto with a default mainnet endpoint, `https://rpc.flashbots.net/fast?originId=callisto-system`, labeled `Ethereum Mainnet (via flashbots protect)`, so users have a working kit out of the box but can still replace it~~
+  - Seeded on genuine first run only (no config file), selected and auto-connecting;
+    removing all endpoints later is respected (not re-seeded). Implemented in
+    `config.defaultConfig` / `Load`. Supersedes the original no-default-RPC MUST in
+    DESIGN.md (updated there, in CLAUDE.md, and the README security model).
 
 ### default rpc — ✅ done
 - ~~option to select an rpc as default when adding, if checked, auto-connect on start~~
@@ -187,6 +189,13 @@
 
 ## medium
 
+### enable passphrase unlock of hot-wallets
+- the recovery phrase should only be needed on the first import of a hot wallet
+- we should enforce that the user provides a passphrase at input to encrypt the keystore
+- this way, on each "unlock" the user only needs to re-enter the passphrase they set that encrypts the keystore, rather than the whole recovery phrase again
+- this is a better pattern; the recovery phrase should not be treated like a password
+- it should be a one-time import flow, not the frequent lock/unlock flow
+
 ### trezor wallet types — ✅ done (see "bugs" above for the full story)
 - ~~trezor is kind of weird... "unlock with pin (on device) -> enter passphrase
   (on computer) -> THEN select derivation index"~~
@@ -213,10 +222,10 @@
 - Execute once threshold met (packs sigs → `execTransaction` as a normal EIP-1559
   tx from the executing owner → tracked to inclusion → history). Same-nonce
   rejection cancels a proposal.
-- ⚠️ **Hardware owner signing not yet verified live** — hot-wallet flow is fully
-  unit-tested; Ledger/Trezor eth_sign paths need a real testnet-Safe run before
-  they're considered proven (same "verify live before release" treatment as the
-  v0.3.2 Trezor fix).
+- ✅ **Verified live on mainnet** — a real propose → sign (one **hot** owner +
+  one **Trezor** owner, eth_sign path) → execute cycle on a live Safe (v1.4.1,
+  2-of-4) broadcast and confirmed. Ledger's eth_sign path uses upstream go-ethereum
+  `SignText` unchanged; not separately device-tested but shares the same code path.
 
 ### claude-assisted advanced transaction preparation
 - can be used for both EOA and Safe wallets

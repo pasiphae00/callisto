@@ -32,6 +32,11 @@ changes; `v1.0.0` marks the first stable, documented release.
     consumes the nonce and cancels the original.
 - Trezor personal-message signing (`EthereumSignMessage`) in the usbwallet fork,
   enabling Trezor owners to sign Safe transactions.
+- **Default RPC out of the box.** On first launch Callisto now ships with a
+  Flashbots Protect Ethereum Mainnet endpoint, configured and auto-connecting, so
+  it works immediately. It can be replaced, have auto-connect disabled, or be
+  removed in favor of your own node at any time. (This supersedes the previous
+  no-default-RPC behavior — a deliberate product decision; see `DESIGN.md`.)
 - Licensed under GPL-3.0-or-later (`LICENSE`). The forked
   `internal/signer/hardware/usbwallet` files remain attributed to go-ethereum
   under LGPL-3.0-or-later, which permits relicensing under GPL-3.0.

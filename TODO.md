@@ -2,35 +2,170 @@
 
 ## bugs
 
+- ~~trezor not connected. when plugged in and unlocked, callisto seems not to detect it~~
+  - ✅ **Resolved and verified live** against a real Trezor Safe 5 (multiple
+    successful runs: standard-wallet address derivation, 3-account listing,
+    passphrase/hidden-wallet flow, on-device passphrase entry).
+  - **Root cause 1 — detection.** `go run ./cmd/hwscan` (new diagnostic tool;
+    lists every raw USB HID device the OS sees, regardless of whether Callisto
+    recognizes it) showed the device as `VID=0x1209 PID=0x53c1 iface=1
+    usagePage=0xf1d0 "Trezor Company" "Trezor Safe 5"`. go-ethereum's
+    `usbwallet` matcher requires vendor+product ID **and** (usagePage==0xffff
+    **or** interface==0) — this device satisfies neither, so it was silently
+    filtered out even though the OS exposed it fine. Known, still-open upstream
+    bug: [go-ethereum#31841](https://github.com/ethereum/go-ethereum/issues/31841)
+    (the proposed fix, [PR #32752](https://github.com/ethereum/go-ethereum/pull/32752),
+    is a draft blocked on an unrelated, unmerged dependency swap).
+  - **Root cause 2 — even when matched, direct USB doesn't work.** For this
+    device, the OS's HID layer can enumerate *something* at that VID/PID, but
+    writes to it are accepted while reads never return data — direct USB
+    access simply cannot reach the device's real wallet-protocol endpoint on
+    this platform. Confirmed by timing out at exactly the (new) 60s read-timeout
+    bound rather than hanging forever.
+  - **Fix — three parts**, all in a local fork of three go-ethereum files
+    (`hub.go`, `wallet.go`, `trezor.go`; LGPL-3.0, license/attribution
+    preserved) at `internal/signer/hardware/usbwallet/` (see that package's doc
+    comments for full rationale):
+    1. Trezor's hub matcher now matches on vendor+product ID alone (safe for
+       Trezor specifically — unlike Ledger's PID, which encodes model+interface
+       bits and genuinely needs the interface check; Ledger is untouched and
+       still uses upstream go-ethereum directly).
+    2. Added a **Trezor Bridge (trezord) HTTP transport** as the primary path
+       for Trezor (tried before direct USB, which is kept as a fallback for
+       older devices) — Bridge already solves USB access correctly on every
+       OS, so this sidesteps the direct-USB dead end entirely rather than
+       chasing it further. Includes port discovery (trezord's own port isn't
+       fixed — observed shifting from 21325 to 21328 across a single Suite
+       relaunch on this machine), and self-healing session acquisition
+       (recovers from a stale "wrong previous session" without requiring the
+       user to replug).
+    3. Added bounded read timeouts on **both** transports (60s) — previously a
+       non-responding device hung `Open()` forever with the UI stuck on
+       "Connecting…" and no way to cancel.
+  - **Passphrase / hidden wallets** — folded into this fix once Bridge
+    communication was proven live (see "trezor wallet types" below, now
+    resolved): standard wallet (empty passphrase) and host-supplied hidden-wallet
+    passphrases both verified to derive distinct, correct addresses; **on-device
+    passphrase entry** (`PassphraseRequest.OnDevice`) is also detected and
+    respected — when the device's own "enter passphrase on Trezor" security
+    setting is active, Callisto no longer sends a possibly-ignored host string;
+    it waits for the user to type on the device screen instead.
+  - **Newer Trezor Suite bridge variant (v3.2.1+) — also resolved.** The
+    "known gap" noted earlier turned out to be findable: newer Suite builds
+    embed `@trezor/transport` (TypeScript), not classic `trezord-go`, and its
+    `/call` wire format is undocumented in the classic Bridge API reference.
+    Found by reading trezor-suite's own source
+    (`packages/transport/src/utils/bridgeProtocolMessage.ts`): both request
+    and response bodies are JSON (`{"protocol":"v1","data":"<hex>"}`), **and**
+    the hex `data` field itself still carries the legacy USB-HID report
+    framing (`0x3f` report-ID byte + `0x23 0x23` magic + type + length) rather
+    than the simpler 6-byte header classic `trezord-go` uses — confirmed by
+    decoding a live device response and finding exactly that byte layout.
+    `BridgeClient.Call` now detects which of the two formats a given bridge
+    wants (tries the newer wrapped format first, falls back to legacy,
+    remembers the result per client) and frames each correctly. Verified live:
+    a clean `Open()` succeeded against this device/bridge combination with the
+    corrected framing.
+  - ⚠️ **Caveat, not fully closed out:** rapid repeated connect/disconnect
+    cycles against the same device in a short window (as happened during
+    testing — 15+ attempts in quick succession) produced inconsistent
+    behavior on later attempts (varying errors), likely bridge/device-side
+    session state churn rather than a Callisto bug — a fix for leaking a
+    Bridge session on a failed `Open()` (now released via `Close()`) was found
+    and applied along the way, but full stability under back-to-back
+    reconnects wasn't independently reverified afterward. Normal usage
+    (connect once per session, not rapid test cycling) is expected to be
+    fine; flag if repeated connect/disconnect in real use shows the same
+    instability.
+
 ## minor
-- ~~clarify: when connected to an RPC, there's a little gray dot. is that supposed to be green?~~
-  - Resolved: the dot is now color-coded by connection state:
-    - **green ●** — connected to a live endpoint
-    - **amber ●** — an endpoint is selected but not currently connected
-    - **gray ●** — no endpoint configured/selected
-  - (Previously it was a theme-default gray `●`/`○` regardless of state — the fix
-    gives it real color. The wallet label also now shows locked/unlocked.)
+### show full wallet address in wallets pane — ✅ done
+- ~~lets show the full wallet address in the wallets selection pane... copyable~~
+  - Wallets pane now has a detail bar below the list: selecting a wallet shows
+    its full, checksummed address in a mono, selectable field, plus an explicit
+    Copy button (writes to the system clipboard). The field is read-only in
+    effect (edits revert) but stays fully interactive so text-selection copy
+    works too. The list row itself still shows the short address, as intended.
 
-### default rpc
-- option to select an rpc as default when adding, if checked, auto-connect on start
+### populate "about" dialogue — ✅ done
+- ~~lets fill in the callisto -> about dialogue... black background, gray text
+  in berkely mono... callisto png (w/ transparency)... trust but verify~~
+  - Callisto menu → "About Callisto": transparent NASA Callisto logo, Berkeley
+    Mono throughout, "Callisto <version>" / "commit <short>" (commit read
+    automatically from Go's embedded VCS info, no manual step), tagline, link,
+    ©2026, and the italic disclaimer at the bottom. Background reads the live
+    theme color rather than a hardcoded black, so it matches the dialog's own
+    chrome/border seamlessly instead of showing a two-tone box (caught via a
+    screenshot review — first pass used flat black, which visibly mismatched).
+  - `internal/buildinfo`: `Version` (bumped by hand at release) + `ShortCommit()`
+    (from `runtime/debug.ReadBuildInfo()`'s VCS stamp — automatic, no ldflags).
 
-### font
-- lets use `BerkelyMono` for the font for addresses and numerical values (e.g. token amounts) in the GUI
-- please organize the font's i uploaded to the main directory to where they should be
+### app logo — ✅ done
+- ~~the app logo for the dock should be `images/CALLISTO - LOGO.png`~~
+  - Embedded and set via both `fyne.App.SetIcon` and `Window.SetIcon` — covers
+    dock/taskbar and window icon across platforms.
 
-### decimal trimming
-- lets show 5 decimals of token amounts, no need for anything beyond that
+### "green dot emoji" indicator next to active wallet — ✅ done
+- ~~the green circle emoji looks a bit out of place... personally not a fan of emoji's in UIs~~
+  - Wallets list now uses a genuinely colored `●` glyph (canvas.Text, same
+    green/gray pattern as the connection status dot) instead of the 🟢 emoji —
+    that was the actual complaint. The 🔒/🔓 lock icons were kept (explicitly
+    requested back after the first pass over-corrected and dropped those too).
 
-### hide zero (and near) token amounts
-- on the asset page, lets hide tokens that have zero or dust balance
-- dust can be configurable maybe, but lets use a sensible default (say `0.00005`, even for BTC thats only $3)
+### out of the box default rpc
+- lets actually ship callisto with a default mainnet endpoint 
+- lets use: `https://rpc.flashbots.net/fast?originId=callisto-system`, labeled `Ethereum Mainnet (via flashbots protect)`
+- this way, users have a working kit out of the box, but can still replace it with a different rpc if they like
 
-### indicator next to active wallet
-- currently gray, maybe should be green
+### default rpc — ✅ done
+- ~~option to select an rpc as default when adding, if checked, auto-connect on start~~
+  - Add-endpoint dialog now has an "Auto-connect on startup (default endpoint)"
+    checkbox; the default is exclusive (marked ⭐ in the list) and auto-connects
+    when the app launches.
+
+### font — ✅ done
+- ~~lets use `BerkeleyMono` for the font for addresses and numerical values~~
+  - Berkeley Mono is now embedded (go:embed, under the project's indie license)
+    and applied via a custom Fyne theme to monospace-tagged display text:
+    Assets/Wallets/History rows, the pre-sign review values, and resolved-address
+    status. A user override is supported via `CALLISTO_FONT_DIR`.
+  - Fonts organized into `internal/ui/fonts/` (Regular + Bold embedded; the
+    oblique/light variants are kept there for future use).
+
+### decimal trimming — ✅ done
+- ~~lets show 5 decimals of token amounts, no need for anything beyond that~~
+  - Display truncates to 5 decimals (Assets list + Send picker); exact values are
+    still used for signing.
+
+### hide zero (and near) token amounts — ✅ done
+- ~~on the asset page, lets hide tokens that have zero or dust balance~~
+  - Assets page hides non-native tokens below 0.00005 (default), showing a
+    "N dust hidden" note. Native asset is always shown. (Send lists everything.)
+
+### indicator next to active wallet — ✅ done
+- ~~currently gray, maybe should be green~~ → active wallet now marked with 🟢.
 
 ## medium
 
+### trezor wallet types — ✅ done (see "bugs" above for the full story)
+- ~~trezor is kind of weird... "unlock with pin (on device) -> enter passphrase
+  (on computer) -> THEN select derivation index"~~
+  - Confirmed and implemented, folded into the Trezor detection fix above since
+    it surfaced during that live testing. Add-hardware and unlock dialogs now
+    have a Passphrase field (Trezor only); empty = standard wallet, non-empty =
+    a distinct hidden wallet — both verified live to derive different, correct
+    addresses. On-device passphrase entry (a separate device security setting)
+    is also handled correctly: when active, the host-supplied field is ignored
+    and Callisto waits for entry on the device's own screen instead.
+
 ## major
+
+### claude-assisted advanced transaction preparation
+- can be used for both EOA and Safe wallets
+- if a Safe wallet is connected, "multi-step" transactions are also enabled
+- the user should have an option in settings to _fully_ disable all AI features, and they should be off by default
+- in settings, there should be a place to enter a claude API key, and a toggle switch to enable/disable the AI features
+- this is a security and performance measure, so if the toggle is off the backend should truly put all AI features in a "cold path" (untouched until it's flipped on)
 
 ### researching multi-step transactions
 

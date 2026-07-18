@@ -32,7 +32,7 @@ func (p *historyPane) build() fyne.CanvasObject {
 
 	p.list = widget.NewList(
 		func() int { return len(p.records) },
-		func() fyne.CanvasObject { return widget.NewLabel("template") },
+		func() fyne.CanvasObject { return monoLabel("template") },
 		func(i widget.ListItemID, o fyne.CanvasObject) {
 			o.(*widget.Label).SetText(historyRow(p.records[i]))
 		},

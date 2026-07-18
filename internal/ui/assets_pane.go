@@ -39,7 +39,7 @@ func (p *assetsPane) build() fyne.CanvasObject {
 
 	p.list = widget.NewList(
 		func() int { return len(p.items) },
-		func() fyne.CanvasObject { return widget.NewLabel("template") },
+		func() fyne.CanvasObject { return monoLabel("template") },
 		func(i widget.ListItemID, o fyne.CanvasObject) {
 			o.(*widget.Label).SetText(assetRow(p.items[i]))
 		},
@@ -60,13 +60,27 @@ func (p *assetsPane) build() fyne.CanvasObject {
 	return container.NewBorder(top, nil, nil, nil, p.list)
 }
 
-// assetRow formats one asset line: symbol, human balance, and name.
+// assetRow formats one asset line: symbol, display balance (≤5 dp), and name.
 func assetRow(a assets.Asset) string {
 	tag := ""
 	if a.Kind == assets.Native {
 		tag = " (native)"
 	}
-	return fmt.Sprintf("%-8s %s   —   %s%s", a.Symbol, a.HumanBalance(), a.Name, tag)
+	bal := assets.FormatDisplay(a.Balance, a.Decimals, assets.DisplayDecimals)
+	return fmt.Sprintf("%-8s %s   —   %s%s", a.Symbol, bal, a.Name, tag)
+}
+
+// visibleAssets drops dust/zero-balance tokens (the native asset is always kept),
+// returning the visible list and the number hidden.
+func visibleAssets(all []assets.Asset) (visible []assets.Asset, hidden int) {
+	for _, a := range all {
+		if a.Kind != assets.Native && assets.IsDust(a.Balance, a.Decimals) {
+			hidden++
+			continue
+		}
+		visible = append(visible, a)
+	}
+	return visible, hidden
 }
 
 // reload refreshes balances for the active wallet/connection. It is a no-op while
@@ -109,9 +123,14 @@ func (p *assetsPane) reload() {
 				p.status.SetText("Could not load balances: " + loadErr.Error())
 				return
 			}
-			p.items = got
+			visible, hidden := visibleAssets(got)
+			p.items = visible
 			p.list.Refresh()
-			p.status.SetText(fmt.Sprintf("%d assets · %s · %s", len(got), desc.Label, conn.ChainInfo.Name))
+			status := fmt.Sprintf("%d assets · %s · %s", len(visible), desc.Label, conn.ChainInfo.Name)
+			if hidden > 0 {
+				status += fmt.Sprintf(" · %d dust hidden", hidden)
+			}
+			p.status.SetText(status)
 		})
 	}()
 }

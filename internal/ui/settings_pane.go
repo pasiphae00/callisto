@@ -13,6 +13,12 @@ import (
 	"codeberg.org/pasiphae/callisto/internal/rpc"
 )
 
+const rpcHelpText = `Callisto uses a "Flashbots Protect" Ethereum Mainnet RPC by default. Replace or add your own here (http/s or ws/s). Using a websocket RPC enables live updates.
+
+If you want to customize Flashbots Protect behaviour, generate a new RPC endpoint here: "protectrpc.flashbots.net"
+
+If you select "Auto-connect" when adding the endpoint, Callisto will use that RPC automatically on each subsequent restart.`
+
 // settingsPane manages the persisted RPC endpoint list: add, remove, select, and
 // connect. Callisto ships no default endpoint, so this is the first thing a user
 // configures. Connection state is reflected in the shared status bar.
@@ -44,6 +50,9 @@ func (p *settingsPane) build() fyne.CanvasObject {
 		func(i widget.ListItemID, o fyne.CanvasObject) {
 			e := p.app.cfg.Endpoints[i]
 			label := e.Name + "  —  " + e.URL
+			if e.AutoConnect {
+				label += "   ⭐ default"
+			}
 			if p.app.cfg.ActiveEndpoint == e.Name {
 				label = "● " + label
 			}
@@ -66,7 +75,7 @@ func (p *settingsPane) build() fyne.CanvasObject {
 
 	buttons := container.NewHBox(addBtn, p.connectBtn, p.removeBtn)
 	header := widget.NewLabelWithStyle("RPC endpoints", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
-	help := widget.NewLabel("Callisto has no default RPC. Add your own node (http(s) or ws(s)); ws(s) enables live updates.")
+	help := widget.NewLabel(rpcHelpText)
 	help.Wrapping = fyne.TextWrapWord
 
 	top := container.NewVBox(header, help, buttons, p.statusLbl, widget.NewSeparator())
@@ -104,10 +113,12 @@ func (p *settingsPane) showAddDialog() {
 	nameEntry.SetPlaceHolder("e.g. Sepolia (Infura)")
 	urlEntry := widget.NewEntry()
 	urlEntry.SetPlaceHolder("https://… or wss://…")
+	defaultCheck := widget.NewCheck("Auto-connect on startup (default endpoint)", nil)
 
 	items := []*widget.FormItem{
 		widget.NewFormItem("Name", nameEntry),
 		widget.NewFormItem("URL", urlEntry),
+		widget.NewFormItem("", defaultCheck),
 	}
 	d := dialog.NewForm("Add RPC endpoint", "Add", "Cancel", items, func(ok bool) {
 		if !ok {
@@ -118,13 +129,17 @@ func (p *settingsPane) showAddDialog() {
 			dialog.ShowError(err, p.app.window)
 			return
 		}
+		if defaultCheck.Checked {
+			// Exclusive default: this endpoint auto-connects, others don't.
+			p.app.cfg.SetAutoConnect(e.Name)
+		}
 		if err := p.app.cfg.Save(); err != nil {
 			dialog.ShowError(err, p.app.window)
 			return
 		}
 		p.list.Refresh()
 	}, p.app.window)
-	d.Resize(fyne.NewSize(480, 200))
+	d.Resize(fyne.NewSize(480, 240))
 	d.Show()
 }
 

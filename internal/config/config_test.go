@@ -133,6 +133,35 @@ func TestTokensPerChainAndDedup(t *testing.T) {
 	}
 }
 
+func TestAutoConnectExclusive(t *testing.T) {
+	c := &Config{}
+	_ = c.UpsertEndpoint(rpc.Endpoint{Name: "a", URL: "http://a:8545"})
+	_ = c.UpsertEndpoint(rpc.Endpoint{Name: "b", URL: "http://b:8545"})
+
+	if _, ok := c.AutoConnectEndpoint(); ok {
+		t.Error("no default expected initially")
+	}
+	c.SetAutoConnect("a")
+	e, ok := c.AutoConnectEndpoint()
+	if !ok || e.Name != "a" {
+		t.Errorf("default = %+v, want a", e)
+	}
+	// Setting another default clears the first (exclusive).
+	c.SetAutoConnect("b")
+	e, _ = c.AutoConnectEndpoint()
+	if e.Name != "b" {
+		t.Errorf("default = %s, want b", e.Name)
+	}
+	if got, _ := c.EndpointByName("a"); got.AutoConnect {
+		t.Error("endpoint a should no longer be the default")
+	}
+	// Clearing.
+	c.SetAutoConnect("")
+	if _, ok := c.AutoConnectEndpoint(); ok {
+		t.Error("default should be cleared")
+	}
+}
+
 func TestUpsertRejectsInvalid(t *testing.T) {
 	c := &Config{}
 	if err := c.UpsertEndpoint(rpc.Endpoint{Name: "", URL: "http://x"}); err == nil {

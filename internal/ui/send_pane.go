@@ -117,7 +117,7 @@ func (p *sendPane) reload() {
 			p.items = got
 			opts := make([]string, len(got))
 			for i, a := range got {
-				opts[i] = fmt.Sprintf("%s (%s)", a.Symbol, a.HumanBalance())
+				opts[i] = fmt.Sprintf("%s (%s)", a.Symbol, assets.FormatDisplay(a.Balance, a.Decimals, assets.DisplayDecimals))
 			}
 			p.assetSelect.Options = opts
 			p.assetSelect.Refresh()
@@ -278,7 +278,7 @@ func (p *sendPane) showReview(prep tx.Prepared, info chain.Info) {
 	for _, r := range rows {
 		key := widget.NewLabelWithStyle(r[0], fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
 		grid.Add(key)
-		grid.Add(widget.NewLabel(r[1]))
+		grid.Add(monoLabel(r[1])) // values: addresses, amounts, fees
 	}
 
 	// Determine whether we can sign right now.
@@ -411,7 +411,7 @@ func (p *sendPane) trackInclusion(recID int64, client rpc.Client, hash common.Ha
 func (p *sendPane) showBroadcastResult(hash string, info chain.Info) {
 	body := container.NewVBox(
 		widget.NewLabel("Transaction submitted. Waiting for inclusion…"),
-		widget.NewLabel(hash),
+		monoLabel(hash),
 	)
 	if link := info.TxURL(hash); link != "" {
 		body.Add(widget.NewButton("View on explorer", func() { p.app.openURL(link) }))
@@ -419,19 +419,28 @@ func (p *sendPane) showBroadcastResult(hash string, info chain.Info) {
 	dialog.ShowCustom("Broadcast", "Close", body, p.app.window)
 }
 
-// showInclusionResult reports the mined outcome.
+// showInclusionResult reports the mined outcome. Field values (status, block,
+// time) render in the monospace font; the labels stay in the default font.
 func (p *sendPane) showInclusionResult(hash string, block, blockTime int64, success bool, info chain.Info) {
 	title := "Transaction included"
-	status := "Execution: success ✓"
+	status := "success ✓"
 	if !success {
 		title = "Transaction reverted"
-		status = "Execution: failed ✗"
+		status = "failed ✗"
 	}
-	lines := []string{status, fmt.Sprintf("Block: %d", block)}
+	rows := [][2]string{
+		{"Execution:", status},
+		{"Block:", fmt.Sprintf("%d", block)},
+	}
 	if blockTime > 0 {
-		lines = append(lines, "Time:  "+time.Unix(blockTime, 0).Local().Format(time.RFC1123))
+		rows = append(rows, [2]string{"Time:", time.Unix(blockTime, 0).Local().Format(time.RFC1123)})
 	}
-	body := container.NewVBox(widget.NewLabel(joinLines(lines)))
+	grid := container.New(layout.NewFormLayout())
+	for _, r := range rows {
+		grid.Add(widget.NewLabel(r[0]))
+		grid.Add(monoLabel(r[1]))
+	}
+	body := container.NewVBox(grid)
 	if link := info.TxURL(hash); link != "" {
 		body.Add(widget.NewButton("View on explorer", func() { p.app.openURL(link) }))
 	}
@@ -495,16 +504,4 @@ func sendKind(s tx.Send) string {
 func sendSummary(s tx.Send) string {
 	return fmt.Sprintf("Send %s %s to %s",
 		assets.FormatUnits(s.Amount, s.Decimals), s.Symbol, address.Short(s.Recipient))
-}
-
-// joinLines joins lines with newlines.
-func joinLines(lines []string) string {
-	out := ""
-	for i, l := range lines {
-		if i > 0 {
-			out += "\n"
-		}
-		out += l
-	}
-	return out
 }

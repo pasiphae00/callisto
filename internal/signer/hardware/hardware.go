@@ -16,11 +16,12 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/accounts"
-	"github.com/ethereum/go-ethereum/accounts/usbwallet"
+	upstreamusb "github.com/ethereum/go-ethereum/accounts/usbwallet"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 
 	"codeberg.org/pasiphae/callisto/internal/signer"
+	"codeberg.org/pasiphae/callisto/internal/signer/hardware/usbwallet"
 )
 
 var (
@@ -74,13 +75,44 @@ func DerivationPath(index uint32) accounts.DerivationPath {
 	return path
 }
 
-// newHub creates the usbwallet backend for a hardware kind.
-func newHub(kind signer.Kind) (accounts.Backend, error) {
+// newHubs creates the usbwallet backend(s) to probe for a hardware kind.
+//
+// Ledger uses upstream go-ethereum's usbwallet unmodified. Trezor uses our local
+// fork (internal/signer/hardware/usbwallet), which patches device matching to
+// support Trezor Safe-family USB descriptors that upstream doesn't recognize —
+// see that package's doc comment for the full rationale and the tracked upstream
+// issue. We build both WebUSB and HID hubs for Trezor and probe each, so a
+// connected device is found regardless of transport.
+//
+// Errors constructing a backend (e.g. the underlying HID subsystem being
+// unavailable on this platform/build) are collected rather than discarded: if
+// every backend fails to construct, the caller needs that reason, not a generic
+// "no device" message that implies enumeration ran and simply found nothing.
+func newHubs(kind signer.Kind) ([]accounts.Backend, error) {
 	switch kind {
 	case signer.KindLedger:
-		return usbwallet.NewLedgerHub()
+		h, err := upstreamusb.NewLedgerHub()
+		if err != nil {
+			return nil, fmt.Errorf("open USB HID subsystem: %w", err)
+		}
+		return []accounts.Backend{h}, nil
 	case signer.KindTrezor:
-		return usbwallet.NewTrezorHubWithHID()
+		var hubs []accounts.Backend
+		var errs []error
+		if h, err := usbwallet.NewTrezorHubWithWebUSB(); err == nil {
+			hubs = append(hubs, h)
+		} else {
+			errs = append(errs, fmt.Errorf("webusb: %w", err))
+		}
+		if h, err := usbwallet.NewTrezorHubWithHID(); err == nil {
+			hubs = append(hubs, h)
+		} else {
+			errs = append(errs, fmt.Errorf("hid: %w", err))
+		}
+		if len(hubs) == 0 {
+			return nil, fmt.Errorf("open USB HID subsystem (%w)", errors.Join(errs...))
+		}
+		return hubs, nil
 	case signer.KindLattice:
 		return nil, ErrLatticeUnsupported
 	default:
@@ -88,19 +120,84 @@ func newHub(kind signer.Kind) (accounts.Backend, error) {
 	}
 }
 
-// firstWallet opens a hub and returns its first connected, opened wallet.
-func firstWallet(kind signer.Kind) (accounts.Wallet, error) {
-	hub, err := newHub(kind)
+// firstWallet probes for a connected device of the given kind and returns the
+// first opened wallet.
+//
+// For Trezor, Trezor Bridge is tried first, not direct USB. This is
+// deliberate and load-bearing, not an arbitrary preference: on some
+// platforms/devices (confirmed: Trezor Safe 5 on macOS) the wallet-protocol USB
+// interface isn't reachable via the OS's HID API at all — writes succeed but
+// reads never return data — so a direct-USB attempt doesn't fail fast, it hangs
+// for the full deviceReadTimeoutMs (60s) before giving up. Bridge already solves
+// USB access correctly on every OS, and probing it first fails near-instantly
+// (connection refused) when it isn't running, so this ordering is strictly
+// better: fast either way, instead of a guaranteed 60s tax on the one path we've
+// confirmed is broken for at least one real device. Older Trezors without
+// Bridge running still work via the direct-USB fallback below.
+//
+// passphrase is forwarded to Trezor's Open (see trezorDriver's reactive
+// PassphraseRequest handling); "" selects the standard, non-hidden wallet.
+// Ignored for Ledger, which has no equivalent concept.
+func firstWallet(kind signer.Kind, passphrase string) (accounts.Wallet, error) {
+	if kind == signer.KindTrezor {
+		if w, err := bridgeWallet(passphrase); err == nil {
+			return w, nil
+		}
+	}
+
+	hubs, err := newHubs(kind)
 	if err != nil {
 		return nil, err
 	}
-	wallets := hub.Wallets()
-	if len(wallets) == 0 {
+	for _, hub := range hubs {
+		wallets := hub.Wallets()
+		if len(wallets) == 0 {
+			continue
+		}
+		w := wallets[0]
+		if err := w.Open(passphrase); err != nil {
+			// See the matching comment in bridgeWallet: release whatever a
+			// partially-completed Open acquired rather than leaving it dangling
+			// for the next attempt to trip over.
+			_ = w.Close()
+			return nil, fmt.Errorf("open %s: %w", kind, err)
+		}
+		return w, nil
+	}
+	return nil, ErrNoDevice
+}
+
+// bridgeWallet finds and opens the first device Trezor Bridge reports, without
+// touching direct USB access at all. Returns an error if Bridge isn't running,
+// or if it's running but sees no device.
+//
+// The endpoint is discovered, not assumed at the default port: trezord binds
+// the first free port starting at 21325 and increments if that's taken, and
+// this has been observed live to actually happen (a Trezor Suite relaunch
+// landed its embedded bridge on 21328) — a hardcoded DefaultBridgeURL alone
+// isn't reliable enough to depend on.
+func bridgeWallet(passphrase string) (accounts.Wallet, error) {
+	url, ok := usbwallet.DiscoverBridgeURL()
+	if !ok {
+		return nil, usbwallet.ErrBridgeUnavailable
+	}
+	client := usbwallet.NewBridgeClient(url)
+	devices, err := client.Enumerate()
+	if err != nil {
+		return nil, err
+	}
+	if len(devices) == 0 {
 		return nil, ErrNoDevice
 	}
-	w := wallets[0]
-	if err := w.Open(""); err != nil {
-		return nil, fmt.Errorf("open %s: %w", kind, err)
+	w := usbwallet.NewBridgeWallet(client, devices[0])
+	if err := w.Open(passphrase); err != nil {
+		// Open acquires the Bridge session before running the handshake, so a
+		// failure partway through (e.g. a timed-out passphrase exchange) still
+		// leaves an acquired session. Close releases it; without this, the
+		// dangling session was observed live to block the *next* attempt with a
+		// confusing, unrelated-looking failure — not just wasted resources.
+		_ = w.Close()
+		return nil, fmt.Errorf("open trezor via bridge: %w", err)
 	}
 	return w, nil
 }
@@ -108,23 +205,25 @@ func firstWallet(kind signer.Kind) (accounts.Wallet, error) {
 // Open connects to the first available device of the given kind, derives the
 // account at the standard path for index, and returns a ready Signer. The device
 // must be connected and unlocked (and, for Ledger, have the Ethereum app open).
-func Open(kind signer.Kind, index uint32) (*Signer, error) {
-	return openWithPath(kind, DerivationPath(index))
+// passphrase selects a Trezor hidden wallet ("" for the standard wallet);
+// ignored for Ledger.
+func Open(kind signer.Kind, index uint32, passphrase string) (*Signer, error) {
+	return openWithPath(kind, DerivationPath(index), passphrase)
 }
 
 // OpenPath is like Open but takes an explicit derivation path string (used to
 // reconnect a saved hardware wallet by its stored path).
-func OpenPath(kind signer.Kind, path string) (*Signer, error) {
+func OpenPath(kind signer.Kind, path string, passphrase string) (*Signer, error) {
 	dp, err := accounts.ParseDerivationPath(path)
 	if err != nil {
 		return nil, fmt.Errorf("parse path %q: %w", path, err)
 	}
-	return openWithPath(kind, dp)
+	return openWithPath(kind, dp, passphrase)
 }
 
 // openWithPath connects, derives (and pins) the account at dp, and wraps it.
-func openWithPath(kind signer.Kind, dp accounts.DerivationPath) (*Signer, error) {
-	w, err := firstWallet(kind)
+func openWithPath(kind signer.Kind, dp accounts.DerivationPath, passphrase string) (*Signer, error) {
+	w, err := firstWallet(kind, passphrase)
 	if err != nil {
 		return nil, err
 	}
@@ -144,9 +243,10 @@ type Account struct {
 
 // Accounts derives count addresses starting at index start from the first
 // connected device, without retaining the connection — used to let the user pick
-// which account to use before Open.
-func Accounts(kind signer.Kind, start, count uint32) ([]Account, error) {
-	w, err := firstWallet(kind)
+// which account to use before Open. passphrase selects a Trezor hidden wallet
+// ("" for the standard wallet); ignored for Ledger.
+func Accounts(kind signer.Kind, start, count uint32, passphrase string) ([]Account, error) {
+	w, err := firstWallet(kind, passphrase)
 	if err != nil {
 		return nil, err
 	}

@@ -25,19 +25,19 @@ func TestDerivationPath(t *testing.T) {
 }
 
 func TestOpenLatticeUnsupported(t *testing.T) {
-	if _, err := Open(signer.KindLattice, 0); err != ErrLatticeUnsupported {
+	if _, err := Open(signer.KindLattice, 0, ""); err != ErrLatticeUnsupported {
 		t.Errorf("Lattice err = %v, want ErrLatticeUnsupported", err)
 	}
 }
 
 func TestOpenUnsupportedKind(t *testing.T) {
-	if _, err := Open(signer.KindHot, 0); err != ErrUnsupportedKind {
+	if _, err := Open(signer.KindHot, 0, ""); err != ErrUnsupportedKind {
 		t.Errorf("hot-as-hardware err = %v, want ErrUnsupportedKind", err)
 	}
 }
 
 func TestAccountsLatticeUnsupported(t *testing.T) {
-	if _, err := Accounts(signer.KindLattice, 0, 3); err != ErrLatticeUnsupported {
+	if _, err := Accounts(signer.KindLattice, 0, 3, ""); err != ErrLatticeUnsupported {
 		t.Errorf("Accounts(Lattice) err = %v, want ErrLatticeUnsupported", err)
 	}
 }

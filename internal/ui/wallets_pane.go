@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
@@ -27,11 +28,14 @@ import (
 type walletsPane struct {
 	app *App
 
-	list      *widget.List
-	unlockBtn *widget.Button
-	lockBtn   *widget.Button
-	removeBtn *widget.Button
-	selected  int
+	list       *widget.List
+	unlockBtn  *widget.Button
+	lockBtn    *widget.Button
+	removeBtn  *widget.Button
+	selected   int
+	detailAddr *widget.Entry // full, selectable/copyable address of the selected wallet
+	detailVal  string        // canonical value detailAddr should show; edits revert to this
+	detailBox  *fyne.Container
 }
 
 func newWalletsPane(a *App) *walletsPane {
@@ -41,9 +45,23 @@ func newWalletsPane(a *App) *walletsPane {
 func (p *walletsPane) build() fyne.CanvasObject {
 	p.list = widget.NewList(
 		func() int { return len(p.app.cfg.Wallets) },
-		func() fyne.CanvasObject { return widget.NewLabel("template") },
+		func() fyne.CanvasObject {
+			dot := canvas.NewText("●", statusGray)
+			return container.NewHBox(dot, monoLabel("template"))
+		},
 		func(i widget.ListItemID, o fyne.CanvasObject) {
-			o.(*widget.Label).SetText(p.rowLabel(p.app.cfg.Wallets[i]))
+			w := p.app.cfg.Wallets[i]
+			row := o.(*fyne.Container)
+			dot := row.Objects[0].(*canvas.Text)
+			label := row.Objects[1].(*widget.Label)
+
+			if p.app.cfg.ActiveWallet == w.ID {
+				dot.Color = statusGreen
+			} else {
+				dot.Color = statusGray
+			}
+			dot.Refresh()
+			label.SetText(p.rowLabel(w))
 		},
 	)
 	p.list.OnSelected = func(id widget.ListItemID) { p.selected = id; p.updateButtons() }
@@ -54,19 +72,51 @@ func (p *walletsPane) build() fyne.CanvasObject {
 	p.unlockBtn = widget.NewButton("Unlock", p.unlockSelected)
 	p.lockBtn = widget.NewButton("Lock", p.lockActive)
 	p.removeBtn = widget.NewButton("Remove", p.removeSelected)
-	p.updateButtons()
 
 	header := widget.NewLabelWithStyle("Wallets", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
 	help := widget.NewLabel("Add a wallet from a seed phrase (held in memory only while unlocked, wiped on lock/exit) or a hardware device (keys never leave the device). Nothing secret is written to disk.")
 	help.Wrapping = fyne.TextWrapWord
 	buttons := container.NewHBox(addBtn, addHwBtn, p.unlockBtn, p.lockBtn, p.removeBtn)
 
+	p.detailBox = p.buildDetailBox()
+	p.updateButtons() // also populates the detail box for the initial (no-selection) state
+
 	top := container.NewVBox(header, help, buttons, widget.NewSeparator())
-	return container.NewBorder(top, nil, nil, nil, p.list)
+	return container.NewBorder(top, p.detailBox, nil, nil, p.list)
 }
 
-// rowLabel renders a wallet row: lock state, label, short address, and whether
-// it is the active selection.
+// buildDetailBox builds the full-address detail bar shown below the list: a
+// read-only, selectable Entry (so the address is copyable by selection as well
+// as the explicit button) plus a Copy button. Elsewhere in the app addresses
+// are shown short; this is deliberately the one place the full address is
+// always visible.
+func (p *walletsPane) buildDetailBox() *fyne.Container {
+	p.detailAddr = widget.NewEntry()
+	p.detailAddr.TextStyle = fyne.TextStyle{Monospace: true}
+	// Deliberately left enabled (not Disable()d): a disabled widget blocks all
+	// interaction in Fyne, including mouse-drag text selection, which would
+	// defeat "copyable by text selection." Instead, revert any edit back to
+	// detailVal so it's read-only in effect while staying fully
+	// selectable/copyable. setDetailAddr (below) is the only legitimate writer.
+	p.detailAddr.OnChanged = func(s string) {
+		if s != p.detailVal {
+			p.detailAddr.SetText(p.detailVal)
+		}
+	}
+	copyBtn := widget.NewButton("Copy", func() {
+		if p.detailAddr.Text != "" {
+			p.app.fyneApp.Clipboard().SetContent(p.detailAddr.Text)
+		}
+	})
+	row := container.NewBorder(nil, nil, widget.NewLabel("Address:"), copyBtn, p.detailAddr)
+	return container.NewVBox(widget.NewSeparator(), row)
+}
+
+// rowLabel renders a wallet row's text: lock state, label, short address, and
+// kind. The active-selection indicator is a separately colored dot (see build),
+// kept as a genuine colored glyph rather than an emoji; the lock/unlock icons
+// stay as-is (requested to keep them — they read fine, unlike the green-circle
+// emoji they're not being confused with a status color).
 func (p *walletsPane) rowLabel(w wallet.Descriptor) string {
 	icon := "🔒"
 	if _, id, ok := p.app.currentSigner(); ok && id == w.ID {
@@ -80,11 +130,16 @@ func (p *walletsPane) rowLabel(w wallet.Descriptor) string {
 	if a, err := address.Parse(w.Address); err == nil {
 		short = address.Short(a)
 	}
-	active := ""
-	if p.app.cfg.ActiveWallet == w.ID {
-		active = "  ●"
+	return fmt.Sprintf("%s  %s — %s  [%s]", icon, name, short, w.Kind)
+}
+
+// setDetailAddr updates the full-address detail box (see buildDetailBox) to s,
+// the only legitimate way its text changes.
+func (p *walletsPane) setDetailAddr(s string) {
+	p.detailVal = s
+	if p.detailAddr != nil {
+		p.detailAddr.SetText(s)
 	}
-	return fmt.Sprintf("%s  %s — %s  [%s]%s", icon, name, short, w.Kind, active)
 }
 
 func (p *walletsPane) updateButtons() {
@@ -98,9 +153,15 @@ func (p *walletsPane) updateButtons() {
 		} else {
 			p.unlockBtn.Enable()
 		}
+		if a, err := address.Parse(w.Address); err == nil {
+			p.setDetailAddr(address.Format(a))
+		} else {
+			p.setDetailAddr(w.Address)
+		}
 	} else {
 		p.removeBtn.Disable()
 		p.unlockBtn.Disable()
+		p.setDetailAddr("")
 	}
 	if unlocked {
 		p.lockBtn.Enable()
@@ -181,11 +242,14 @@ func (p *walletsPane) showAddHardwareWallet() {
 	deviceSel.SetSelected("Ledger")
 	index := widget.NewEntry()
 	index.SetText("0")
+	passphrase := widget.NewPasswordEntry()
+	passphrase.SetPlaceHolder("Trezor only: leave blank for your standard wallet")
 
 	items := []*widget.FormItem{
 		widget.NewFormItem("Label", label),
 		widget.NewFormItem("Device", deviceSel),
 		widget.NewFormItem("Account #", index),
+		widget.NewFormItem("Passphrase", passphrase),
 	}
 	d := dialog.NewForm("Add hardware wallet", "Connect", "Cancel", items, func(ok bool) {
 		if !ok {
@@ -198,12 +262,13 @@ func (p *walletsPane) showAddHardwareWallet() {
 		}
 		kind := hardwareKind(deviceSel.Selected)
 		labelText := label.Text
+		pass := passphrase.Text
 
 		progress := dialog.NewCustomWithoutButtons("Connecting…",
 			widget.NewLabel("Confirm on your "+deviceSel.Selected+" if prompted."), p.app.window)
 		progress.Show()
 		go func() {
-			s, err := hardware.Open(kind, uint32(idx))
+			s, err := hardware.Open(kind, uint32(idx), pass)
 			fyne.Do(func() {
 				progress.Hide()
 				if err != nil {
@@ -288,18 +353,37 @@ func (p *walletsPane) unlockSelected() {
 }
 
 // unlockHardware reconnects a hardware device for a saved descriptor and installs
-// the signer only if the device reproduces the stored address.
+// the signer only if the device reproduces the stored address. For a Trezor
+// hidden wallet, the same passphrase used originally must be re-entered — the
+// wrong (or missing) one simply derives a different address, caught below.
 func (p *walletsPane) unlockHardware(desc wallet.Descriptor) {
 	kind := signer.Kind(desc.Kind)
 	path := desc.DerivationPath
 	if path == "" {
 		path = hot.DefaultPath(0)
 	}
+
+	passphrase := widget.NewPasswordEntry()
+	passphrase.SetPlaceHolder("Trezor hidden wallet passphrase, if any")
+	d := dialog.NewForm("Unlock "+displayName(desc), "Connect", "Cancel",
+		[]*widget.FormItem{widget.NewFormItem("Passphrase", passphrase)},
+		func(ok bool) {
+			if !ok {
+				return
+			}
+			p.connectHardware(desc, kind, path, passphrase.Text)
+		}, p.app.window)
+	d.Resize(fyne.NewSize(480, 180))
+	d.Show()
+}
+
+// connectHardware performs the actual device connection for unlockHardware.
+func (p *walletsPane) connectHardware(desc wallet.Descriptor, kind signer.Kind, path, passphrase string) {
 	progress := dialog.NewCustomWithoutButtons("Connecting…",
 		widget.NewLabel("Confirm on your device if prompted."), p.app.window)
 	progress.Show()
 	go func() {
-		s, err := hardware.OpenPath(kind, path)
+		s, err := hardware.OpenPath(kind, path, passphrase)
 		fyne.Do(func() {
 			progress.Hide()
 			if err != nil {
@@ -308,7 +392,7 @@ func (p *walletsPane) unlockHardware(desc wallet.Descriptor) {
 			}
 			if !addrEqual(s.Address(), desc.Address) {
 				s.Lock()
-				dialog.ShowError(fmt.Errorf("the device derived a different address than this wallet"), p.app.window)
+				dialog.ShowError(fmt.Errorf("the device (and passphrase, if any) derived a different address than this wallet"), p.app.window)
 				return
 			}
 			p.app.setSigner(desc.ID, s)

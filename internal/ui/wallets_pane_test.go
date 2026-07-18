@@ -81,3 +81,39 @@ func TestWalletsPaneRowLabel(t *testing.T) {
 		t.Errorf("row = %q, want lock icon prefix", row)
 	}
 }
+
+func TestWalletsPaneDetailAddress(t *testing.T) {
+	test.NewApp()
+	cfg := &config.Config{}
+	full := "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed"
+	_ = cfg.UpsertWallet(wallet.Descriptor{ID: "w1", Label: "Main", Address: full, Kind: wallet.KindHot})
+	a := New(cfg, nil)
+	p := newWalletsPane(a)
+	_ = p.build()
+
+	// No selection -> empty detail address.
+	if p.detailAddr.Text != "" {
+		t.Errorf("detail address with no selection = %q, want empty", p.detailAddr.Text)
+	}
+
+	// Selecting the wallet shows its FULL (not shortened) checksummed address.
+	p.selected = 0
+	p.updateButtons()
+	if p.detailAddr.Text != full {
+		t.Errorf("detail address = %q, want full address %q", p.detailAddr.Text, full)
+	}
+
+	// Attempting to edit it (simulating user keystrokes) reverts — read-only in
+	// effect, while the widget itself stays interactive/selectable.
+	p.detailAddr.SetText("tampered")
+	if p.detailAddr.Text != full {
+		t.Errorf("detail address after edit attempt = %q, want reverted to %q", p.detailAddr.Text, full)
+	}
+
+	// Deselecting clears it.
+	p.selected = -1
+	p.updateButtons()
+	if p.detailAddr.Text != "" {
+		t.Errorf("detail address after deselect = %q, want empty", p.detailAddr.Text)
+	}
+}

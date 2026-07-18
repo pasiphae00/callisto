@@ -80,6 +80,60 @@ func TestParseUnitsErrors(t *testing.T) {
 	}
 }
 
+func TestFormatDisplay(t *testing.T) {
+	cases := []struct {
+		amount   string
+		decimals uint8
+		max      uint8
+		want     string
+	}{
+		{"1000000000000000000", 18, 5, "1"},       // 1 ETH
+		{"1234567890000000000", 18, 5, "1.23456"}, // truncated to 5
+		{"1500000000000000000", 18, 5, "1.5"},     // trailing zeros trimmed
+		{"1", 18, 5, "0"},                         // 1 wei -> below 5dp -> "0"
+		{"1234567", 6, 5, "1.23456"},              // USDC 1.234567 -> 1.23456
+		{"1230000", 6, 5, "1.23"},                 // trailing zeros
+		{"999999999999999999", 18, 5, "0.99999"},  // truncation, not rounding
+	}
+	for _, c := range cases {
+		if got := FormatDisplay(bigStr(c.amount), c.decimals, c.max); got != c.want {
+			t.Errorf("FormatDisplay(%s,%d,%d) = %q, want %q", c.amount, c.decimals, c.max, got, c.want)
+		}
+	}
+}
+
+func TestIsDust(t *testing.T) {
+	// 0.00005 threshold.
+	if !IsDust(bigStr("0"), 18) {
+		t.Error("zero should be dust")
+	}
+	if !IsDust(nil, 18) {
+		t.Error("nil should be dust")
+	}
+	// 0.00004 ETH < 0.00005 -> dust
+	if !IsDust(bigStr("40000000000000"), 18) {
+		t.Error("0.00004 ETH should be dust")
+	}
+	// 0.00005 ETH == threshold -> not dust
+	if IsDust(bigStr("50000000000000"), 18) {
+		t.Error("0.00005 ETH should not be dust")
+	}
+	// USDC (6 decimals): 0.00005 = 50 base units
+	if !IsDust(bigStr("49"), 6) {
+		t.Error("49 base USDC (<0.00005) should be dust")
+	}
+	if IsDust(bigStr("50"), 6) {
+		t.Error("50 base USDC (=0.00005) should not be dust")
+	}
+	// Low-decimal token (2 dp): only zero is dust.
+	if IsDust(bigStr("1"), 2) {
+		t.Error("1 base unit of a 2-decimal token should not be dust")
+	}
+	if !IsDust(bigStr("0"), 2) {
+		t.Error("zero should be dust regardless of decimals")
+	}
+}
+
 func TestParseFormatRoundTrip(t *testing.T) {
 	// Parsing then formatting returns the canonical (trailing-zero-trimmed) form.
 	cases := []struct{ in, canonical string }{

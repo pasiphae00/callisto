@@ -30,6 +30,26 @@ const appDir = "callisto"
 // configFile is the settings document name within appDir.
 const configFile = "config.json"
 
+// The out-of-the-box default RPC. Callisto ships with a working Ethereum Mainnet
+// endpoint — Flashbots Protect (fast) — configured and auto-connecting so it runs
+// on first launch; users can replace it, disable auto-connect, or add their own at
+// any time in Settings. (This supersedes the original no-default-RPC stance; see
+// DESIGN.md.)
+const (
+	DefaultEndpointName = "Ethereum Mainnet (via Flashbots Protect)"
+	DefaultEndpointURL  = "https://rpc.flashbots.net/fast?originId=callisto-system"
+)
+
+// defaultConfig is the first-run configuration: the default endpoint, selected and
+// set to auto-connect on startup.
+func defaultConfig() *Config {
+	e := rpc.Endpoint{Name: DefaultEndpointName, URL: DefaultEndpointURL, AutoConnect: true}
+	return &Config{
+		Endpoints:      []rpc.Endpoint{e},
+		ActiveEndpoint: e.Name,
+	}
+}
+
 // Config is the full persisted settings document.
 type Config struct {
 	// Endpoints is the user-curated RPC list; Callisto ships no default.
@@ -81,7 +101,10 @@ func Load() (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return &Config{}, nil
+			// Genuine first run (no config file yet): seed the default endpoint so
+			// Callisto works out of the box. Only happens when the file is absent,
+			// so removing all endpoints later is respected (not re-seeded).
+			return defaultConfig(), nil
 		}
 		return nil, fmt.Errorf("read config: %w", err)
 	}

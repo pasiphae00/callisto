@@ -13,11 +13,9 @@ import (
 	"codeberg.org/pasiphae/callisto/internal/rpc"
 )
 
-const rpcHelpText = `Callisto uses a "Flashbots Protect" Ethereum Mainnet RPC by default. Replace or add your own here (http/s or ws/s). Using a websocket RPC enables live updates.
+const rpcHelpText = `Callisto uses a "Flashbots Protect" Ethereum Mainnet RPC by default. Replace or add your own here (http/s or ws/s). To customize Flashbots Protect behaviour, generate a new endpoint at "protect.flashbots.net" (e.g. to set a MEV refund address, configure block builders, etc.).
 
-If you want to customize Flashbots Protect behaviour, generate a new RPC endpoint here: "protectrpc.flashbots.net"
-
-If you select "Auto-connect" when adding the endpoint, Callisto will use that RPC automatically on each subsequent restart.`
+Select "Auto-connect" when adding the endpoint, Callisto will use that RPC automatically on each subsequent restart.`
 
 // settingsPane manages the persisted RPC endpoint list: add, remove, select, and
 // connect. Callisto ships no default endpoint, so this is the first thing a user

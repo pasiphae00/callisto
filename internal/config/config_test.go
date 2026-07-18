@@ -55,14 +55,32 @@ func isolate(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, ".config"))
 }
 
-func TestLoadMissingReturnsEmpty(t *testing.T) {
+func TestLoadMissingSeedsDefaultEndpoint(t *testing.T) {
 	isolate(t)
 	c, err := Load()
 	if err != nil {
 		t.Fatalf("Load on fresh home: %v", err)
 	}
-	if len(c.Endpoints) != 0 || len(c.Wallets) != 0 {
-		t.Errorf("fresh config should be empty, got %+v", c)
+	// First run ships a working default RPC (Flashbots Protect), selected and
+	// auto-connecting, so Callisto is usable out of the box.
+	if len(c.Endpoints) != 1 {
+		t.Fatalf("fresh config should seed one endpoint, got %+v", c.Endpoints)
+	}
+	e := c.Endpoints[0]
+	if e.Name != DefaultEndpointName || e.URL != DefaultEndpointURL || !e.AutoConnect {
+		t.Errorf("seeded endpoint = %+v", e)
+	}
+	if c.ActiveEndpoint != DefaultEndpointName {
+		t.Errorf("default endpoint should be active, got %q", c.ActiveEndpoint)
+	}
+	if got, ok := c.AutoConnectEndpoint(); !ok || got.Name != DefaultEndpointName {
+		t.Error("default endpoint should be the auto-connect endpoint")
+	}
+	if err := e.Validate(); err != nil {
+		t.Errorf("seeded endpoint should be valid: %v", err)
+	}
+	if len(c.Wallets) != 0 {
+		t.Errorf("fresh config should have no wallets, got %+v", c.Wallets)
 	}
 }
 

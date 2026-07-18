@@ -9,6 +9,11 @@ changes; `v1.0.0` marks the first stable, documented release.
 
 ## [Unreleased]
 
+### Added
+- Licensed under GPL-3.0-or-later (`LICENSE`). The forked
+  `internal/signer/hardware/usbwallet` files remain attributed to go-ethereum
+  under LGPL-3.0-or-later, which permits relicensing under GPL-3.0.
+
 ## [0.3.2] - 2026-07-18
 
 ### Fixed

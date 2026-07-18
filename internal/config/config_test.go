@@ -7,8 +7,43 @@ import (
 
 	"codeberg.org/pasiphae/callisto/internal/assets"
 	"codeberg.org/pasiphae/callisto/internal/rpc"
+	"codeberg.org/pasiphae/callisto/internal/safe"
 	"codeberg.org/pasiphae/callisto/internal/wallet"
 )
+
+func TestSafeRegistry(t *testing.T) {
+	c := &Config{}
+	d := safe.Descriptor{ID: "s1", Label: "Treasury", Address: "0x1c511D88ba898b4D9cd9113D13B9c360a02Fcea1", ChainID: 1, Threshold: 2}
+	if err := c.UpsertSafe(d); err != nil {
+		t.Fatalf("UpsertSafe: %v", err)
+	}
+	c.ActiveSafe = "s1"
+
+	// Upsert replaces by ID.
+	d.Label = "Main Treasury"
+	_ = c.UpsertSafe(d)
+	if len(c.Safes) != 1 || c.Safes[0].Label != "Main Treasury" {
+		t.Errorf("upsert should replace by id, got %+v", c.Safes)
+	}
+	if got, ok := c.ActiveSafeDescriptor(); !ok || got.ID != "s1" {
+		t.Error("ActiveSafeDescriptor should return the active safe")
+	}
+
+	// Remove clears the active selection.
+	if !c.RemoveSafe("s1") {
+		t.Fatal("RemoveSafe should report true")
+	}
+	if c.ActiveSafe != "" {
+		t.Error("removing the active Safe should clear ActiveSafe")
+	}
+}
+
+func TestUpsertSafeRejectsInvalid(t *testing.T) {
+	c := &Config{}
+	if err := c.UpsertSafe(safe.Descriptor{Label: "no id"}); err == nil {
+		t.Error("expected validation error for a Safe with no id/address/chain")
+	}
+}
 
 // isolate points os.UserConfigDir at a temp location for the duration of a test.
 // os.UserConfigDir derives from HOME on darwin and XDG_CONFIG_HOME on linux, so

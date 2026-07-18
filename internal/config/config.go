@@ -20,6 +20,7 @@ import (
 
 	"codeberg.org/pasiphae/callisto/internal/assets"
 	"codeberg.org/pasiphae/callisto/internal/rpc"
+	"codeberg.org/pasiphae/callisto/internal/safe"
 	"codeberg.org/pasiphae/callisto/internal/wallet"
 )
 
@@ -41,6 +42,11 @@ type Config struct {
 	ActiveWallet string `json:"active_wallet"`
 	// Tokens is the user-added ERC-20 token list (metadata resolved on-chain).
 	Tokens []assets.TokenRef `json:"tokens"`
+	// Safes is the persisted registry of imported Safe multisig accounts
+	// (descriptors only: address, cached owners/threshold/version, no secrets).
+	Safes []safe.Descriptor `json:"safes"`
+	// ActiveSafe is the ID of the currently selected Safe ("" = none).
+	ActiveSafe string `json:"active_safe"`
 }
 
 // Dir returns the Callisto config directory, creating it if needed.
@@ -233,6 +239,54 @@ func (c *Config) RemoveWallet(id string) bool {
 		}
 	}
 	return false
+}
+
+// SafeByID returns the Safe descriptor with the given ID, or false.
+func (c *Config) SafeByID(id string) (safe.Descriptor, bool) {
+	for _, s := range c.Safes {
+		if s.ID == id {
+			return s, true
+		}
+	}
+	return safe.Descriptor{}, false
+}
+
+// UpsertSafe adds or replaces a Safe descriptor by ID.
+func (c *Config) UpsertSafe(s safe.Descriptor) error {
+	if err := s.Validate(); err != nil {
+		return err
+	}
+	for i := range c.Safes {
+		if c.Safes[i].ID == s.ID {
+			c.Safes[i] = s
+			return nil
+		}
+	}
+	c.Safes = append(c.Safes, s)
+	return nil
+}
+
+// RemoveSafe deletes a Safe by ID, clearing the active selection if it pointed at
+// the removed Safe. Reports whether anything was removed.
+func (c *Config) RemoveSafe(id string) bool {
+	for i := range c.Safes {
+		if c.Safes[i].ID == id {
+			c.Safes = append(c.Safes[:i], c.Safes[i+1:]...)
+			if c.ActiveSafe == id {
+				c.ActiveSafe = ""
+			}
+			return true
+		}
+	}
+	return false
+}
+
+// ActiveSafeDescriptor returns the currently selected Safe, or false if none.
+func (c *Config) ActiveSafeDescriptor() (safe.Descriptor, bool) {
+	if c.ActiveSafe == "" {
+		return safe.Descriptor{}, false
+	}
+	return c.SafeByID(c.ActiveSafe)
 }
 
 // TokensForChain returns the user-added token contract addresses for a chain.

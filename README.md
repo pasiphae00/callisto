@@ -1,38 +1,38 @@
-<p align="center">
+<p align="left">
   <img src="images/CALLISTO-NASA-GALILEO-transparent-small.PNG" alt="Callisto" width="180">
 </p>
 
-<h1 align="center">Callisto</h1>
+<h1 align="left">Callisto</h1>
 
-<p align="center">
+<p align="left">
   <em>A lightweight, flexible, locally-run Ethereum transaction preparation and signing utility.</em>
 </p>
 
-<p align="center">
-  <a href="CHANGELOG.md">Changelog</a> ·
-  <a href="DESIGN.md">Design</a> ·
-  <a href="PRINCIPLES.md">Principles</a> ·
+<p align="left">
+  <a href="./CHANGELOG.md">Changelog</a> ·
+  <a href="./DESIGN.md">Design</a> ·
+  <a href="./PRINCIPLES.md">Principles</a> ·
   <a href="docs/RELEASING.md">Releasing</a>
 </p>
 
 ---
 
-Callisto is a Go + [Fyne](https://fyne.io) desktop application for preparing,
+Callisto is a Go + [Fyne](https://fyne.io) native desktop application for preparing,
 signing, and broadcasting Ethereum transactions. It runs entirely on your
 machine, talks to an Ethereum node you choose, and keeps signing keys under your
 control — hot-wallet key material lives in memory only while unlocked and is
 wiped on lock, and hardware-wallet keys never leave the device.
 
-> **Status: pre-1.0 (`v0.1.0`).** The foundation and basic transaction flows are
+> **Status: pre-1.0 (`v0.3.2`).** The foundation and basic transaction flows are
 > in place and usable. Safe multisig and the Claude-assisted complex-transaction
 > pipeline are planned — see [Roadmap](#roadmap).
 
 ## Features
 
 - **Bring your own node.** Configure multiple Ethereum RPC endpoints
-  (`https://` or `wss://`); no default endpoint, and your selection is
+  (`https://` or `wss://`), and your selection is
   remembered. WebSocket endpoints get live block updates; HTTP endpoints are
-  polled. A color-coded status dot shows connection health at a glance.
+  polled. If you do not specify a node, (Flashbots Protect)[https://protectrpc.flashbots.net/about] (fast) is used by default.
 - **Multiple wallets, multiple signers.**
   - *Hot wallets* — import a BIP-39 seed phrase, switch between derived accounts,
     with keys held in memory only while unlocked.
@@ -186,4 +186,25 @@ Implemented above; still to come (designed for, not yet built):
 
 ## License
 
-Not yet licensed; all rights reserved by the author pending a license decision.
+[GPL-3.0-or-later](LICENSE). `internal/signer/hardware/usbwallet` is a fork of
+LGPL-3.0-or-later code from go-ethereum (see [Credits](#credits)); LGPL-3.0
+permits relicensing under GPL-3.0, so it's covered by the same license as the
+rest of the project.
+
+```
+Callisto
+Copyright (C) 2026 pasiphae
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+```

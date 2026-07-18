@@ -55,3 +55,18 @@ type Lockable interface {
 type SafeHashSigner interface {
 	SignSafeTxHash(ctx context.Context, safeTxHash common.Hash) ([]byte, error)
 }
+
+// PersonalSigner signs an Ethereum personal message (EIP-191 / personal_sign):
+// the signature covers keccak256("\x19Ethereum Signed Message:\n"+len+message).
+// Used for WalletConnect personal_sign requests. The returned 65-byte signature
+// has v in {27,28} (what dApps expect), distinct from the Safe eth_sign form.
+type PersonalSigner interface {
+	SignPersonalMessage(ctx context.Context, message []byte) ([]byte, error)
+}
+
+// TypedDataSigner signs EIP-712 typed data (eth_signTypedData_v4). typedDataJSON
+// is the raw typed-data document (domain, types, primaryType, message). The
+// returned 65-byte signature has v in {27,28}.
+type TypedDataSigner interface {
+	SignTypedData(ctx context.Context, typedDataJSON []byte) ([]byte, error)
+}

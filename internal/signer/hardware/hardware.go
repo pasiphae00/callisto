@@ -43,9 +43,11 @@ type Signer struct {
 }
 
 var (
-	_ signer.Signer         = (*Signer)(nil)
-	_ signer.Lockable       = (*Signer)(nil)
-	_ signer.SafeHashSigner = (*Signer)(nil)
+	_ signer.Signer          = (*Signer)(nil)
+	_ signer.Lockable        = (*Signer)(nil)
+	_ signer.SafeHashSigner  = (*Signer)(nil)
+	_ signer.PersonalSigner  = (*Signer)(nil)
+	_ signer.TypedDataSigner = (*Signer)(nil)
 )
 
 // Address returns the derived account address.
@@ -72,29 +74,63 @@ func (s *Signer) SignSafeTxHash(ctx context.Context, safeTxHash common.Hash) ([]
 	if err != nil {
 		return nil, fmt.Errorf("device message signing: %w", err)
 	}
+	// The device signs the personal-message digest; Safe validates the eth_sign
+	// form (v = recovery id + 27 + 4 = 31/32).
+	return finalizeDeviceSig(raw, accounts.TextHash(safeTxHash.Bytes()), s.account.Address, 31)
+}
+
+// SignPersonalMessage signs an EIP-191 personal message on the device (v 27/28),
+// for WalletConnect personal_sign. Both Ledger and Trezor implement SignText.
+func (s *Signer) SignPersonalMessage(ctx context.Context, message []byte) ([]byte, error) {
+	raw, err := s.wallet.SignText(s.account, message)
+	if err != nil {
+		return nil, fmt.Errorf("device message signing: %w", err)
+	}
+	return finalizeDeviceSig(raw, accounts.TextHash(message), s.account.Address, 27)
+}
+
+// SignTypedData signs EIP-712 typed data on the device (v 27/28), for
+// WalletConnect eth_signTypedData_v4. Works on Ledger via upstream; Trezor
+// typed-data support is added in the usbwallet fork.
+func (s *Signer) SignTypedData(ctx context.Context, typedDataJSON []byte) ([]byte, error) {
+	domainHash, messageHash, digest, err := signer.TypedDataHashes(typedDataJSON)
+	if err != nil {
+		return nil, err
+	}
+	// The wallet's SignData routes MimetypeTypedData + (0x1901||domainHash||
+	// messageHash) to the device's EIP-712 hashed-message signing.
+	data := append([]byte{0x19, 0x01}, domainHash...)
+	data = append(data, messageHash...)
+	raw, err := s.wallet.SignData(s.account, accounts.MimetypeTypedData, data)
+	if err != nil {
+		return nil, fmt.Errorf("device typed-data signing: %w", err)
+	}
+	return finalizeDeviceSig(raw, digest, s.account.Address, 27)
+}
+
+// finalizeDeviceSig normalizes a 65-byte device signature: it recovers the true
+// recovery id against digest (devices report v inconsistently), verifies it
+// reproduces account, and sets v to recid+vOffset (27 for standard EIP-191/712,
+// 31 for the Safe eth_sign form).
+func finalizeDeviceSig(raw, digest []byte, account common.Address, vOffset byte) ([]byte, error) {
 	if len(raw) != 65 {
 		return nil, fmt.Errorf("device returned a %d-byte signature, want 65", len(raw))
 	}
 	sig := make([]byte, 65)
 	copy(sig, raw)
-
-	// The device may report v as a recovery id (0/1) or offset (27/28); recover
-	// the actual recovery id by checking which one reproduces the account address
-	// against the personal-message digest, then encode the Safe eth_sign form.
-	digest := accounts.TextHash(safeTxHash.Bytes())
 	var recid byte = 0xff
 	for _, rec := range []byte{0, 1} {
 		sig[64] = rec
 		pub, rerr := crypto.SigToPub(digest, sig)
-		if rerr == nil && crypto.PubkeyToAddress(*pub) == s.account.Address {
+		if rerr == nil && crypto.PubkeyToAddress(*pub) == account {
 			recid = rec
 			break
 		}
 	}
 	if recid == 0xff {
-		return nil, fmt.Errorf("device signature does not recover to %s", s.account.Address.Hex())
+		return nil, fmt.Errorf("device signature does not recover to %s", account.Hex())
 	}
-	sig[64] = recid + 31 // eth_sign Safe form: recovery id + 27 + 4
+	sig[64] = recid + vOffset
 	return sig, nil
 }
 

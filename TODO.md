@@ -50,13 +50,33 @@
     respected — when the device's own "enter passphrase on Trezor" security
     setting is active, Callisto no longer sends a possibly-ignored host string;
     it waits for the user to type on the device screen instead.
-  - ⚠️ **Known gap:** a newer Trezor Suite build (embedded bridge v3.2.1+,
-    observed after a Suite relaunch, on a non-default port) speaks an
-    undocumented protocol variant beyond the classic trezord-go API followed
-    here (rejects our `/call` body with an internal, non-public error). Not
-    pursued further — no public documentation to work from, and the standard
-    protocol (v3.1.0, the standalone Trezor Bridge, and older/typical Suite
-    installs) is fully verified working. Revisit if this becomes common.
+  - **Newer Trezor Suite bridge variant (v3.2.1+) — also resolved.** The
+    "known gap" noted earlier turned out to be findable: newer Suite builds
+    embed `@trezor/transport` (TypeScript), not classic `trezord-go`, and its
+    `/call` wire format is undocumented in the classic Bridge API reference.
+    Found by reading trezor-suite's own source
+    (`packages/transport/src/utils/bridgeProtocolMessage.ts`): both request
+    and response bodies are JSON (`{"protocol":"v1","data":"<hex>"}`), **and**
+    the hex `data` field itself still carries the legacy USB-HID report
+    framing (`0x3f` report-ID byte + `0x23 0x23` magic + type + length) rather
+    than the simpler 6-byte header classic `trezord-go` uses — confirmed by
+    decoding a live device response and finding exactly that byte layout.
+    `BridgeClient.Call` now detects which of the two formats a given bridge
+    wants (tries the newer wrapped format first, falls back to legacy,
+    remembers the result per client) and frames each correctly. Verified live:
+    a clean `Open()` succeeded against this device/bridge combination with the
+    corrected framing.
+  - ⚠️ **Caveat, not fully closed out:** rapid repeated connect/disconnect
+    cycles against the same device in a short window (as happened during
+    testing — 15+ attempts in quick succession) produced inconsistent
+    behavior on later attempts (varying errors), likely bridge/device-side
+    session state churn rather than a Callisto bug — a fix for leaking a
+    Bridge session on a failed `Open()` (now released via `Close()`) was found
+    and applied along the way, but full stability under back-to-back
+    reconnects wasn't independently reverified afterward. Normal usage
+    (connect once per session, not rapid test cycling) is expected to be
+    fine; flag if repeated connect/disconnect in real use shows the same
+    instability.
 
 ## minor
 - ~~clarify: when connected to an RPC, there's a little gray dot. is that supposed to be green?~~
@@ -67,12 +87,24 @@
   - (Previously it was a theme-default gray `●`/`○` regardless of state — the fix
     gives it real color. The wallet label also now shows locked/unlocked.)
 
+### populate "about" dialogue
+- lets fill in the callisto -> about dialogue
+- lets have it be a black background, gray text in berkely mono
+- use the callisto png (w/ transparency) from `/images` for the logo
+- text should say 
+  - callisto <version>
+  - commit <commit [shortened]>
+  - open-source ethereum transaction and wallet management utility
+  - callisto.pasiphae.io
+  - ©2026
+- nicely formatted. maybe a small text at the very bottom italic "trust but verify; use at your own risk"
+
 ### "green dot emoji" indicator next to active wallet — ✅ done
 - ~~the green circle emoji looks a bit out of place... personally not a fan of emoji's in UIs~~
   - Wallets list now uses a genuinely colored `●` glyph (canvas.Text, same
-    green/gray pattern as the connection status dot) instead of the 🟢 emoji.
-    Also dropped the 🔒/🔓 lock emojis in the same row for plain `[locked]` /
-    `[unlocked]` text, consistent with the "not really an emoji person" note.
+    green/gray pattern as the connection status dot) instead of the 🟢 emoji —
+    that was the actual complaint. The 🔒/🔓 lock icons were kept (explicitly
+    requested back after the first pass over-corrected and dropped those too).
 
 ### out of the box default rpc
 - lets actually ship callisto with a default mainnet endpoint 
@@ -121,6 +153,13 @@
     and Callisto waits for entry on the device's own screen instead.
 
 ## major
+
+### claude-assisted advanced transaction preparation
+- can be used for both EOA and Safe wallets
+- if a Safe wallet is connected, "multi-step" transactions are also enabled
+- the user should have an option in settings to _fully_ disable all AI features, and they should be off by default
+- in settings, there should be a place to enter a claude API key, and a toggle switch to enable/disable the AI features
+- this is a security and performance measure, so if the toggle is off the backend should truly put all AI features in a "cold path" (untouched until it's flipped on)
 
 ### researching multi-step transactions
 

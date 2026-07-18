@@ -156,6 +156,10 @@ func firstWallet(kind signer.Kind, passphrase string) (accounts.Wallet, error) {
 		}
 		w := wallets[0]
 		if err := w.Open(passphrase); err != nil {
+			// See the matching comment in bridgeWallet: release whatever a
+			// partially-completed Open acquired rather than leaving it dangling
+			// for the next attempt to trip over.
+			_ = w.Close()
 			return nil, fmt.Errorf("open %s: %w", kind, err)
 		}
 		return w, nil
@@ -187,6 +191,12 @@ func bridgeWallet(passphrase string) (accounts.Wallet, error) {
 	}
 	w := usbwallet.NewBridgeWallet(client, devices[0])
 	if err := w.Open(passphrase); err != nil {
+		// Open acquires the Bridge session before running the handshake, so a
+		// failure partway through (e.g. a timed-out passphrase exchange) still
+		// leaves an acquired session. Close releases it; without this, the
+		// dangling session was observed live to block the *next* attempt with a
+		// confusing, unrelated-looking failure — not just wasted resources.
+		_ = w.Close()
 		return nil, fmt.Errorf("open trezor via bridge: %w", err)
 	}
 	return w, nil

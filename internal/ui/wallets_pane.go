@@ -82,11 +82,13 @@ func (p *walletsPane) build() fyne.CanvasObject {
 
 // rowLabel renders a wallet row's text: lock state, label, short address, and
 // kind. The active-selection indicator is a separately colored dot (see build),
-// not part of this text — plain words/glyphs throughout, no emoji.
+// kept as a genuine colored glyph rather than an emoji; the lock/unlock icons
+// stay as-is (requested to keep them — they read fine, unlike the green-circle
+// emoji they're not being confused with a status color).
 func (p *walletsPane) rowLabel(w wallet.Descriptor) string {
-	state := "locked"
+	icon := "🔒"
 	if _, id, ok := p.app.currentSigner(); ok && id == w.ID {
-		state = "unlocked"
+		icon = "🔓"
 	}
 	name := w.Label
 	if name == "" {
@@ -96,7 +98,7 @@ func (p *walletsPane) rowLabel(w wallet.Descriptor) string {
 	if a, err := address.Parse(w.Address); err == nil {
 		short = address.Short(a)
 	}
-	return fmt.Sprintf("[%s]  %s — %s  [%s]", state, name, short, w.Kind)
+	return fmt.Sprintf("%s  %s — %s  [%s]", icon, name, short, w.Kind)
 }
 
 func (p *walletsPane) updateButtons() {

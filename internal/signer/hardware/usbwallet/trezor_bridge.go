@@ -28,6 +28,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/ethereum/go-ethereum/accounts"
@@ -95,6 +96,12 @@ const callTimeout = 60 * time.Second
 type BridgeClient struct {
 	baseURL string
 	http    *http.Client // shared transport; per-call timeout via context, not client.Timeout
+
+	// callProtocol remembers which /call wire format (see bridgeCallProtocol)
+	// this bridge instance actually wants, once detected, so subsequent calls
+	// don't pay for a doubled round trip. Zero value (callProtocolUnknown) means
+	// "not yet detected" — atomic since Call may run from a background goroutine.
+	callProtocol atomic.Int32
 }
 
 // NewBridgeClient returns a client for the Trezor Bridge instance at url (use
@@ -187,20 +194,155 @@ func (c *BridgeClient) Release(session string) error {
 	return err
 }
 
-// Call sends one wire-protocol message (type(2) + length(4) + protobuf data,
-// matching the framing trezorExchange already builds) to the device and returns
-// the response in the same shape. Bounded by callTimeout (not adminTimeout): the
-// device may be waiting on the user to physically confirm.
-func (c *BridgeClient) Call(session string, payload []byte) ([]byte, error) {
+// bridgeCallProtocol is the /call wire format, of which trezord implementations
+// disagree — both the outer HTTP body shape AND the inner message framing:
+//
+//   - callProtocolLegacy: classic trezord-go (confirmed: v3.1.0, the standalone
+//     Trezor Bridge). Request body is bare hex text of `type(2) + length(4) +
+//     protobuf data` (6-byte header; no USB report framing — trezord-go strips
+//     that at the daemon level). Response body is a JSON string containing hex
+//     in the same shape, e.g. `"deadbeef"`.
+//   - callProtocolWrapped: the newer @trezor/transport-embedded bridge shipped
+//     inside recent Trezor Suite builds (confirmed: v3.2.1). Request/response
+//     bodies are a JSON object `{"protocol":"v1","data":"<hex>"}` (source:
+//     trezor-suite packages/transport/src/utils/bridgeProtocolMessage.ts,
+//     undocumented in the classic trezord-go API reference) — but the `data`
+//     hex itself is the *raw legacy USB HID report framing*, unchunked: a
+//     single `0x3f` report-ID byte, then `0x23 0x23` magic, then `type(2) +
+//     length(4) + protobuf data` (9-byte header total). Confirmed empirically:
+//     sending the 6-byte (no-report-framing) form inside the JSON envelope
+//     produced a live device-level `Failure{message:"Firmware error"}` reply —
+//     the firmware itself chokes on it — while the device's own responses
+//     always carry the full 9-byte form.
+//
+// Neither bridge advertises which format it wants ahead of time (both report a
+// similar version-info payload from `/`), so BridgeClient detects it adaptively:
+// try wrapped first (what current Suite builds need), falling back to legacy on
+// a request-format rejection, and remembering the choice for the rest of this
+// client's lifetime to avoid a doubled round trip on every subsequent call.
+type bridgeCallProtocol int
+
+const (
+	callProtocolUnknown bridgeCallProtocol = iota
+	callProtocolWrapped
+	callProtocolLegacy
+)
+
+// bridgeProtocolMessage mirrors trezor-suite's BridgeProtocolMessage JSON shape
+// for the wrapped /call request and response bodies.
+type bridgeProtocolMessage struct {
+	Protocol string `json:"protocol"`
+	Data     string `json:"data"`
+}
+
+// usbReportMagic/usbReportID are the legacy USB HID report framing bytes the
+// wrapped protocol's `data` field carries (see bridgeCallProtocol's doc
+// comment) — reused from the byte layout usbTrezorTransport already builds per
+// 64-byte chunk, just assembled once as a single unchunked blob here.
+var usbReportMagic = [2]byte{0x23, 0x23}
+
+const usbReportID = 0x3f
+
+// Call sends one wire-protocol message to the device and returns the parsed
+// reply's message type and payload. Bounded by callTimeout (not adminTimeout):
+// the device may be waiting on the user to physically confirm.
+func (c *BridgeClient) Call(session string, msgType uint16, data []byte) (uint16, []byte, error) {
+	proto := bridgeCallProtocol(c.callProtocol.Load())
+
+	// Once a format is confirmed for this client, use it directly — no
+	// speculative fallback, so a genuine later error (e.g. a real protocol
+	// failure) isn't misdiagnosed as a format mismatch and silently retried
+	// under the other format.
+	switch proto {
+	case callProtocolWrapped:
+		return c.callWrapped(session, msgType, data)
+	case callProtocolLegacy:
+		return c.callLegacy(session, msgType, data)
+	}
+
+	// Unknown yet: try wrapped first (what current Trezor Suite builds need —
+	// see bridgeCallProtocol's doc comment), falling back to legacy trezord-go
+	// framing if that attempt fails outright.
+	kind, reply, err := c.callWrapped(session, msgType, data)
+	if err == nil {
+		c.callProtocol.Store(int32(callProtocolWrapped))
+		return kind, reply, nil
+	}
+	kind, reply, legacyErr := c.callLegacy(session, msgType, data)
+	if legacyErr != nil {
+		// Neither format worked; report the wrapped-format error since it's
+		// tried first and is the more likely format for a modern install.
+		return 0, nil, err
+	}
+	c.callProtocol.Store(int32(callProtocolLegacy))
+	return kind, reply, nil
+}
+
+// callWrapped sends /call using the newer @trezor/transport JSON envelope,
+// with the legacy USB HID report framing embedded in its data field (see
+// bridgeCallProtocol's doc comment for why).
+func (c *BridgeClient) callWrapped(session string, msgType uint16, data []byte) (uint16, []byte, error) {
+	payload := make([]byte, 9+len(data))
+	payload[0] = usbReportID
+	payload[1], payload[2] = usbReportMagic[0], usbReportMagic[1]
+	binary.BigEndian.PutUint16(payload[3:], msgType)
+	binary.BigEndian.PutUint32(payload[5:], uint32(len(data)))
+	copy(payload[9:], data)
+
+	reqBody, err := json.Marshal(bridgeProtocolMessage{Protocol: "v1", Data: hex.EncodeToString(payload)})
+	if err != nil {
+		return 0, nil, err
+	}
+	body, err := c.post(callTimeout, "/call/"+session, reqBody)
+	if err != nil {
+		return 0, nil, err
+	}
+	var msg bridgeProtocolMessage
+	if err := json.Unmarshal(body, &msg); err != nil {
+		return 0, nil, fmt.Errorf("trezor bridge: decode wrapped call response: %w", err)
+	}
+	resp, err := hex.DecodeString(msg.Data)
+	if err != nil {
+		return 0, nil, fmt.Errorf("trezor bridge: decode wrapped call response hex: %w", err)
+	}
+	if len(resp) < 9 || resp[0] != usbReportID || resp[1] != usbReportMagic[0] || resp[2] != usbReportMagic[1] {
+		return 0, nil, errTrezorReplyInvalidHeader
+	}
+	kind := binary.BigEndian.Uint16(resp[3:5])
+	length := binary.BigEndian.Uint32(resp[5:9])
+	reply := resp[9:]
+	if uint32(len(reply)) != length {
+		return 0, nil, errTrezorReplyInvalidHeader
+	}
+	return kind, reply, nil
+}
+
+// callLegacy sends /call using the classic trezord-go bare-hex framing (a
+// 6-byte type+length header, no USB report framing).
+func (c *BridgeClient) callLegacy(session string, msgType uint16, data []byte) (uint16, []byte, error) {
+	payload := make([]byte, 6+len(data))
+	binary.BigEndian.PutUint16(payload[0:], msgType)
+	binary.BigEndian.PutUint32(payload[2:], uint32(len(data)))
+	copy(payload[6:], data)
+
 	body, err := c.post(callTimeout, "/call/"+session, []byte(hex.EncodeToString(payload)))
 	if err != nil {
-		return nil, err
+		return 0, nil, err
 	}
-	decoded, err := hex.DecodeString(string(bytes.TrimSpace(trimJSONQuotes(body))))
+	resp, err := hex.DecodeString(string(bytes.TrimSpace(trimJSONQuotes(body))))
 	if err != nil {
-		return nil, fmt.Errorf("trezor bridge: decode call response: %w", err)
+		return 0, nil, fmt.Errorf("trezor bridge: decode call response: %w", err)
 	}
-	return decoded, nil
+	if len(resp) < 6 {
+		return 0, nil, errTrezorReplyInvalidHeader
+	}
+	kind := binary.BigEndian.Uint16(resp[0:2])
+	length := binary.BigEndian.Uint32(resp[2:6])
+	reply := resp[6:]
+	if uint32(len(reply)) != length {
+		return 0, nil, errTrezorReplyInvalidHeader
+	}
+	return kind, reply, nil
 }
 
 // post issues a POST to path with an optional raw body, bounded by timeout, and
@@ -309,23 +451,5 @@ func NewBridgeWallet(client *BridgeClient, device BridgeDevice) accounts.Wallet 
 }
 
 func (t *bridgeTrezorTransport) exchange(msgType uint16, data []byte) (uint16, []byte, error) {
-	payload := make([]byte, 6+len(data))
-	binary.BigEndian.PutUint16(payload[0:], msgType)
-	binary.BigEndian.PutUint32(payload[2:], uint32(len(data)))
-	copy(payload[6:], data)
-
-	resp, err := t.client.Call(t.session, payload)
-	if err != nil {
-		return 0, nil, err
-	}
-	if len(resp) < 6 {
-		return 0, nil, errTrezorReplyInvalidHeader
-	}
-	kind := binary.BigEndian.Uint16(resp[0:2])
-	length := binary.BigEndian.Uint32(resp[2:6])
-	reply := resp[6:]
-	if uint32(len(reply)) != length {
-		return 0, nil, errTrezorReplyInvalidHeader
-	}
-	return kind, reply, nil
+	return t.client.Call(t.session, msgType, data)
 }

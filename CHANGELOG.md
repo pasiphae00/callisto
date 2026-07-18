@@ -36,6 +36,18 @@ changes; `v1.0.0` marks the first stable, documented release.
   (`PassphraseRequest.OnDevice`, a Trezor security feature that keeps the
   passphrase off the host entirely) is detected and respected rather than
   silently overridden with a host-supplied value.
+- Newer Trezor Suite builds embed `@trezor/transport` instead of classic
+  `trezord-go`, which speaks an undocumented `/call` wire format: JSON request
+  and response bodies (vs. bare hex), with the legacy USB-HID report framing
+  (`0x3f` + `0x23 0x23` magic + type + length) still embedded inside the hex
+  data field. `BridgeClient` now detects which format a given bridge wants and
+  frames each correctly, remembering the result per connection. Verified live
+  against both the standalone Trezor Bridge (classic format) and this newer
+  embedded variant (wrapped format).
+- Fixed a Bridge session leak: a device connection that failed partway through
+  `Open()` (e.g. a timed-out exchange) left its acquired Bridge session
+  un-released, which could confuse a subsequent connection attempt. Failed
+  opens now clean up via `Close()`.
 
 ### Added
 - `cmd/hwscan`: diagnostic tool listing every raw USB HID device the OS
@@ -57,8 +69,9 @@ changes; `v1.0.0` marks the first stable, documented release.
   notes how many were hidden; the native asset is always shown, and the Send
   picker still lists everything.
 - The active wallet and connection status are marked with a genuinely colored
-  `●` glyph (green/amber/gray), not an emoji; the wallet list's lock state is
-  now plain `[locked]`/`[unlocked]` text instead of lock emoji.
+  `●` glyph (green/amber/gray) rather than an emoji, which doesn't reliably
+  match theme/font for a color signal; the 🔒/🔓 lock-state icons are kept as-is
+  (they convey a category, not a color, so emoji reads fine there).
 
 ## [0.2.0] - 2026-07-18
 

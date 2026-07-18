@@ -10,6 +10,12 @@ changes; `v1.0.0` marks the first stable, documented release.
 ## [Unreleased]
 
 ### Added
+- Hardware wallet signing (`internal/signer/hardware`): Ledger and Trezor via
+  go-ethereum's `accounts/usbwallet`, behind the common `Signer` interface — keys
+  never leave the device. Add and unlock hardware wallets from the Wallets pane
+  (unlock reconnects the device and verifies it reproduces the stored address).
+  GridPlus Lattice is stubbed (`ErrLatticeUnsupported`) pending a Go SDK. Device
+  flows require physical hardware; the device-independent logic is unit-tested.
 - Gas estimation + pre-sign review: EIP-1559 fee estimation (`internal/tx`
   `EstimateFees`/`Prepare`) — estimated gas with headroom, node-suggested tip,
   and a `2*baseFee + tip` max fee — assembled into a dynamic-fee transaction. The

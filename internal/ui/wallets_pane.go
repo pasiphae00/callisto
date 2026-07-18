@@ -12,6 +12,8 @@ import (
 	"fyne.io/fyne/v2/widget"
 
 	"codeberg.org/pasiphae/callisto/internal/address"
+	"codeberg.org/pasiphae/callisto/internal/signer"
+	"codeberg.org/pasiphae/callisto/internal/signer/hardware"
 	"codeberg.org/pasiphae/callisto/internal/signer/hot"
 	"codeberg.org/pasiphae/callisto/internal/wallet"
 
@@ -48,15 +50,16 @@ func (p *walletsPane) build() fyne.CanvasObject {
 	p.list.OnUnselected = func(widget.ListItemID) { p.selected = -1; p.updateButtons() }
 
 	addBtn := widget.NewButton("Add hot wallet…", p.showAddHotWallet)
+	addHwBtn := widget.NewButton("Add hardware…", p.showAddHardwareWallet)
 	p.unlockBtn = widget.NewButton("Unlock", p.unlockSelected)
 	p.lockBtn = widget.NewButton("Lock", p.lockActive)
 	p.removeBtn = widget.NewButton("Remove", p.removeSelected)
 	p.updateButtons()
 
 	header := widget.NewLabelWithStyle("Wallets", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
-	help := widget.NewLabel("Add a wallet from a seed phrase. Phrases are held in memory only while unlocked and are wiped on lock, disconnect, or exit — never written to disk.")
+	help := widget.NewLabel("Add a wallet from a seed phrase (held in memory only while unlocked, wiped on lock/exit) or a hardware device (keys never leave the device). Nothing secret is written to disk.")
 	help.Wrapping = fyne.TextWrapWord
-	buttons := container.NewHBox(addBtn, p.unlockBtn, p.lockBtn, p.removeBtn)
+	buttons := container.NewHBox(addBtn, addHwBtn, p.unlockBtn, p.lockBtn, p.removeBtn)
 
 	top := container.NewVBox(header, help, buttons, widget.NewSeparator())
 	return container.NewBorder(top, nil, nil, nil, p.list)
@@ -168,13 +171,80 @@ func (p *walletsPane) showAddHotWallet() {
 	d.Show()
 }
 
+// showAddHardwareWallet connects a Ledger or Trezor, derives an account, and
+// registers it. The device must be connected and unlocked (Ledger: Ethereum app
+// open). Signing later happens on the device.
+func (p *walletsPane) showAddHardwareWallet() {
+	label := widget.NewEntry()
+	label.SetPlaceHolder("e.g. Ledger 1")
+	deviceSel := widget.NewSelect([]string{"Ledger", "Trezor"}, nil)
+	deviceSel.SetSelected("Ledger")
+	index := widget.NewEntry()
+	index.SetText("0")
+
+	items := []*widget.FormItem{
+		widget.NewFormItem("Label", label),
+		widget.NewFormItem("Device", deviceSel),
+		widget.NewFormItem("Account #", index),
+	}
+	d := dialog.NewForm("Add hardware wallet", "Connect", "Cancel", items, func(ok bool) {
+		if !ok {
+			return
+		}
+		idx, err := strconv.ParseUint(index.Text, 10, 32)
+		if err != nil {
+			dialog.ShowError(fmt.Errorf("account # must be a non-negative integer"), p.app.window)
+			return
+		}
+		kind := hardwareKind(deviceSel.Selected)
+		labelText := label.Text
+
+		progress := dialog.NewCustomWithoutButtons("Connecting…",
+			widget.NewLabel("Confirm on your "+deviceSel.Selected+" if prompted."), p.app.window)
+		progress.Show()
+		go func() {
+			s, err := hardware.Open(kind, uint32(idx))
+			fyne.Do(func() {
+				progress.Hide()
+				if err != nil {
+					dialog.ShowError(err, p.app.window)
+					return
+				}
+				desc := wallet.Descriptor{
+					ID:             newWalletID(),
+					Label:          labelText,
+					Address:        address.Format(s.Address()),
+					Kind:           wallet.SignerKind(kind),
+					DerivationPath: hardwarePath(uint32(idx)),
+				}
+				if err := p.persistAndActivate(desc, s); err != nil {
+					s.Lock()
+					dialog.ShowError(err, p.app.window)
+					return
+				}
+				p.refresh()
+				dialog.ShowInformation("Hardware wallet added",
+					fmt.Sprintf("%s\n%s", desc.Label, desc.Address), p.app.window)
+			})
+		}()
+	}, p.app.window)
+	d.Resize(fyne.NewSize(480, 300))
+	d.Show()
+}
+
 // unlockSelected re-derives the selected wallet from a freshly entered phrase and,
 // only if the derived address matches the stored descriptor, installs the signer.
+// Hardware wallets reconnect the device instead of prompting for a phrase.
 func (p *walletsPane) unlockSelected() {
 	if p.selected < 0 || p.selected >= len(p.app.cfg.Wallets) {
 		return
 	}
 	desc := p.app.cfg.Wallets[p.selected]
+
+	if desc.IsHardware() {
+		p.unlockHardware(desc)
+		return
+	}
 
 	mnemonic := widget.NewMultiLineEntry()
 	mnemonic.SetPlaceHolder("recovery phrase for " + desc.Address)
@@ -217,6 +287,40 @@ func (p *walletsPane) unlockSelected() {
 	d.Show()
 }
 
+// unlockHardware reconnects a hardware device for a saved descriptor and installs
+// the signer only if the device reproduces the stored address.
+func (p *walletsPane) unlockHardware(desc wallet.Descriptor) {
+	kind := signer.Kind(desc.Kind)
+	path := desc.DerivationPath
+	if path == "" {
+		path = hot.DefaultPath(0)
+	}
+	progress := dialog.NewCustomWithoutButtons("Connecting…",
+		widget.NewLabel("Confirm on your device if prompted."), p.app.window)
+	progress.Show()
+	go func() {
+		s, err := hardware.OpenPath(kind, path)
+		fyne.Do(func() {
+			progress.Hide()
+			if err != nil {
+				dialog.ShowError(err, p.app.window)
+				return
+			}
+			if !addrEqual(s.Address(), desc.Address) {
+				s.Lock()
+				dialog.ShowError(fmt.Errorf("the device derived a different address than this wallet"), p.app.window)
+				return
+			}
+			p.app.setSigner(desc.ID, s)
+			p.app.cfg.ActiveWallet = desc.ID
+			if err := p.app.cfg.Save(); err != nil {
+				dialog.ShowError(err, p.app.window)
+			}
+			p.refresh()
+		})
+	}()
+}
+
 // lockActive wipes the current signer session.
 func (p *walletsPane) lockActive() {
 	p.app.clearSigner()
@@ -250,7 +354,7 @@ func (p *walletsPane) removeSelected() {
 
 // persistAndActivate saves a new descriptor, marks it active, and installs the
 // signer. On a persistence failure the caller locks the signer.
-func (p *walletsPane) persistAndActivate(desc wallet.Descriptor, s *hot.Wallet) error {
+func (p *walletsPane) persistAndActivate(desc wallet.Descriptor, s signer.Signer) error {
 	if err := p.app.cfg.UpsertWallet(desc); err != nil {
 		return err
 	}
@@ -280,6 +384,19 @@ func addrEqual(a common.Address, stored string) bool {
 		return false
 	}
 	return a == parsed
+}
+
+// hardwareKind maps a device-picker label to a signer kind.
+func hardwareKind(sel string) signer.Kind {
+	if sel == "Trezor" {
+		return signer.KindTrezor
+	}
+	return signer.KindLedger
+}
+
+// hardwarePath is the standard BIP-44 path used for hardware accounts.
+func hardwarePath(index uint32) string {
+	return hot.DefaultPath(index)
 }
 
 // newWalletID returns a short random identifier for a wallet descriptor.

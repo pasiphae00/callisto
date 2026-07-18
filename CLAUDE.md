@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Source of truth
 
-Read `DESIGN.md` (full product/feature spec, RFC-2119 MUST/SHOULD) and `PRINCIPLES.md` (development principles) before making design decisions — they define what to build and the constraints. The approved v1 implementation plan and phase ordering live in the plan file referenced by the work log; v1 = hot-wallet EOA core **+ hardware-wallet signing** (Ledger/Trezor via go-ethereum `accounts/usbwallet`; Grid Lattice best-effort). Safe multisig and the Claude-driven complex-transaction pipeline are deferred later phases. `README.md` is still a placeholder — rewrite it in standard format at v1.
+Read `DESIGN.md` (full product/feature spec, RFC-2119 MUST/SHOULD) and `PRINCIPLES.md` (development principles) before making design decisions — they define what to build and the constraints. `README.md` is the user-facing overview (features, quick start, security model, architecture table) and `CHANGELOG.md` tracks releases.
+
+**Implemented (v0.1.0 → in progress):** RPC config + live connection, EIP-55 + ENS, hot-wallet (seed) and hardware (Ledger/Trezor) signers behind a common `signer.Signer` interface, ETH/ERC-20 balances, and the full basic-send flow — build → gas estimate → pre-sign review → sign → broadcast → inclusion tracking → history. **Deferred (designed for, not built):** Safe multisig, the Claude-assisted complex/multi-step transaction pipeline (DeFiSaver SDK), transaction simulation, and GridPlus Lattice (stubbed — no Go SDK). Keep these slot-in-able without core rewrites.
 
 ## Commands
 
@@ -15,7 +17,12 @@ go test ./internal/chain  # test a single package
 go test -run TestLookupUnknownFallback ./internal/chain   # run a single test
 go vet ./...              # static checks
 go run ./cmd/callisto     # launch the GUI (needs a display; won't run headless)
+
+# Integration tests hit live public nodes and are behind a build tag:
+go test -tags integration ./...   # override endpoints via CALLISTO_TEST_RPC / CALLISTO_TEST_MAINNET_RPC
 ```
+
+Integration tests (`//go:build integration`) verify real-network behavior (RPC dial, ENS against mainnet, ERC-20 decode, gas/fee inputs on Sepolia) and are excluded from the default `go test ./...`. Hardware-wallet device flows require physical hardware and are not covered by automated tests.
 
 On macOS the linker prints a benign `ignoring duplicate libraries: '-lobjc'` warning from Fyne's CGo driver — it is not an error. The GUI cannot be launched in a headless environment; UI construction is verified instead by the Fyne test-driver smoke test in `internal/ui/ui_test.go`.
 

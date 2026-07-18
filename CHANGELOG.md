@@ -9,7 +9,21 @@ changes; `v1.0.0` marks the first stable, documented release.
 
 ## [Unreleased]
 
+### Fixed
+- Trezor Safe-family devices (confirmed: Safe 5) were never detected, even
+  connected and unlocked. Diagnosed with a new `go run ./cmd/hwscan` tool: the
+  device's USB descriptor (interface 1, usage page 0xf1d0) doesn't satisfy
+  go-ethereum's hardcoded `usbwallet` matcher (interface 0 or usage page
+  0xffff) — a known, still-open upstream issue
+  ([go-ethereum#31841](https://github.com/ethereum/go-ethereum/issues/31841))
+  with no released fix. Carrying a local, LGPL-attributed fork
+  (`internal/signer/hardware/usbwallet`) that matches Trezor on vendor+product
+  ID alone; Ledger is unaffected and still uses upstream go-ethereum directly.
+
 ### Added
+- `cmd/hwscan`: diagnostic tool listing every raw USB HID device the OS
+  reports, independent of whether Callisto recognizes it as a wallet — for
+  debugging hardware-wallet detection issues.
 - Default RPC endpoint with startup auto-connect (opt-in checkbox when adding an
   endpoint; the default is exclusive and marked in the list).
 - Berkeley Mono is embedded and applied to addresses, hashes, and numeric amounts

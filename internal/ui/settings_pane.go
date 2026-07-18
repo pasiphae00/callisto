@@ -69,7 +69,7 @@ func (p *settingsPane) build() fyne.CanvasObject {
 
 	buttons := container.NewHBox(addBtn, p.connectBtn, p.removeBtn)
 	header := widget.NewLabelWithStyle("RPC endpoints", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
-	help := widget.NewLabel("Callisto has no default RPC. Add your own node (http(s) or ws(s)); ws(s) enables live updates.")
+	help := widget.NewLabel("Callisto has no default network RPC. Add your own RPC here (http/s or ws/s). Using a websocket RPC enables live updates. \n\nIf you need an RPC endpoint, we suggest creating your own at: \"protectrpc.flashbots.net\"")
 	help.Wrapping = fyne.TextWrapWord
 
 	top := container.NewVBox(header, help, buttons, p.statusLbl, widget.NewSeparator())

@@ -173,6 +173,10 @@ Implemented above; still to come (designed for, not yet built):
 - Addresses and numeric values are set in
   [Berkeley Mono](https://usgraphics.com/products/berkeley-mono) by U.S. Graphics
   Company, bundled and embedded under the project's font license.
+- `internal/signer/hardware/usbwallet` is a local, patched fork of three files
+  from [go-ethereum](https://github.com/ethereum/go-ethereum)'s
+  `accounts/usbwallet` (LGPL-3.0-or-later; license and attribution preserved
+  in-file) — see that package's doc comment for why.
 
 ## License
 

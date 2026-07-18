@@ -3,12 +3,29 @@
 ## bugs
 
 - trezor not connected. when plugged in and unlocked, callisto seems not to detect it
-  - ⏳ likely-fix shipped: was probing only the HID transport, but modern Trezors
-    (Model T, Safe 3, recent Model One firmware) enumerate over **WebUSB**.
-    Callisto now probes both WebUSB and HID. **Please retest.**
-  - If it still doesn't detect: quit **Trezor Suite** and stop the **Trezor Bridge**
-    daemon first — they hold an exclusive USB claim that blocks other apps. (A
-    future option is to talk to Bridge's local HTTP API instead of USB directly.)
+  - ✅ root cause confirmed and fixed. Added `go run ./cmd/hwscan` (lists every raw
+    USB HID device the OS sees, regardless of whether Callisto recognizes it) —
+    running it with the Trezor Safe 5 connected showed:
+    `VID=0x1209 PID=0x53c1 iface=1 usagePage=0xf1d0 "Trezor Company" "Trezor Safe 5"`.
+    go-ethereum's `usbwallet` matcher requires vendor+product ID **and**
+    (usagePage==0xffff **or** interface==0) — this device's interface(1)/usagePage
+    (0xf1d0) satisfy neither, so it was silently filtered out even though the OS
+    exposed it fine. This is a known, still-open upstream bug:
+    [go-ethereum#31841](https://github.com/ethereum/go-ethereum/issues/31841); the
+    proposed fix ([PR #32752](https://github.com/ethereum/go-ethereum/pull/32752))
+    is a draft blocked on an unrelated, unmerged dependency swap, so no upstream
+    release fixes this yet.
+  - Fix: forked the three files this touches (`hub.go`, `wallet.go`, `trezor.go`,
+    LGPL-3.0, license/attribution preserved) into
+    `internal/signer/hardware/usbwallet/`, patched so Trezor matches on vendor+
+    product ID alone (Trezor's PID is already unambiguous, unlike Ledger's, which
+    packs model+interface bits and genuinely needs the interface check — so Ledger
+    keeps using upstream unmodified). Full rationale is in that package's doc
+    comment. Drop this fork once upstream ships a real fix.
+  - ⏳ **Not yet re-verified end-to-end**: the device dropped off the USB
+    enumeration entirely between two scans in the same session (confirmed
+    unplugged, not a bug). Please reconnect + unlock and retest — Wallets →
+    "Add hardware…" → Trezor.
 
 ## minor
 - ~~clarify: when connected to an RPC, there's a little gray dot. is that supposed to be green?~~

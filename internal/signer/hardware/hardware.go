@@ -16,11 +16,12 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/accounts"
-	"github.com/ethereum/go-ethereum/accounts/usbwallet"
+	upstreamusb "github.com/ethereum/go-ethereum/accounts/usbwallet"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 
 	"codeberg.org/pasiphae/callisto/internal/signer"
+	"codeberg.org/pasiphae/callisto/internal/signer/hardware/usbwallet"
 )
 
 var (
@@ -76,28 +77,40 @@ func DerivationPath(index uint32) accounts.DerivationPath {
 
 // newHubs creates the usbwallet backend(s) to probe for a hardware kind.
 //
-// Trezor is transport-dependent: newer models/firmware (Model T, Safe 3, recent
-// Model One) enumerate over WebUSB, while older Trezor One uses HID. We build
-// both hubs and probe each, so a connected device is found regardless of
-// transport. Ledger uses HID.
+// Ledger uses upstream go-ethereum's usbwallet unmodified. Trezor uses our local
+// fork (internal/signer/hardware/usbwallet), which patches device matching to
+// support Trezor Safe-family USB descriptors that upstream doesn't recognize —
+// see that package's doc comment for the full rationale and the tracked upstream
+// issue. We build both WebUSB and HID hubs for Trezor and probe each, so a
+// connected device is found regardless of transport.
+//
+// Errors constructing a backend (e.g. the underlying HID subsystem being
+// unavailable on this platform/build) are collected rather than discarded: if
+// every backend fails to construct, the caller needs that reason, not a generic
+// "no device" message that implies enumeration ran and simply found nothing.
 func newHubs(kind signer.Kind) ([]accounts.Backend, error) {
 	switch kind {
 	case signer.KindLedger:
-		h, err := usbwallet.NewLedgerHub()
+		h, err := upstreamusb.NewLedgerHub()
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("open USB HID subsystem: %w", err)
 		}
 		return []accounts.Backend{h}, nil
 	case signer.KindTrezor:
 		var hubs []accounts.Backend
+		var errs []error
 		if h, err := usbwallet.NewTrezorHubWithWebUSB(); err == nil {
 			hubs = append(hubs, h)
+		} else {
+			errs = append(errs, fmt.Errorf("webusb: %w", err))
 		}
 		if h, err := usbwallet.NewTrezorHubWithHID(); err == nil {
 			hubs = append(hubs, h)
+		} else {
+			errs = append(errs, fmt.Errorf("hid: %w", err))
 		}
 		if len(hubs) == 0 {
-			return nil, ErrNoDevice
+			return nil, fmt.Errorf("open USB HID subsystem (%w)", errors.Join(errs...))
 		}
 		return hubs, nil
 	case signer.KindLattice:
@@ -108,7 +121,10 @@ func newHubs(kind signer.Kind) ([]accounts.Backend, error) {
 }
 
 // firstWallet probes the backend(s) for a kind and returns the first connected,
-// opened wallet. For Trezor this covers both WebUSB and HID transports.
+// opened wallet. For Trezor this covers both WebUSB and HID transports. If every
+// backend enumerates successfully but finds no matching device, ErrNoDevice is
+// returned; if the backends themselves could not be constructed, that underlying
+// error is returned instead (see newHubs).
 func firstWallet(kind signer.Kind) (accounts.Wallet, error) {
 	hubs, err := newHubs(kind)
 	if err != nil {

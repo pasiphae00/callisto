@@ -10,6 +10,14 @@ changes; `v1.0.0` marks the first stable, documented release.
 ## [Unreleased]
 
 ### Added
+- RPC connection layer: `rpc.Client` interface (satisfied by go-ethereum's
+  ethclient) for mockable domain logic; `Dial` with chain-ID verification; and a
+  thread-safe connection `Manager` with a head-watching goroutine (WebSocket
+  subscription, HTTP polling fallback) that fans new blocks out to listeners.
+- Settings pane: add / select / connect / remove RPC endpoints, persisted; live
+  connection state reflected in the status bar. Verified end-to-end against a
+  public Sepolia node (build-tagged integration tests, run with
+  `go test -tags integration ./internal/rpc/`).
 - Project foundation: Go module (`github.com/pasiphae/callisto`), package
   skeleton, and Fyne GUI shell with a tabbed layout (Wallets, Assets, Send,
   History, Settings) and a status bar.

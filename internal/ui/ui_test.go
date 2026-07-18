@@ -3,6 +3,7 @@ package ui
 import (
 	"testing"
 
+	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/test"
 
 	"github.com/pasiphae/callisto/internal/config"
@@ -35,18 +36,23 @@ func TestBuildRootHeadless(t *testing.T) {
 	defer w.Close()
 }
 
-// TestStatusBarReflectsState checks the status bar reads the active endpoint.
-func TestStatusBarReflectsState(t *testing.T) {
+// TestStatusBarRefreshes checks the status bar rebuilds without panicking as
+// selection state changes.
+func TestStatusBarRefreshes(t *testing.T) {
 	test.NewApp()
 	cfg := &config.Config{}
 	a := New(cfg, nil)
-	// No endpoint configured yet — should not panic building the status bar.
-	if a.statusBar() == nil {
-		t.Fatal("statusBar returned nil with empty config")
+	a.statusBarBox = container.NewHBox()
+
+	a.refreshStatusBar() // empty config
+	if len(a.statusBarBox.Objects) == 0 {
+		t.Fatal("status bar should have content even with empty config")
 	}
+
 	_ = cfg.UpsertEndpoint(rpc.Endpoint{Name: "local", URL: "http://localhost:8545"})
 	cfg.ActiveEndpoint = "local"
-	if a.statusBar() == nil {
-		t.Fatal("statusBar returned nil with active endpoint")
+	a.refreshStatusBar() // configured-but-not-connected
+	if len(a.statusBarBox.Objects) == 0 {
+		t.Fatal("status bar should reflect configured endpoint")
 	}
 }

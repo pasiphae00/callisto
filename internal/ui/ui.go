@@ -14,23 +14,28 @@ import (
 	"fyne.io/fyne/v2/widget"
 
 	"github.com/pasiphae/callisto/internal/config"
+	"github.com/pasiphae/callisto/internal/rpc"
 	"github.com/pasiphae/callisto/internal/store"
 )
 
 // App holds the wiring shared across panes. Panes read/update Config and persist
-// via Config.Save(); Store backs history and the contract address book.
+// via Config.Save(); Store backs history and the contract address book; rpc is
+// the live connection manager.
 type App struct {
 	cfg   *config.Config
 	store *store.Store
+	rpc   *rpc.Manager
 
 	fyneApp fyne.App
 	window  fyne.Window
+
+	statusBarBox *fyne.Container
 }
 
 // New constructs the App wiring. It does not create any windows or a driver, so
 // it is safe to call in tests; call Run to actually launch the GUI.
 func New(cfg *config.Config, st *store.Store) *App {
-	return &App{cfg: cfg, store: st}
+	return &App{cfg: cfg, store: st, rpc: rpc.NewManager()}
 }
 
 // Run creates the Fyne application + main window and blocks until the window is
@@ -41,6 +46,9 @@ func (a *App) Run() {
 	a.window.SetContent(a.buildRoot())
 	a.window.Resize(fyne.NewSize(1024, 720))
 	a.window.CenterOnScreen()
+	// Ensure the live connection (and its head-watching goroutine) is torn down
+	// when the window closes.
+	defer a.rpc.Disconnect()
 	a.window.ShowAndRun()
 }
 
@@ -53,10 +61,13 @@ func (a *App) buildRoot() fyne.CanvasObject {
 		container.NewTabItem("Assets", a.placeholder("Assets", "Balances for the selected wallet.")),
 		container.NewTabItem("Send", a.placeholder("Send", "Prepare a basic ETH or ERC-20 transfer.")),
 		container.NewTabItem("History", a.placeholder("History", "Transactions Callisto has prepared.")),
-		container.NewTabItem("Settings", a.placeholder("Settings", "Configure RPC endpoints.")),
+		container.NewTabItem("Settings", newSettingsPane(a).build()),
 	)
 	tabs.SetTabLocation(container.TabLocationLeading)
-	return container.NewBorder(nil, a.statusBar(), nil, nil, tabs)
+
+	a.statusBarBox = container.NewHBox()
+	a.refreshStatusBar()
+	return container.NewBorder(nil, a.statusBarBox, nil, nil, tabs)
 }
 
 // placeholder is a temporary pane body used until a phase provides the real one.
@@ -67,19 +78,28 @@ func (a *App) placeholder(title, subtitle string) fyne.CanvasObject {
 	return container.NewVBox(head, body)
 }
 
-// statusBar summarizes connection/wallet state at the bottom of the window.
-func (a *App) statusBar() fyne.CanvasObject {
-	endpoint := "no RPC configured"
-	if e, ok := a.cfg.ActiveEndpointConfig(); ok {
-		endpoint = "RPC: " + e.Name
+// refreshStatusBar rebuilds the bottom status bar to reflect live connection and
+// wallet-selection state. Safe to call from the UI thread at any time; callers on
+// a background goroutine must wrap it in fyne.Do.
+func (a *App) refreshStatusBar() {
+	if a.statusBarBox == nil {
+		return
+	}
+	endpoint := "no RPC connected"
+	if conn, ok := a.rpc.Active(); ok {
+		net := conn.ChainInfo.Name
+		endpoint = "● " + conn.Endpoint.Name + " · " + net
+	} else if e, ok := a.cfg.ActiveEndpointConfig(); ok {
+		endpoint = "○ " + e.Name + " (not connected)"
 	}
 	wallet := "no wallet selected"
 	if w, ok := a.cfg.WalletByID(a.cfg.ActiveWallet); ok && w.Label != "" {
 		wallet = "Wallet: " + w.Label
 	}
-	return container.NewHBox(
+	a.statusBarBox.Objects = []fyne.CanvasObject{
 		widget.NewLabel(endpoint),
 		widget.NewSeparator(),
 		widget.NewLabel(wallet),
-	)
+	}
+	a.statusBarBox.Refresh()
 }

@@ -9,7 +9,15 @@ changes; `v1.0.0` marks the first stable, documented release.
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-07-18
+
+First tagged milestone: a runnable Fyne desktop app that connects to a
+user-configured Ethereum node, manages hot wallets (seed-derived, in-memory
+keys), and shows live balances — the foundation for the v1 transaction flows.
+
 ### Added
+- Color-coded connection status dot (green connected / amber selected-but-offline
+  / gray none) and locked/unlocked wallet state in the status bar.
 - `internal/assets`: account asset detection and display. Native currency first,
   then curated + user-added ERC-20 tokens; metadata (name/symbol/decimals) read
   on-chain with a bytes32 fallback for legacy tokens; per-token failures are
@@ -64,6 +72,9 @@ changes; `v1.0.0` marks the first stable, documented release.
 - Release/versioning workflow docs (`docs/RELEASING.md`) and this changelog.
 
 ### Notes
-- HD derivation will be implemented directly on `decred/dcrd/dcrec/secp256k1`
+- HD derivation is implemented directly on `decred/dcrd/dcrec/secp256k1`
   (already vendored by go-ethereum) rather than pulling in `btcutil`, which drags
   a personal-fork transitive dependency into a signing wallet.
+
+[Unreleased]: https://codeberg.org/pasiphae/callisto/compare/v0.1.0...HEAD
+[0.1.0]: https://codeberg.org/pasiphae/callisto/releases/tag/v0.1.0

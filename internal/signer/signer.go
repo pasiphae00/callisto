@@ -41,3 +41,17 @@ type Signer interface {
 type Lockable interface {
 	Lock()
 }
+
+// SafeHashSigner is implemented by signers that can produce an owner signature
+// over a Safe transaction hash (safeTxHash), used to collect signatures on a Safe
+// multisig proposal. It is an optional capability (type-asserted, like Lockable),
+// so signer kinds that cannot do it — e.g. the Lattice stub — simply don't
+// implement it.
+//
+// The returned signature is 65 bytes (r||s||v) in the format the Safe contract's
+// checkSignatures expects. v may be 27/28 when the signer signs the safeTxHash
+// digest directly (hot wallets), or 31/32 when it signs via the eth_sign /
+// personal-message route (hardware wallets); the Safe contract validates both.
+type SafeHashSigner interface {
+	SignSafeTxHash(ctx context.Context, safeTxHash common.Hash) ([]byte, error)
+}

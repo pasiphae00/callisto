@@ -9,6 +9,13 @@ changes; `v1.0.0` marks the first stable, documented release.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-18
+
+Completes the v1 basic-transaction feature set: end-to-end ETH/ERC-20 sends
+(build → gas → review → sign → broadcast → track → history) and hardware-wallet
+signing, plus a standard README. Safe multisig and the Claude-assisted
+complex-transaction pipeline remain future work.
+
 ### Added
 - Hardware wallet signing (`internal/signer/hardware`): Ledger and Trezor via
   go-ethereum's `accounts/usbwallet`, behind the common `Signer` interface — keys
@@ -103,5 +110,6 @@ keys), and shows live balances — the foundation for the v1 transaction flows.
   (already vendored by go-ethereum) rather than pulling in `btcutil`, which drags
   a personal-fork transitive dependency into a signing wallet.
 
-[Unreleased]: https://codeberg.org/pasiphae/callisto/compare/v0.1.0...HEAD
+[Unreleased]: https://codeberg.org/pasiphae/callisto/compare/v0.2.0...HEAD
+[0.2.0]: https://codeberg.org/pasiphae/callisto/compare/v0.1.0...v0.2.0
 [0.1.0]: https://codeberg.org/pasiphae/callisto/releases/tag/v0.1.0

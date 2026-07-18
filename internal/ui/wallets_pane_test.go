@@ -167,6 +167,50 @@ func TestKeystoreWipedOnLastReference(t *testing.T) {
 	}
 }
 
+// TestWalletRowDoubleTapFiresHandler verifies the row reports double-taps.
+func TestWalletRowDoubleTapFiresHandler(t *testing.T) {
+	test.NewApp()
+	r := newWalletRow()
+	fired := false
+	r.onDoubleTap = func() { fired = true }
+	test.DoubleTap(r)
+	if !fired {
+		t.Error("DoubleTapped should invoke onDoubleTap")
+	}
+}
+
+// TestActivateWalletSetsActive verifies double-click activation makes a wallet the
+// active one and persists it.
+func TestActivateWalletSetsActive(t *testing.T) {
+	test.NewApp()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+
+	cfg := &config.Config{}
+	_ = cfg.UpsertWallet(wallet.Descriptor{ID: "w1", Address: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8", Kind: wallet.KindHot})
+	_ = cfg.UpsertWallet(wallet.Descriptor{ID: "w2", Address: "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC", Kind: wallet.KindHot})
+	p := newWalletsPane(New(cfg, nil))
+	_ = p.build()
+
+	if cfg.ActiveWallet != "" {
+		t.Fatalf("no wallet should be active initially, got %q", cfg.ActiveWallet)
+	}
+	p.activateWallet(1)
+	if cfg.ActiveWallet != "w2" {
+		t.Errorf("active wallet = %q, want w2", cfg.ActiveWallet)
+	}
+	// Persisted to disk.
+	if reloaded, err := config.Load(); err != nil {
+		t.Fatalf("reload: %v", err)
+	} else if reloaded.ActiveWallet != "w2" {
+		t.Errorf("persisted active wallet = %q, want w2", reloaded.ActiveWallet)
+	}
+	// Out-of-range indexes are ignored (no panic).
+	p.activateWallet(-1)
+	p.activateWallet(99)
+}
+
 // TestLastKeystoreReference checks the pre-removal predicate used to warn the user.
 func TestLastKeystoreReference(t *testing.T) {
 	cfg := &config.Config{}

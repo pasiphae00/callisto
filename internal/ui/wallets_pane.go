@@ -51,26 +51,75 @@ func newWalletsPane(a *App) *walletsPane {
 	return &walletsPane{app: a, selected: -1}
 }
 
+// walletRow is a wallets-list row that adds double-tap handling on top of the
+// dot + label visual. It implements fyne.DoubleTappable but deliberately not
+// Tappable, so single taps still bubble to the enclosing List for selection while
+// double taps activate the wallet.
+type walletRow struct {
+	widget.BaseWidget
+	dot         *canvas.Text
+	label       *widget.Label
+	onDoubleTap func()
+}
+
+func newWalletRow() *walletRow {
+	r := &walletRow{
+		dot:   canvas.NewText("●", statusGray),
+		label: monoLabel("template"),
+	}
+	r.ExtendBaseWidget(r)
+	return r
+}
+
+func (r *walletRow) CreateRenderer() fyne.WidgetRenderer {
+	return widget.NewSimpleRenderer(container.NewHBox(r.dot, r.label))
+}
+
+// DoubleTapped activates the wallet this row represents.
+func (r *walletRow) DoubleTapped(*fyne.PointEvent) {
+	if r.onDoubleTap != nil {
+		r.onDoubleTap()
+	}
+}
+
+// activateWallet makes the wallet at index id the active one and persists it.
+func (p *walletsPane) activateWallet(id widget.ListItemID) {
+	if id < 0 || id >= len(p.app.cfg.Wallets) {
+		return
+	}
+	w := p.app.cfg.Wallets[id]
+	if p.app.cfg.ActiveWallet == w.ID {
+		return // already active
+	}
+	p.app.cfg.ActiveWallet = w.ID
+	if err := p.app.cfg.Save(); err != nil {
+		dialog.ShowError(err, p.app.window)
+		return
+	}
+	p.selected = id
+	p.list.Select(id)
+	p.refresh()
+}
+
 func (p *walletsPane) build() fyne.CanvasObject {
 	p.list = widget.NewList(
 		func() int { return len(p.app.cfg.Wallets) },
 		func() fyne.CanvasObject {
-			dot := canvas.NewText("●", statusGray)
-			return container.NewHBox(dot, monoLabel("template"))
+			return newWalletRow()
 		},
 		func(i widget.ListItemID, o fyne.CanvasObject) {
 			w := p.app.cfg.Wallets[i]
-			row := o.(*fyne.Container)
-			dot := row.Objects[0].(*canvas.Text)
-			label := row.Objects[1].(*widget.Label)
+			row := o.(*walletRow)
 
 			if p.app.cfg.ActiveWallet == w.ID {
-				dot.Color = statusGreen
+				row.dot.Color = statusGreen
 			} else {
-				dot.Color = statusGray
+				row.dot.Color = statusGray
 			}
-			dot.Refresh()
-			label.SetText(p.rowLabel(w))
+			row.dot.Refresh()
+			row.label.SetText(p.rowLabel(w))
+			// Double-clicking a row makes that wallet the active one.
+			row.onDoubleTap = func() { p.activateWallet(i) }
 		},
 	)
 	p.list.OnSelected = func(id widget.ListItemID) { p.selected = id; p.updateButtons() }
@@ -83,7 +132,7 @@ func (p *walletsPane) build() fyne.CanvasObject {
 	p.removeBtn = widget.NewButton("Remove", p.removeSelected)
 
 	header := widget.NewLabelWithStyle("Wallets", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
-	help := widget.NewLabel("Add a wallet from a seed phrase (held in memory only while unlocked, wiped on lock/exit) or a hardware device (keys never leave the device). Nothing secret is written to disk.")
+	help := widget.NewLabel("Add a hot wallet (its seed is encrypted with your passphrase and stored locally; decrypted in memory only while unlocked, wiped on lock/exit) or a hardware device (keys never leave the device). Double-click a wallet to make it active.")
 	help.Wrapping = fyne.TextWrapWord
 	buttons := container.NewHBox(addBtn, addHwBtn, p.unlockBtn, p.lockBtn, p.removeBtn)
 

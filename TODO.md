@@ -200,6 +200,24 @@
 
 ## major
 
+### gnosis Safe multisig — ✅ shipped in v0.4.0
+- Dedicated Safe tab: import by address (owners/threshold/nonce/version read
+  on-chain), client-side owner labels, Safe balances.
+- Propose ETH/ERC-20 transfers and owner/threshold admin actions (add / remove /
+  replace owner, change threshold); canonical `safeTxHash` from the contract's
+  `getTransactionHash`, cross-checked against a local EIP-712 computation.
+- Local signature collection by switching unlocked owners (no Safe service): hot
+  wallets sign the hash directly (v 27/28); Ledger + Trezor sign via eth_sign
+  (v 31/32) — Trezor `EthereumSignMessage` wired into the usbwallet fork. New
+  `signer.SafeHashSigner` optional capability.
+- Execute once threshold met (packs sigs → `execTransaction` as a normal EIP-1559
+  tx from the executing owner → tracked to inclusion → history). Same-nonce
+  rejection cancels a proposal.
+- ⚠️ **Hardware owner signing not yet verified live** — hot-wallet flow is fully
+  unit-tested; Ledger/Trezor eth_sign paths need a real testnet-Safe run before
+  they're considered proven (same "verify live before release" treatment as the
+  v0.3.2 Trezor fix).
+
 ### claude-assisted advanced transaction preparation
 - can be used for both EOA and Safe wallets
 - if a Safe wallet is connected, "multi-step" transactions are also enabled

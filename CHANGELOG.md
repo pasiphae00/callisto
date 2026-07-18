@@ -9,7 +9,29 @@ changes; `v1.0.0` marks the first stable, documented release.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-07-18
+
 ### Added
+- **Gnosis Safe multisig support.** A dedicated **Safe** tab: import an existing
+  Safe by address (owners, threshold, nonce, and version are read on-chain),
+  label owners locally, and see the Safe's ETH/ERC-20 balances.
+  - *Propose* an ETH or ERC-20 transfer from the Safe, or an owner/threshold
+    administrative change — add, remove, or replace an owner, or change the
+    threshold — each built as a Safe transaction whose canonical `safeTxHash`
+    comes from the Safe contract's own `getTransactionHash` (cross-checked against
+    a local EIP-712 computation).
+  - *Collect signatures* locally by switching owners: unlock an owner in the
+    Wallets tab, click **Sign**, and repeat until the threshold is met. Hot
+    wallets sign the hash directly; **Ledger and Trezor** owners sign via the
+    device's personal-message (eth_sign) route. No external Safe service is used —
+    proposals and signatures are stored locally.
+  - *Execute* once the threshold is met: the collected signatures are packed and
+    `execTransaction` is broadcast as a normal EIP-1559 transaction from the
+    executing owner, then tracked to inclusion and recorded in history.
+  - *Reject* a proposal by creating a same-nonce rejection that, once executed,
+    consumes the nonce and cancels the original.
+- Trezor personal-message signing (`EthereumSignMessage`) in the usbwallet fork,
+  enabling Trezor owners to sign Safe transactions.
 - Licensed under GPL-3.0-or-later (`LICENSE`). The forked
   `internal/signer/hardware/usbwallet` files remain attributed to go-ethereum
   under LGPL-3.0-or-later, which permits relicensing under GPL-3.0.
@@ -227,7 +249,8 @@ keys), and shows live balances — the foundation for the v1 transaction flows.
   (already vendored by go-ethereum) rather than pulling in `btcutil`, which drags
   a personal-fork transitive dependency into a signing wallet.
 
-[Unreleased]: https://codeberg.org/pasiphae/callisto/compare/v0.3.2...HEAD
+[Unreleased]: https://codeberg.org/pasiphae/callisto/compare/v0.4.0...HEAD
+[0.4.0]: https://codeberg.org/pasiphae/callisto/compare/v0.3.2...v0.4.0
 [0.3.2]: https://codeberg.org/pasiphae/callisto/compare/v0.3.1...v0.3.2
 [0.3.1]: https://codeberg.org/pasiphae/callisto/compare/v0.3.0...v0.3.1
 [0.3.0]: https://codeberg.org/pasiphae/callisto/compare/v0.2.0...v0.3.0

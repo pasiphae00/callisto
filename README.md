@@ -23,9 +23,10 @@ machine, talks to an Ethereum node you choose, and keeps signing keys under your
 control — hot-wallet key material lives in memory only while unlocked and is
 wiped on lock, and hardware-wallet keys never leave the device.
 
-> **Status: pre-1.0 (`v0.3.2`).** The foundation and basic transaction flows are
-> in place and usable. Safe multisig and the Claude-assisted complex-transaction
-> pipeline are planned — see [Roadmap](#roadmap).
+> **Status: pre-1.0 (`v0.4.0`).** The foundation, basic transaction flows, and
+> Gnosis Safe multisig (including owner/threshold administration) are in place and
+> usable. The Claude-assisted complex-transaction pipeline is planned — see
+> [Roadmap](#roadmap).
 
 ## Features
 
@@ -55,6 +56,12 @@ wiped on lock, and hardware-wallet keys never leave the device.
   signing.
 - **Broadcast & track.** Submit the signed transaction, get the hash and an
   explorer link, and watch for inclusion (status, block, timestamp).
+- **Safe multisig.** Import an existing [Safe](https://safe.global) by address and
+  work with it from a dedicated tab: propose ETH/ERC-20 transfers or owner and
+  threshold changes, collect owner signatures locally by switching unlocked
+  wallets (hot, Ledger, or Trezor) until the threshold is met, then execute —
+  or reject a proposal with a same-nonce cancellation. No external Safe service;
+  everything is on-chain plus a local record.
 - **History.** A local record of every transaction Callisto prepared, with status
   and explorer links, kept in an embedded SQLite database.
 
@@ -153,6 +160,7 @@ without touching transaction preparation, review, or broadcast.
 | `internal/signer`, `.../hot`, `.../hardware` | Signing interface; hot (seed) and Ledger/Trezor signers |
 | `internal/assets` | ETH + ERC-20 detection, metadata, unit conversion |
 | `internal/tx` | Build, gas estimation, assembly, broadcast, inclusion |
+| `internal/safe` | Safe multisig: reads, safeTxHash, exec/admin encoding, proposals |
 | `internal/history` | Transaction lifecycle records |
 | `internal/config`, `internal/store` | JSON settings; SQLite store |
 
@@ -164,8 +172,6 @@ the branch/version/release workflow in [`docs/RELEASING.md`](docs/RELEASING.md).
 
 Implemented above; still to come (designed for, not yet built):
 
-- **Safe multisignature** accounts: propose → collect signatures → execute /
-  reject, plus owner/threshold management.
 - **Claude-assisted complex transactions**: natural-language requests
   ("deposit 10 ETH to Aave v3") resolved to reviewed calldata, with a growing
   on-chain contract address book, and multi-step flows via the DeFiSaver SDK.
@@ -185,15 +191,9 @@ Implemented above; still to come (designed for, not yet built):
   in-file) — see that package's doc comment for why.
 
 ## License
-
-[GPL-3.0-or-later](LICENSE). `internal/signer/hardware/usbwallet` is a fork of
-LGPL-3.0-or-later code from go-ethereum (see [Credits](#credits)); LGPL-3.0
-permits relicensing under GPL-3.0, so it's covered by the same license as the
-rest of the project.
-
 ```
 Callisto
-Copyright (C) 2026 pasiphae
+Copyright (©)2026 pasiphae
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by

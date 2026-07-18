@@ -9,6 +9,40 @@ changes; `v1.0.0` marks the first stable, documented release.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-18
+
+Completes the v1 basic-transaction feature set: end-to-end ETH/ERC-20 sends
+(build → gas → review → sign → broadcast → track → history) and hardware-wallet
+signing, plus a standard README. Safe multisig and the Claude-assisted
+complex-transaction pipeline remain future work.
+
+### Added
+- Hardware wallet signing (`internal/signer/hardware`): Ledger and Trezor via
+  go-ethereum's `accounts/usbwallet`, behind the common `Signer` interface — keys
+  never leave the device. Add and unlock hardware wallets from the Wallets pane
+  (unlock reconnects the device and verifies it reproduces the stored address).
+  GridPlus Lattice is stubbed (`ErrLatticeUnsupported`) pending a Go SDK. Device
+  flows require physical hardware; the device-independent logic is unit-tested.
+- Gas estimation + pre-sign review: EIP-1559 fee estimation (`internal/tx`
+  `EstimateFees`/`Prepare`) — estimated gas with headroom, node-suggested tip,
+  and a `2*baseFee + tip` max fee — assembled into a dynamic-fee transaction. The
+  Send flow now shows a full review (decoded transfer, nonce, per-gas fees, and
+  max total fee) before signing. Verified against live Sepolia fee data.
+- Sign / broadcast / inclusion tracking: the review's "Sign & send" signs with the
+  unlocked wallet (only when it matches the sender), broadcasts, surfaces the hash
+  with an explorer link, then tracks inclusion (status/block/timestamp) in the
+  background.
+- `internal/history` + History pane: transactions are recorded through their
+  lifecycle (prepared → submitted → included/failed) in the SQLite store and
+  listed with status and an explorer link.
+- `internal/tx`: chain/gas-agnostic transaction-build core. `BuildNativeSend`
+  and `BuildERC20Send` produce a `Send` (recipient/asset/amount + the concrete
+  to/value/calldata); ERC-20 calldata encoding is verified byte-for-byte.
+  `NativeSendAll` computes the max native amount after reserving the fee.
+- Send pane: pick an asset, enter an ENS-or-address recipient and amount (with
+  Max), and prepare a transfer. Validates against balance and shows a summary.
+  Gas estimation, review, and signing follow in later phases.
+
 ## [0.1.0] - 2026-07-18
 
 First tagged milestone: a runnable Fyne desktop app that connects to a
@@ -76,5 +110,6 @@ keys), and shows live balances — the foundation for the v1 transaction flows.
   (already vendored by go-ethereum) rather than pulling in `btcutil`, which drags
   a personal-fork transitive dependency into a signing wallet.
 
-[Unreleased]: https://codeberg.org/pasiphae/callisto/compare/v0.1.0...HEAD
+[Unreleased]: https://codeberg.org/pasiphae/callisto/compare/v0.2.0...HEAD
+[0.2.0]: https://codeberg.org/pasiphae/callisto/compare/v0.1.0...v0.2.0
 [0.1.0]: https://codeberg.org/pasiphae/callisto/releases/tag/v0.1.0

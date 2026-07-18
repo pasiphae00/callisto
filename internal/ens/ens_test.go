@@ -58,8 +58,8 @@ func (m *mockRPC) CallContract(ctx context.Context, msg ethereum.CallMsg, block 
 	return m.handler(*msg.To, sel, node)
 }
 
-func (m *mockRPC) ChainID(context.Context) (*big.Int, error)      { return big.NewInt(1), nil }
-func (m *mockRPC) BlockNumber(context.Context) (uint64, error)    { return 0, nil }
+func (m *mockRPC) ChainID(context.Context) (*big.Int, error)   { return big.NewInt(1), nil }
+func (m *mockRPC) BlockNumber(context.Context) (uint64, error) { return 0, nil }
 func (m *mockRPC) HeaderByNumber(context.Context, *big.Int) (*types.Header, error) {
 	return nil, nil
 }

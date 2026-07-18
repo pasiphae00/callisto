@@ -2,7 +2,50 @@
 
 ## bugs
 
-- ~~trezor not connected. when plugged in and unlocked, callisto seems not to detect it~~
+- trezor eth transfer: "Sign: transaction type not supported" (real end-to-end
+  send; device signed fine, then errored)
+  - ✅ **Diagnosed + fixed with native EIP-1559 signing (code-complete, awaiting
+    live re-verify).** Callisto builds EIP-1559 dynamic-fee txs, but go-ethereum's
+    vendored Trezor protobuf only has the legacy `EthereumSignTx` message: the
+    driver signed the tx as legacy on-device, then couldn't apply that signature
+    back to the dynamic-fee tx (`EIP155Signer` rejects non-legacy types →
+    `ErrTxTypeNotSupported`), exactly after the on-device confirmation.
+  - Fix (`internal/signer/hardware/usbwallet/trezor.go`): `SignTx` routes
+    dynamic-fee txs to a new `trezorSignEIP1559`, which sends the
+    `EthereumSignTxEIP1559` message (wire type **452**, from trezor-firmware's
+    `messages.proto`). Since the vendored trezor package has no Go type for it,
+    the message is hand-encoded with `protowire` (`encodeEthereumSignTxEIP1559`;
+    field numbers/types from `messages-ethereum.proto`, verified field-by-field
+    in `trezor_eip1559_test.go`), and the returned signature (y-parity v
+    normalized to 0/1) is applied with the dynamic-fee signer. This matches how
+    Frame and Trezor Suite sign — full 1559, no legacy downgrade. Genuine legacy
+    txs still use the original path.
+  - ⏳ **Please retest**: send a small amount of ETH from the Trezor on a funded
+    account and confirm it broadcasts + confirms (the device should now display
+    it as an EIP-1559 tx with max fee / priority fee, not a legacy gas price).
+
+## researched / planned
+
+### drop the Trezor Suite/Bridge dependency (use direct libusb, like Frame)
+- Frame (github.com/floating/frame, `main/signers/trezor`) talks to Trezor with
+  **no** Trezor Suite/Bridge running. Confirmed from its source: it uses
+  `@trezor/connect` configured with `transports: ['NodeUsbTransport']` — i.e.
+  **direct USB via libusb** (the `usb` npm package), not HID and not the local
+  HTTP bridge.
+- This is *the* reason our own direct-USB attempt failed and we fell back to the
+  bridge: go-ethereum's `usbwallet` uses **HID** (hidapi), and the Trezor Safe's
+  wallet-protocol USB interface is a vendor/WebUSB interface that **hidapi cannot
+  claim** — but **libusb can**. (Same reason go-ethereum's own blocked fix,
+  PR #32752, is switching from `karalabe/hid` to `karalabe/usb`.)
+- Plan: add a **libusb-based transport** in Go (e.g. `github.com/google/gousb`
+  or `karalabe/usb`) that claims the Trezor vendor interface directly and speaks
+  the wire protocol over bulk transfers — reusing the existing `trezorTransport`
+  abstraction and protobuf logic; only the transport differs. This would make
+  the bridge optional (nice UX: no background app) and likely resolve the
+  repeated-reconnect instability seen with the bridge.
+- Cost: a new native/CGo dependency (libusb) + USB endpoint discovery + bulk
+  transfer framing + per-OS testing. Meaningful effort; the bridge path works
+  today, so this is an enhancement, not a blocker.
   - ✅ **Resolved and verified live** against a real Trezor Safe 5 (multiple
     successful runs: standard-wallet address derivation, 3-account listing,
     passphrase/hidden-wallet flow, on-device passphrase entry).

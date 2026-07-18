@@ -177,6 +177,24 @@ func (c *Config) RemoveEndpoint(name string) bool {
 	return false
 }
 
+// SetAutoConnect makes the named endpoint the sole auto-connect default
+// (clearing the flag on all others). Pass "" to clear the default entirely.
+func (c *Config) SetAutoConnect(name string) {
+	for i := range c.Endpoints {
+		c.Endpoints[i].AutoConnect = c.Endpoints[i].Name == name && name != ""
+	}
+}
+
+// AutoConnectEndpoint returns the endpoint marked for startup auto-connect.
+func (c *Config) AutoConnectEndpoint() (rpc.Endpoint, bool) {
+	for _, e := range c.Endpoints {
+		if e.AutoConnect {
+			return e, true
+		}
+	}
+	return rpc.Endpoint{}, false
+}
+
 // WalletByID returns the wallet descriptor with the given ID, or false.
 func (c *Config) WalletByID(id string) (wallet.Descriptor, bool) {
 	for _, w := range c.Wallets {

@@ -8,10 +8,12 @@
 package ui
 
 import (
+	"context"
 	"fmt"
 	"image/color"
 	"net/url"
 	"sync"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
@@ -71,6 +73,22 @@ func (a *App) openURL(raw string) {
 	}
 }
 
+// autoConnectOnStart connects the endpoint marked as the startup default, if any,
+// and updates the status bar. Failures are silent (the user can connect manually).
+func (a *App) autoConnectOnStart() {
+	e, ok := a.cfg.AutoConnectEndpoint()
+	if !ok {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	if _, err := a.rpc.Connect(ctx, e); err != nil {
+		return
+	}
+	a.cfg.ActiveEndpoint = e.Name
+	fyne.Do(a.refreshStatusBar)
+}
+
 // currentResolver returns an ENS resolver bound to the active connection, or nil
 // if no RPC is connected. Widgets call this each time they need to resolve so
 // they always use the current endpoint.
@@ -128,6 +146,9 @@ func (a *App) Run() {
 	a.window.SetContent(a.buildRoot())
 	a.window.Resize(fyne.NewSize(1024, 720))
 	a.window.CenterOnScreen()
+	// Auto-connect the default endpoint (if any) once the event loop is running.
+	go a.autoConnectOnStart()
+
 	// Ensure the live connection (and its head-watching goroutine) is torn down,
 	// and any unlocked signer's key material is wiped, when the window closes.
 	defer a.rpc.Disconnect()

@@ -82,7 +82,7 @@ func (p *walletsPane) rowLabel(w wallet.Descriptor) string {
 	}
 	active := ""
 	if p.app.cfg.ActiveWallet == w.ID {
-		active = "  ●"
+		active = "  🟢 active"
 	}
 	return fmt.Sprintf("%s  %s — %s  [%s]%s", icon, name, short, w.Kind, active)
 }

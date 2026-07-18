@@ -44,6 +44,9 @@ func (p *settingsPane) build() fyne.CanvasObject {
 		func(i widget.ListItemID, o fyne.CanvasObject) {
 			e := p.app.cfg.Endpoints[i]
 			label := e.Name + "  —  " + e.URL
+			if e.AutoConnect {
+				label += "   ⭐ default"
+			}
 			if p.app.cfg.ActiveEndpoint == e.Name {
 				label = "● " + label
 			}
@@ -104,10 +107,12 @@ func (p *settingsPane) showAddDialog() {
 	nameEntry.SetPlaceHolder("e.g. Sepolia (Infura)")
 	urlEntry := widget.NewEntry()
 	urlEntry.SetPlaceHolder("https://… or wss://…")
+	defaultCheck := widget.NewCheck("Auto-connect on startup (default endpoint)", nil)
 
 	items := []*widget.FormItem{
 		widget.NewFormItem("Name", nameEntry),
 		widget.NewFormItem("URL", urlEntry),
+		widget.NewFormItem("", defaultCheck),
 	}
 	d := dialog.NewForm("Add RPC endpoint", "Add", "Cancel", items, func(ok bool) {
 		if !ok {
@@ -118,13 +123,17 @@ func (p *settingsPane) showAddDialog() {
 			dialog.ShowError(err, p.app.window)
 			return
 		}
+		if defaultCheck.Checked {
+			// Exclusive default: this endpoint auto-connects, others don't.
+			p.app.cfg.SetAutoConnect(e.Name)
+		}
 		if err := p.app.cfg.Save(); err != nil {
 			dialog.ShowError(err, p.app.window)
 			return
 		}
 		p.list.Refresh()
 	}, p.app.window)
-	d.Resize(fyne.NewSize(480, 200))
+	d.Resize(fyne.NewSize(480, 240))
 	d.Show()
 }
 

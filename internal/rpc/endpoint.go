@@ -29,6 +29,9 @@ type Endpoint struct {
 	Name    string `json:"name"`
 	URL     string `json:"url"`
 	ChainID uint64 `json:"chain_id,omitempty"`
+	// AutoConnect marks this endpoint to be connected automatically at startup.
+	// At most one endpoint is the auto-connect default (see Config.SetAutoConnect).
+	AutoConnect bool `json:"auto_connect,omitempty"`
 }
 
 // SchemeOf reports whether a URL is an HTTP(S) or WS(S) endpoint, validating that

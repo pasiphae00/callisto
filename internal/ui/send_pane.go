@@ -117,7 +117,7 @@ func (p *sendPane) reload() {
 			p.items = got
 			opts := make([]string, len(got))
 			for i, a := range got {
-				opts[i] = fmt.Sprintf("%s (%s)", a.Symbol, a.HumanBalance())
+				opts[i] = fmt.Sprintf("%s (%s)", a.Symbol, assets.FormatDisplay(a.Balance, a.Decimals, assets.DisplayDecimals))
 			}
 			p.assetSelect.Options = opts
 			p.assetSelect.Refresh()

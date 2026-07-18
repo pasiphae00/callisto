@@ -111,6 +111,49 @@ func ParseUnits(human string, decimals uint8) (*big.Int, error) {
 	return value, nil
 }
 
+// DisplayDecimals is the maximum number of fractional digits shown for token
+// amounts in the UI. Exact values (for signing) always use FormatUnits/ParseUnits.
+const DisplayDecimals = 5
+
+// DustFraction is the default threshold below which a token balance is treated as
+// dust and hidden from the overview: 0.00005 of the token.
+const DustFraction = "0.00005"
+
+// FormatDisplay renders amount with at most maxDecimals fractional digits
+// (truncated, not rounded — never overstates a balance), trimming trailing
+// zeros. Use for display only.
+func FormatDisplay(amount *big.Int, decimals, maxDecimals uint8) string {
+	full := FormatUnits(amount, decimals)
+	dot := strings.IndexByte(full, '.')
+	if dot < 0 {
+		return full
+	}
+	frac := full[dot+1:]
+	if uint8(len(frac)) <= maxDecimals {
+		return full
+	}
+	frac = strings.TrimRight(frac[:maxDecimals], "0")
+	if frac == "" {
+		return full[:dot]
+	}
+	return full[:dot+1] + frac
+}
+
+// IsDust reports whether a balance is zero or below the dust threshold
+// (DustFraction of one token). For tokens with fewer than 5 decimals the
+// fractional threshold isn't representable, so only a zero balance counts as dust.
+func IsDust(amount *big.Int, decimals uint8) bool {
+	if amount == nil || amount.Sign() <= 0 {
+		return true
+	}
+	if decimals < 5 {
+		return false // only exact zero is dust for low-decimal tokens
+	}
+	// threshold = 0.00005 * 10^decimals = 5 * 10^(decimals-5)
+	threshold := new(big.Int).Mul(big.NewInt(5), new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(decimals)-5), nil))
+	return amount.Cmp(threshold) < 0
+}
+
 // isDigits reports whether s is empty or all ASCII digits.
 func isDigits(s string) bool {
 	for i := 0; i < len(s); i++ {

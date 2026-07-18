@@ -54,15 +54,27 @@ var ErrTrezorPassphraseNeeded = errors.New("trezor: passphrase needed")
 // is in browser mode.
 var errTrezorReplyInvalidHeader = errors.New("trezor: invalid reply header")
 
+// trezorTransport abstracts how trezorDriver exchanges raw wire messages with a
+// device: either chunked USB HID reports (usbTrezorTransport, upstream's
+// original mechanism) or Trezor Bridge's HTTP API (bridgeTrezorTransport,
+// Callisto-local addition — see hub.go's doc comment and trezor_bridge.go).
+// Given a message type and marshaled protobuf payload, it returns the raw
+// response's message type and payload.
+type trezorTransport interface {
+	exchange(msgType uint16, data []byte) (replyType uint16, reply []byte, err error)
+}
+
 // trezorDriver implements the communication with a Trezor hardware wallet.
 type trezorDriver struct {
-	device         io.ReadWriter // USB device connection to communicate through
-	version        [3]uint32     // Current version of the Trezor firmware
-	label          string        // Current textual label of the Trezor device
-	pinwait        bool          // Flags whether the device is waiting for PIN entry
-	passphrasewait bool          // Flags whether the device is waiting for passphrase entry
-	failure        error         // Any failure that would make the device unusable
-	log            log.Logger    // Contextual logger to tag the trezor with its id
+	transport      trezorTransport // Wire transport to the device (USB or Bridge)
+	version        [3]uint32       // Current version of the Trezor firmware
+	label          string          // Current textual label of the Trezor device
+	pinwait        bool            // Flags whether the device is waiting for PIN entry
+	passphrasewait bool            // Flags whether the device is waiting for passphrase entry
+	initialized    bool            // Callisto-local: whether Initialize+ClearSession+Ping has run this Open
+	passphrase     string          // Last passphrase supplied via Open/OpenBridge; "" selects the standard (non-hidden) wallet
+	failure        error           // Any failure that would make the device unusable
+	log            log.Logger      // Contextual logger to tag the trezor with its id
 }
 
 // newTrezorDriver creates a new instance of a Trezor USB protocol driver.
@@ -78,7 +90,7 @@ func (w *trezorDriver) Status() (string, error) {
 	if w.failure != nil {
 		return fmt.Sprintf("Failed: %v", w.failure), w.failure
 	}
-	if w.device == nil {
+	if w.transport == nil {
 		return "Closed", w.failure
 	}
 	if w.pinwait {
@@ -99,10 +111,38 @@ func (w *trezorDriver) Status() (string, error) {
 //   - If needed the device will ask for passphrase which will require calling
 //     open again with the actual passphrase (3rd phase)
 func (w *trezorDriver) Open(device io.ReadWriter, passphrase string) error {
-	w.device, w.failure = device, nil
+	w.transport, w.failure = &usbTrezorTransport{device: device, log: w.log}, nil
+	w.passphrase = passphrase
+	return w.openProtocol(passphrase)
+}
 
-	// If phase 1 is requested, init the connection and wait for user callback
-	if passphrase == "" && !w.passphrasewait {
+// OpenBridge is like Open but for a device reached via Trezor Bridge instead of
+// direct USB access. Callisto-local addition; see trezor_bridge.go.
+func (w *trezorDriver) OpenBridge(transport trezorTransport, passphrase string) error {
+	w.transport, w.failure = transport, nil
+	w.passphrase = passphrase
+	return w.openProtocol(passphrase)
+}
+
+// openProtocol runs the Trezor Open handshake (Initialize/ClearSession/Ping/
+// PIN/passphrase) over whichever transport was just installed in w.transport.
+// Split out from Open/OpenBridge so both entry points share this
+// transport-agnostic logic.
+//
+// Callisto-local change from upstream: the original gate here was
+// `passphrase == "" && !w.passphrasewait`, matching upstream's multi-round-trip
+// calling convention (call with "" first to learn whether PIN/passphrase are
+// needed, then call again with the real value). Callisto always calls
+// Open/OpenBridge once with the final passphrase already known (from the "Add
+// hardware wallet" dialog), so that gate silently skipped Initialize —
+// and therefore ClearSession — whenever a non-empty passphrase was supplied on
+// a fresh driver, confirmed live: it caused a device with a cached unlock from
+// a *previous* Open (e.g. a prior attempt with a different passphrase) to
+// answer with the stale cached derivation instead of the one just requested.
+// Initialize/ClearSession/Ping now always run once per fresh Open, regardless
+// of whether a passphrase was supplied up front.
+func (w *trezorDriver) openProtocol(passphrase string) error {
+	if !w.initialized {
 		// If we're already waiting for a PIN entry, insta-return
 		if w.pinwait {
 			return ErrTrezorPINNeeded
@@ -114,6 +154,13 @@ func (w *trezorDriver) Open(device io.ReadWriter, passphrase string) error {
 		}
 		w.version = [3]uint32{features.GetMajorVersion(), features.GetMinorVersion(), features.GetPatchVersion()}
 		w.label = features.GetLabel()
+		w.initialized = true
+
+		// Drop any PIN/passphrase state cached from a previous Open on this
+		// physical device (see the doc comment above) so this Open starts clean.
+		if _, err := w.trezorExchange(&trezor.ClearSession{}, new(trezor.Success)); err != nil {
+			return err
+		}
 
 		// Do a manual ping, forcing the device to ask for its PIN and Passphrase
 		askPin := true
@@ -162,6 +209,7 @@ func (w *trezorDriver) Open(device io.ReadWriter, passphrase string) error {
 // the Trezor driver.
 func (w *trezorDriver) Close() error {
 	w.version, w.label, w.pinwait = [3]uint32{}, "", false
+	w.initialized, w.passphrasewait = false, false
 	return nil
 }
 
@@ -184,7 +232,7 @@ func (w *trezorDriver) Derive(path accounts.DerivationPath) (common.Address, err
 // SignTx implements usbwallet.driver, sending the transaction to the Trezor and
 // waiting for the user to confirm or deny the transaction.
 func (w *trezorDriver) SignTx(path accounts.DerivationPath, tx *types.Transaction, chainID *big.Int) (common.Address, *types.Transaction, error) {
-	if w.device == nil {
+	if w.transport == nil {
 		return common.Address{}, nil, accounts.ErrWalletClosed
 	}
 	return w.trezorSign(path, tx, chainID)
@@ -292,15 +340,113 @@ func (w *trezorDriver) trezorSign(derivationPath []uint32, tx *types.Transaction
 // trezorExchange performs a data exchange with the Trezor wallet, sending it a
 // message and retrieving the response. If multiple responses are possible, the
 // method will also return the index of the destination object used.
+//
+// The wire framing/transport (USB HID chunking vs. Trezor Bridge HTTP) is
+// delegated to w.transport; this method only marshals the request and
+// interprets the response, so it works unchanged for either. Split out from
+// upstream's original single USB-specific implementation — see hub.go's doc
+// comment.
 func (w *trezorDriver) trezorExchange(req proto.Message, results ...proto.Message) (int, error) {
-	// Construct the original message payload to chunk up
 	data, err := proto.Marshal(req)
 	if err != nil {
 		return 0, err
 	}
+	kind, reply, err := w.transport.exchange(trezor.Type(req), data)
+	if err != nil {
+		return 0, err
+	}
+	// Try to parse the reply into the requested reply message
+	if kind == uint16(trezor.MessageType_MessageType_Failure) {
+		// Trezor returned a failure, extract and return the message
+		failure := new(trezor.Failure)
+		if err := proto.Unmarshal(reply, failure); err != nil {
+			return 0, err
+		}
+		return 0, errors.New("trezor: " + failure.GetMessage())
+	}
+	if kind == uint16(trezor.MessageType_MessageType_ButtonRequest) {
+		// Trezor is waiting for user confirmation, ack and wait for the next message
+		return w.trezorExchange(&trezor.ButtonAck{}, results...)
+	}
+	// Callisto-local addition: some firmware (confirmed: Trezor Safe 5) doesn't
+	// surface PassphraseRequest during the initial Open handshake the way
+	// upstream's openProtocol expects — it defers the prompt to the first
+	// operation that actually needs a derived key (e.g. GetAddress, SignTx). If
+	// the caller wasn't deliberately checking for this reply (openProtocol's own
+	// Ping call does — see the results-matching loop below, which runs first for
+	// that case since PassphraseRequest is in its own results list), handle it
+	// transparently and retry.
+	//
+	// The device answers PassphraseAck with the ORIGINAL deferred operation's
+	// own reply (e.g. EthereumAddress, not a generic Success) — observed live,
+	// not assumed — so this dispatches against the original results, it does
+	// not resend req.
+	//
+	// PassphraseRequest.OnDevice (confirmed live) matters and must be respected:
+	// when true, the device's own passphrase-entry security feature is active —
+	// it deliberately ignores any host-supplied string and requires the user to
+	// type it on the device's own screen, specifically so a compromised host
+	// can never see it. Sending our own string anyway does not select a hidden
+	// wallet; the device still waits for on-device entry regardless, so callers
+	// must not assume the passphrase they supplied is what was actually used.
+	if kind == uint16(trezor.MessageType_MessageType_PassphraseRequest) {
+		if !expects(results, kind) {
+			preq := new(trezor.PassphraseRequest)
+			if err := proto.Unmarshal(reply, preq); err != nil {
+				return 0, err
+			}
+			ack := &trezor.PassphraseAck{}
+			if !preq.GetOnDevice() {
+				pass := w.passphrase
+				ack.Passphrase = &pass
+			}
+			// If OnDevice is true, Passphrase is left unset: the device prompts
+			// the user itself and we just wait (via the normal call timeout) for
+			// its reply to the original deferred operation.
+			return w.trezorExchange(ack, results...)
+		}
+	}
+	for i, res := range results {
+		if trezor.Type(res) == kind {
+			return i, proto.Unmarshal(reply, res)
+		}
+	}
+	expected := make([]string, len(results))
+	for i, res := range results {
+		expected[i] = trezor.Name(trezor.Type(res))
+	}
+	return 0, fmt.Errorf("trezor: expected reply types %s, got %s", expected, trezor.Name(kind))
+}
+
+// expects reports whether kind is one of the reply types the caller explicitly
+// listed in results. Callisto-local helper for trezorExchange's reactive
+// PassphraseRequest handling (see above): distinguishes a deliberate check
+// (e.g. openProtocol's Ping call, which lists PassphraseRequest as an expected
+// outcome) from an unexpected mid-operation prompt that should be auto-handled.
+func expects(results []proto.Message, kind uint16) bool {
+	for _, res := range results {
+		if trezor.Type(res) == kind {
+			return true
+		}
+	}
+	return false
+}
+
+// usbTrezorTransport implements trezorTransport over direct USB HID access,
+// chunking the wire message into 64-byte HID reports. This is upstream's
+// original (unmodified) transport logic, extracted verbatim from trezorExchange
+// into its own type so trezorExchange itself is transport-agnostic — see
+// hub.go's doc comment.
+type usbTrezorTransport struct {
+	device io.ReadWriter // USB device connection to communicate through
+	log    log.Logger
+}
+
+func (t *usbTrezorTransport) exchange(msgType uint16, data []byte) (uint16, []byte, error) {
+	// Construct the original message payload to chunk up
 	payload := make([]byte, 8+len(data))
 	copy(payload, []byte{0x23, 0x23})
-	binary.BigEndian.PutUint16(payload[2:], trezor.Type(req))
+	binary.BigEndian.PutUint16(payload[2:], msgType)
 	binary.BigEndian.PutUint32(payload[4:], uint32(len(data)))
 	copy(payload[8:], data)
 
@@ -319,9 +465,9 @@ func (w *trezorDriver) trezorExchange(req proto.Message, results ...proto.Messag
 			payload = nil
 		}
 		// Send over to the device
-		w.log.Trace("Data chunk sent to the Trezor", "chunk", hexutil.Bytes(chunk))
-		if _, err := w.device.Write(chunk); err != nil {
-			return 0, err
+		t.log.Trace("Data chunk sent to the Trezor", "chunk", hexutil.Bytes(chunk))
+		if _, err := t.device.Write(chunk); err != nil {
+			return 0, nil, err
 		}
 	}
 	// Stream the reply back from the wallet in 64 byte chunks
@@ -331,14 +477,14 @@ func (w *trezorDriver) trezorExchange(req proto.Message, results ...proto.Messag
 	)
 	for {
 		// Read the next chunk from the Trezor wallet
-		if _, err := io.ReadFull(w.device, chunk); err != nil {
-			return 0, err
+		if _, err := io.ReadFull(t.device, chunk); err != nil {
+			return 0, nil, err
 		}
-		w.log.Trace("Data chunk received from the Trezor", "chunk", hexutil.Bytes(chunk))
+		t.log.Trace("Data chunk received from the Trezor", "chunk", hexutil.Bytes(chunk))
 
 		// Make sure the transport header matches
 		if chunk[0] != 0x3f || (len(reply) == 0 && (chunk[1] != 0x23 || chunk[2] != 0x23)) {
-			return 0, errTrezorReplyInvalidHeader
+			return 0, nil, errTrezorReplyInvalidHeader
 		}
 		// If it's the first chunk, retrieve the reply message type and total message length
 		var payload []byte
@@ -358,27 +504,5 @@ func (w *trezorDriver) trezorExchange(req proto.Message, results ...proto.Messag
 			break
 		}
 	}
-	// Try to parse the reply into the requested reply message
-	if kind == uint16(trezor.MessageType_MessageType_Failure) {
-		// Trezor returned a failure, extract and return the message
-		failure := new(trezor.Failure)
-		if err := proto.Unmarshal(reply, failure); err != nil {
-			return 0, err
-		}
-		return 0, errors.New("trezor: " + failure.GetMessage())
-	}
-	if kind == uint16(trezor.MessageType_MessageType_ButtonRequest) {
-		// Trezor is waiting for user confirmation, ack and wait for the next message
-		return w.trezorExchange(&trezor.ButtonAck{}, results...)
-	}
-	for i, res := range results {
-		if trezor.Type(res) == kind {
-			return i, proto.Unmarshal(reply, res)
-		}
-	}
-	expected := make([]string, len(results))
-	for i, res := range results {
-		expected[i] = trezor.Name(trezor.Type(res))
-	}
-	return 0, fmt.Errorf("trezor: expected reply types %s, got %s", expected, trezor.Name(kind))
+	return kind, reply, nil
 }

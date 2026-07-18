@@ -36,8 +36,10 @@ wiped on lock, and hardware-wallet keys never leave the device.
 - **Multiple wallets, multiple signers.**
   - *Hot wallets* — import a BIP-39 seed phrase, switch between derived accounts,
     with keys held in memory only while unlocked.
-  - *Hardware wallets* — Ledger and Trezor via a common signing interface; keys
-    never leave the device.
+  - *Hardware wallets* — Ledger (direct USB) and Trezor (Trezor Bridge, with a
+    direct-USB fallback for older devices) via a common signing interface; keys
+    never leave the device. Trezor hidden wallets (passphrase-protected,
+    including on-device passphrase entry) are supported.
 - **Chain-aware.** The native asset and block explorer adapt to the connected
   chain (Ethereum, Sepolia, Holesky, OP, Base, Arbitrum, Polygon, Gnosis, …),
   with a safe fallback for unknown chains.
@@ -81,7 +83,11 @@ go build -o callisto ./cmd/callisto
 1. **Settings** → add an RPC endpoint (e.g. a Sepolia `https://…` or `wss://…`
    URL) and click **Connect**. The status dot turns green.
 2. **Wallets** → **Add hot wallet…** (use a *throwaway/test* seed for
-   experimentation) or **Add hardware…** for a Ledger/Trezor.
+   experimentation) or **Add hardware…** for a Ledger/Trezor. Trezor requires
+   [Trezor Bridge](https://trezor.io/learn/a/what-is-trezor-bridge) or Trezor
+   Suite running in the background (Callisto talks to it over its local API,
+   which correctly handles USB access across platforms/devices); Ledger works
+   over direct USB with no extra software.
 3. **Assets** → view balances for the selected wallet; they refresh on each block.
 4. **Send** → choose an asset, enter a recipient (address or ENS) and amount,
    **Prepare transfer**, review, then **Sign & send**.

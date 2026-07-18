@@ -23,6 +23,7 @@ package usbwallet
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"math/big"
@@ -75,6 +76,43 @@ type driver interface {
 	SignTypedMessage(path accounts.DerivationPath, messageHash []byte, domainHash []byte) ([]byte, error)
 }
 
+// deviceReadTimeoutMs bounds every read from the device (see readTimeoutWriter).
+// Generous enough for a human to notice and confirm a prompt on-device, but
+// finite so a non-responding device (wrong interface, unsupported protocol
+// variant) fails with a clear error instead of hanging the caller forever.
+const deviceReadTimeoutMs = 60_000
+
+// errDeviceReadTimeout means the device did not send a full reply within
+// deviceReadTimeoutMs (see readTimeoutWriter).
+var errDeviceReadTimeout = errors.New("usbwallet: device did not respond within the read timeout (wrong USB interface, or an unsupported protocol/firmware variant)")
+
+// readTimeoutWriter adapts a hid.Device (whose Read may block indefinitely) to
+// io.ReadWriter using hid.Device's ReadTimeout — the driver interface only
+// accepts io.ReadWriter, so without this wrapper the timeout capability is
+// unreachable. Callisto-local addition; see hub.go's doc comment.
+//
+// hid.Device.ReadTimeout returns (0, nil) — not an error — when the timeout
+// elapses with no data. io.ReadFull does not treat repeated (0, nil) reads as
+// an error, so left as-is this would busy-loop through repeated timeouts
+// forever instead of failing cleanly; Read converts that case into an
+// explicit error.
+type readTimeoutWriter struct {
+	device    hid.Device
+	timeoutMs int
+}
+
+func (r readTimeoutWriter) Read(b []byte) (int, error) {
+	n, err := r.device.ReadTimeout(b, r.timeoutMs)
+	if err == nil && n == 0 {
+		return 0, errDeviceReadTimeout
+	}
+	return n, err
+}
+
+func (r readTimeoutWriter) Write(b []byte) (int, error) {
+	return r.device.Write(b)
+}
+
 // wallet represents the common functionality shared by all USB hardware
 // wallets to prevent reimplementing the same complex maintenance mechanisms
 // for different vendors.
@@ -85,6 +123,13 @@ type wallet struct {
 
 	info   hid.DeviceInfo // Known USB device infos about the wallet
 	device hid.Device     // USB device advertising itself as a hardware wallet
+
+	// bridge is non-nil for a Trezor-Bridge-backed wallet (see trezor_bridge.go,
+	// NewBridgeWallet): Callisto-local addition, direct USB access bypassed
+	// entirely. When set, Open acquires a Bridge session instead of calling
+	// info.Open(), and device holds a bridgeDeviceStub (not a real hid.Device) so
+	// the existing device!=nil lifecycle checks below keep working unchanged.
+	bridge *bridgeSession
 
 	accounts []accounts.Account                         // List of derive accounts pinned on the hardware wallet
 	paths    map[common.Address]accounts.DerivationPath // Known derivation paths for signing operations
@@ -150,19 +195,47 @@ func (w *wallet) Open(passphrase string) error {
 	if w.paths != nil {
 		return accounts.ErrWalletAlreadyOpen
 	}
-	// Make sure the actual device connection is done only once
-	if w.device == nil {
-		device, err := w.info.Open()
-		if err != nil {
+	// Make sure the actual device connection is done only once. Bridge-backed
+	// wallets (Callisto-local addition, see the bridge field's doc comment)
+	// acquire a Trezor Bridge session instead of opening a raw HID device, and
+	// initialize the driver over that session rather than an io.ReadWriter.
+	if w.bridge != nil {
+		if w.device == nil {
+			session, err := w.bridge.client.Acquire(w.bridge.path, "")
+			if err != nil {
+				return err
+			}
+			w.bridge.id = session
+			w.device = bridgeDeviceStub{session: w.bridge}
+			w.commsLock = make(chan struct{}, 1)
+			w.commsLock <- struct{}{} // Enable lock
+		}
+		td, ok := w.driver.(*trezorDriver)
+		if !ok {
+			return fmt.Errorf("usbwallet: bridge transport requires a trezor driver, got %T", w.driver)
+		}
+		if err := td.OpenBridge(&bridgeTrezorTransport{client: w.bridge.client, session: w.bridge.id}, passphrase); err != nil {
 			return err
 		}
-		w.device = device
-		w.commsLock = make(chan struct{}, 1)
-		w.commsLock <- struct{}{} // Enable lock
-	}
-	// Delegate device initialization to the underlying driver
-	if err := w.driver.Open(w.device, passphrase); err != nil {
-		return err
+	} else {
+		if w.device == nil {
+			device, err := w.info.Open()
+			if err != nil {
+				return err
+			}
+			w.device = device
+			w.commsLock = make(chan struct{}, 1)
+			w.commsLock <- struct{}{} // Enable lock
+		}
+		// Delegate device initialization to the underlying driver. Wrapped with a
+		// bounded read timeout (Callisto-local addition, see hub.go's doc comment):
+		// driver.Open only receives an io.ReadWriter, discarding hid.Device's
+		// ReadTimeout — without this, a device that accepts writes but never
+		// replies (e.g. because we matched the wrong USB interface — see hub.go's
+		// anyEndpoint) hangs Open() forever with no error and no way to cancel.
+		if err := w.driver.Open(readTimeoutWriter{device: w.device, timeoutMs: deviceReadTimeoutMs}, passphrase); err != nil {
+			return err
+		}
 	}
 	// Connection successful, start life-cycle management
 	w.paths = make(map[common.Address]accounts.DerivationPath)

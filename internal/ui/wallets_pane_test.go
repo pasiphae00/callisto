@@ -76,8 +76,8 @@ func TestWalletsPaneRowLabel(t *testing.T) {
 	if row == "" {
 		t.Fatal("empty row label")
 	}
-	// Locked wallet shows the lock icon; short address is used.
-	if want := "🔒"; row[:len(want)] != want {
-		t.Errorf("row = %q, want lock icon prefix", row)
+	// Locked wallet shows the word "locked"; short address is used. No emoji.
+	if want := "[locked]"; row[:len(want)] != want {
+		t.Errorf("row = %q, want %q prefix", row, want)
 	}
 }

@@ -11,24 +11,44 @@ changes; `v1.0.0` marks the first stable, documented release.
 
 ### Fixed
 - Trezor Safe-family devices (confirmed: Safe 5) were never detected, even
-  connected and unlocked. Diagnosed with a new `go run ./cmd/hwscan` tool: the
-  device's USB descriptor (interface 1, usage page 0xf1d0) doesn't satisfy
-  go-ethereum's hardcoded `usbwallet` matcher (interface 0 or usage page
-  0xffff) — a known, still-open upstream issue
-  ([go-ethereum#31841](https://github.com/ethereum/go-ethereum/issues/31841))
-  with no released fix. Carrying a local, LGPL-attributed fork
-  (`internal/signer/hardware/usbwallet`) that matches Trezor on vendor+product
-  ID alone; Ledger is unaffected and still uses upstream go-ethereum directly.
+  connected and unlocked — fixed and verified live end-to-end (address
+  derivation, multi-account listing, standard + hidden wallets, on-device
+  passphrase entry). Two compounding causes:
+  - The device's USB descriptor (interface 1, usage page 0xf1d0) doesn't
+    satisfy go-ethereum's hardcoded `usbwallet` matcher (interface 0 or usage
+    page 0xffff) — a known, still-open upstream issue
+    ([go-ethereum#31841](https://github.com/ethereum/go-ethereum/issues/31841)).
+  - Even once matched, this device's real wallet-protocol endpoint isn't
+    reachable through the OS's HID API at all on this platform (writes
+    succeed, reads never return data).
+  Fixed with a local, LGPL-attributed fork of three go-ethereum files
+  (`internal/signer/hardware/usbwallet`): Trezor now matches on vendor+product
+  ID alone (Ledger is unaffected, still uses upstream directly), and — since
+  direct USB is a dead end for this device regardless of matching — a Trezor
+  Bridge (trezord) HTTP transport was added as the primary path, with port
+  discovery (trezord's port isn't fixed) and self-healing session handling.
+  Both the raw-USB and Bridge transports now have a bounded (60s) read
+  timeout; previously a non-responding device hung `Open()` forever with no
+  way to cancel.
+- Trezor hidden wallets (passphrase-protected) now work correctly: the
+  passphrase is submitted at the right point in the handshake regardless of
+  whether it's empty (standard wallet) or not, and on-device passphrase entry
+  (`PassphraseRequest.OnDevice`, a Trezor security feature that keeps the
+  passphrase off the host entirely) is detected and respected rather than
+  silently overridden with a host-supplied value.
 
 ### Added
 - `cmd/hwscan`: diagnostic tool listing every raw USB HID device the OS
   reports, independent of whether Callisto recognizes it as a wallet — for
   debugging hardware-wallet detection issues.
+- Passphrase field on the "Add hardware wallet" and hardware-unlock dialogs
+  (Trezor only) for hidden-wallet support.
 - Default RPC endpoint with startup auto-connect (opt-in checkbox when adding an
   endpoint; the default is exclusive and marked in the list).
 - Berkeley Mono is embedded and applied to addresses, hashes, and numeric amounts
-  (list rows, the pre-sign review, and resolved-address status) via a custom Fyne
-  theme; a user font can override it via `CALLISTO_FONT_DIR`.
+  (list rows, the pre-sign review, broadcast/inclusion dialog values, and
+  resolved-address status) via a custom Fyne theme; a user font can override it
+  via `CALLISTO_FONT_DIR`.
 
 ### Changed
 - Token amounts display with at most 5 fractional digits (truncated, never
@@ -36,8 +56,9 @@ changes; `v1.0.0` marks the first stable, documented release.
 - The Assets page hides non-native tokens below a dust threshold (0.00005) and
   notes how many were hidden; the native asset is always shown, and the Send
   picker still lists everything.
-- The active wallet is marked with a green indicator; the connection status dot
-  is color-coded (green/amber/gray).
+- The active wallet and connection status are marked with a genuinely colored
+  `●` glyph (green/amber/gray), not an emoji; the wallet list's lock state is
+  now plain `[locked]`/`[unlocked]` text instead of lock emoji.
 
 ## [0.2.0] - 2026-07-18
 

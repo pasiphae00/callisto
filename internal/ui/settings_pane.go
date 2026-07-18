@@ -13,6 +13,12 @@ import (
 	"codeberg.org/pasiphae/callisto/internal/rpc"
 )
 
+const rpcHelpText = `Callisto uses a "Flashbots Protect" Ethereum Mainnet RPC by default. Replace or add your own here (http/s or ws/s). Using a websocket RPC enables live updates.
+
+If you want to customize Flashbots Protect behaviour, generate a new RPC endpoint here: "protectrpc.flashbots.net"
+
+If you select "Auto-connect" when adding the endpoint, Callisto will use that RPC automatically on each subsequent restart.`
+
 // settingsPane manages the persisted RPC endpoint list: add, remove, select, and
 // connect. Callisto ships no default endpoint, so this is the first thing a user
 // configures. Connection state is reflected in the shared status bar.
@@ -69,7 +75,7 @@ func (p *settingsPane) build() fyne.CanvasObject {
 
 	buttons := container.NewHBox(addBtn, p.connectBtn, p.removeBtn)
 	header := widget.NewLabelWithStyle("RPC endpoints", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
-	help := widget.NewLabel("Callisto has no default network RPC. Add your own RPC here (http/s or ws/s). Using a websocket RPC enables live updates. \n\nIf you need an RPC endpoint, we suggest creating your own at: \"protectrpc.flashbots.net\"")
+	help := widget.NewLabel(rpcHelpText)
 	help.Wrapping = fyne.TextWrapWord
 
 	top := container.NewVBox(header, help, buttons, p.statusLbl, widget.NewSeparator())

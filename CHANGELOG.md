@@ -9,6 +9,13 @@ changes; `v1.0.0` marks the first stable, documented release.
 
 ## [Unreleased]
 
+### Added
+- Double-click a wallet in the Wallets list to make it the active wallet.
+
+### Changed
+- Wallets pane help text updated to reflect encrypted-keystore storage (the seed
+  is encrypted at rest, not "nothing written to disk").
+
 ## [0.5.0] - 2026-07-18
 
 ### Added

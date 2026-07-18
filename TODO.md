@@ -2,10 +2,10 @@
 
 ## bugs
 
-- trezor eth transfer: "Sign: transaction type not supported" (real end-to-end
-  send; device signed fine, then errored)
-  - ✅ **Diagnosed + fixed with native EIP-1559 signing (code-complete, awaiting
-    live re-verify).** Callisto builds EIP-1559 dynamic-fee txs, but go-ethereum's
+- ~~trezor eth transfer: "Sign: transaction type not supported"~~
+  - ✅ **Fixed with native EIP-1559 signing — verified live** (a real ETH
+    transfer signed on a Trezor Safe 5 broadcast and confirmed). Callisto builds
+    EIP-1559 dynamic-fee txs, but go-ethereum's
     vendored Trezor protobuf only has the legacy `EthereumSignTx` message: the
     driver signed the tx as legacy on-device, then couldn't apply that signature
     back to the dynamic-fee tx (`EIP155Signer` rejects non-legacy types →
@@ -19,10 +19,7 @@
     in `trezor_eip1559_test.go`), and the returned signature (y-parity v
     normalized to 0/1) is applied with the dynamic-fee signer. This matches how
     Frame and Trezor Suite sign — full 1559, no legacy downgrade. Genuine legacy
-    txs still use the original path.
-  - ⏳ **Please retest**: send a small amount of ETH from the Trezor on a funded
-    account and confirm it broadcasts + confirms (the device should now display
-    it as an EIP-1559 tx with max fee / priority fee, not a legacy gas price).
+    txs still use the original path. Released in v0.3.2.
 
 ## researched / planned
 

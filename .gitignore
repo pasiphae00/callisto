@@ -365,3 +365,23 @@ myetherwallet/
 .sass-cache/
 .connect.lock
 .nyc_output
+
+# --- Callisto source ---
+# The broad secret-guard globs above (**/*key*, **/*token*, **/*private*, *seed*, etc.)
+# would otherwise swallow legitimate source files in this wallet codebase
+# (token.go, key.go, seed.go, private.go, keystore.go, ...). Re-include all
+# project source and module metadata. These come last so they win.
+!**/*.go
+!go.mod
+!go.sum
+!**/*.json
+# ...but never let a real secrets/keystore directory back in.
+/.local/
+/keystore/
+*.db
+*.db-shm
+*.db-wal
+# The built binary at repo root only — anchored so it does NOT match the
+# cmd/callisto/ source directory.
+/callisto
+/dist/

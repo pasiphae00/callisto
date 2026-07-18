@@ -45,6 +45,13 @@ type Descriptor struct {
 	Address        string     `json:"address"`         // EIP-55 checksummed EOA address
 	Kind           SignerKind `json:"kind"`            // how it signs
 	DerivationPath string     `json:"derivation_path"` // for HD/hardware signers
+	// KeystoreID links a hot wallet to its encrypted seed keystore file
+	// (<KeystoreDir>/<KeystoreID>.json), so it unlocks with a passphrase instead
+	// of re-entering the recovery phrase. Empty for hardware wallets and for
+	// legacy hot wallets imported before encrypted keystores existed (those still
+	// unlock by re-entering the mnemonic). Several hot wallets derived from one
+	// import share a KeystoreID.
+	KeystoreID string `json:"keystore_id,omitempty"`
 }
 
 // Validate checks that a descriptor is well-formed enough to persist. It does

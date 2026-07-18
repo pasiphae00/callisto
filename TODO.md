@@ -79,22 +79,31 @@
     instability.
 
 ## minor
-### show full wallet address in wallets pane
-- lets show the full wallet address in the wallets selection pane
-- we should also make the wallet address copyable (either by a little button or by text selection)
-- other places its okay to shorten the address, but there should be somewhere the full address is shown
+### show full wallet address in wallets pane — ✅ done
+- ~~lets show the full wallet address in the wallets selection pane... copyable~~
+  - Wallets pane now has a detail bar below the list: selecting a wallet shows
+    its full, checksummed address in a mono, selectable field, plus an explicit
+    Copy button (writes to the system clipboard). The field is read-only in
+    effect (edits revert) but stays fully interactive so text-selection copy
+    works too. The list row itself still shows the short address, as intended.
 
-### populate "about" dialogue
-- lets fill in the callisto -> about dialogue
-- lets have it be a black background, gray text in berkely mono
-- use the callisto png (w/ transparency) from `/images` for the logo
-- text should say 
-  - callisto <version>
-  - commit <commit [shortened]>
-  - open-source ethereum transaction and wallet management utility
-  - callisto.pasiphae.io
-  - ©2026
-- nicely formatted. maybe a small text at the very bottom italic "trust but verify; use at your own risk"
+### populate "about" dialogue — ✅ done
+- ~~lets fill in the callisto -> about dialogue... black background, gray text
+  in berkely mono... callisto png (w/ transparency)... trust but verify~~
+  - Callisto menu → "About Callisto": transparent NASA Callisto logo, Berkeley
+    Mono throughout, "Callisto <version>" / "commit <short>" (commit read
+    automatically from Go's embedded VCS info, no manual step), tagline, link,
+    ©2026, and the italic disclaimer at the bottom. Background reads the live
+    theme color rather than a hardcoded black, so it matches the dialog's own
+    chrome/border seamlessly instead of showing a two-tone box (caught via a
+    screenshot review — first pass used flat black, which visibly mismatched).
+  - `internal/buildinfo`: `Version` (bumped by hand at release) + `ShortCommit()`
+    (from `runtime/debug.ReadBuildInfo()`'s VCS stamp — automatic, no ldflags).
+
+### app logo — ✅ done
+- ~~the app logo for the dock should be `images/CALLISTO - LOGO.png`~~
+  - Embedded and set via both `fyne.App.SetIcon` and `Window.SetIcon` — covers
+    dock/taskbar and window icon across platforms.
 
 ### "green dot emoji" indicator next to active wallet — ✅ done
 - ~~the green circle emoji looks a bit out of place... personally not a fan of emoji's in UIs~~

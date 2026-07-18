@@ -28,11 +28,14 @@ import (
 type walletsPane struct {
 	app *App
 
-	list      *widget.List
-	unlockBtn *widget.Button
-	lockBtn   *widget.Button
-	removeBtn *widget.Button
-	selected  int
+	list       *widget.List
+	unlockBtn  *widget.Button
+	lockBtn    *widget.Button
+	removeBtn  *widget.Button
+	selected   int
+	detailAddr *widget.Entry // full, selectable/copyable address of the selected wallet
+	detailVal  string        // canonical value detailAddr should show; edits revert to this
+	detailBox  *fyne.Container
 }
 
 func newWalletsPane(a *App) *walletsPane {
@@ -69,15 +72,44 @@ func (p *walletsPane) build() fyne.CanvasObject {
 	p.unlockBtn = widget.NewButton("Unlock", p.unlockSelected)
 	p.lockBtn = widget.NewButton("Lock", p.lockActive)
 	p.removeBtn = widget.NewButton("Remove", p.removeSelected)
-	p.updateButtons()
 
 	header := widget.NewLabelWithStyle("Wallets", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
 	help := widget.NewLabel("Add a wallet from a seed phrase (held in memory only while unlocked, wiped on lock/exit) or a hardware device (keys never leave the device). Nothing secret is written to disk.")
 	help.Wrapping = fyne.TextWrapWord
 	buttons := container.NewHBox(addBtn, addHwBtn, p.unlockBtn, p.lockBtn, p.removeBtn)
 
+	p.detailBox = p.buildDetailBox()
+	p.updateButtons() // also populates the detail box for the initial (no-selection) state
+
 	top := container.NewVBox(header, help, buttons, widget.NewSeparator())
-	return container.NewBorder(top, nil, nil, nil, p.list)
+	return container.NewBorder(top, p.detailBox, nil, nil, p.list)
+}
+
+// buildDetailBox builds the full-address detail bar shown below the list: a
+// read-only, selectable Entry (so the address is copyable by selection as well
+// as the explicit button) plus a Copy button. Elsewhere in the app addresses
+// are shown short; this is deliberately the one place the full address is
+// always visible.
+func (p *walletsPane) buildDetailBox() *fyne.Container {
+	p.detailAddr = widget.NewEntry()
+	p.detailAddr.TextStyle = fyne.TextStyle{Monospace: true}
+	// Deliberately left enabled (not Disable()d): a disabled widget blocks all
+	// interaction in Fyne, including mouse-drag text selection, which would
+	// defeat "copyable by text selection." Instead, revert any edit back to
+	// detailVal so it's read-only in effect while staying fully
+	// selectable/copyable. setDetailAddr (below) is the only legitimate writer.
+	p.detailAddr.OnChanged = func(s string) {
+		if s != p.detailVal {
+			p.detailAddr.SetText(p.detailVal)
+		}
+	}
+	copyBtn := widget.NewButton("Copy", func() {
+		if p.detailAddr.Text != "" {
+			p.app.fyneApp.Clipboard().SetContent(p.detailAddr.Text)
+		}
+	})
+	row := container.NewBorder(nil, nil, widget.NewLabel("Address:"), copyBtn, p.detailAddr)
+	return container.NewVBox(widget.NewSeparator(), row)
 }
 
 // rowLabel renders a wallet row's text: lock state, label, short address, and
@@ -101,6 +133,15 @@ func (p *walletsPane) rowLabel(w wallet.Descriptor) string {
 	return fmt.Sprintf("%s  %s — %s  [%s]", icon, name, short, w.Kind)
 }
 
+// setDetailAddr updates the full-address detail box (see buildDetailBox) to s,
+// the only legitimate way its text changes.
+func (p *walletsPane) setDetailAddr(s string) {
+	p.detailVal = s
+	if p.detailAddr != nil {
+		p.detailAddr.SetText(s)
+	}
+}
+
 func (p *walletsPane) updateButtons() {
 	has := p.selected >= 0 && p.selected < len(p.app.cfg.Wallets)
 	_, activeID, unlocked := p.app.currentSigner()
@@ -112,9 +153,15 @@ func (p *walletsPane) updateButtons() {
 		} else {
 			p.unlockBtn.Enable()
 		}
+		if a, err := address.Parse(w.Address); err == nil {
+			p.setDetailAddr(address.Format(a))
+		} else {
+			p.setDetailAddr(w.Address)
+		}
 	} else {
 		p.removeBtn.Disable()
 		p.unlockBtn.Disable()
+		p.setDetailAddr("")
 	}
 	if unlocked {
 		p.lockBtn.Enable()

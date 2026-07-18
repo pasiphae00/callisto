@@ -50,6 +50,18 @@ changes; `v1.0.0` marks the first stable, documented release.
   opens now clean up via `Close()`.
 
 ### Added
+- **About dialog** (Callisto menu → About Callisto): transparent Callisto logo,
+  Berkeley Mono throughout, version and short commit (`internal/buildinfo`,
+  commit read automatically from Go's embedded VCS metadata), tagline, link,
+  copyright, and a "trust but verify" disclaimer. Background reads the theme's
+  overlay color (`ColorNameOverlayBackground`, what dialogs actually render
+  on — confirmed against a color-picker measurement, RGB 24,29,37) instead of a
+  hardcoded value, so it matches the dialog's own chrome exactly.
+- **App/window icon**: the Callisto logo is embedded and set as the dock/taskbar
+  and window icon.
+- **Full wallet address + copy**: the Wallets pane shows the selected wallet's
+  full checksummed address in a dedicated, copyable field (button or text
+  selection) below the list; the list rows themselves stay shortened.
 - `cmd/hwscan`: diagnostic tool listing every raw USB HID device the OS
   reports, independent of whether Callisto recognizes it as a wallet — for
   debugging hardware-wallet detection issues.

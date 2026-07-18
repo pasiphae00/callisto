@@ -142,8 +142,13 @@ func lockSigner(s signer.Signer) {
 // closed. It must be called on the main goroutine.
 func (a *App) Run() {
 	a.fyneApp = app.NewWithID("io.pasiphae.callisto")
+	a.fyneApp.SetIcon(appIcon)
 	a.applyMonoFont() // BerkeleyMono for addresses/amounts, if available
 	a.window = a.fyneApp.NewWindow("Callisto")
+	a.window.SetIcon(appIcon)
+	a.window.SetMainMenu(fyne.NewMainMenu(
+		fyne.NewMenu("Callisto", fyne.NewMenuItem("About Callisto", func() { showAbout(a) })),
+	))
 	a.window.SetContent(a.buildRoot())
 	a.window.Resize(fyne.NewSize(1024, 720))
 	a.window.CenterOnScreen()

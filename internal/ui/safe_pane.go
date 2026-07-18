@@ -659,6 +659,24 @@ func (p *safePane) createProposal(desc safe.Descriptor, safeAddr, innerTo common
 // --- proposal review / sign / execute / reject ------------------------------
 
 func (p *safePane) showProposalReview(desc safe.Descriptor, prop safe.Proposal) {
+	content := container.NewVBox()
+	var render func()
+	render = func() {
+		latest := p.latestProposal(prop.ID, prop)
+		content.Objects = p.reviewObjects(desc, latest, render)
+		content.Refresh()
+	}
+	render()
+	d := dialog.NewCustom("Proposal", "Close", content, p.app.window)
+	d.Resize(fyne.NewSize(680, 560))
+	d.Show()
+}
+
+// reviewObjects builds the review dialog body for a proposal's current state.
+// render rebuilds the body in place after any action (sign/execute/reject) or a
+// manual refresh, so the buttons and signature list stay current without
+// reopening the dialog.
+func (p *safePane) reviewObjects(desc safe.Descriptor, prop safe.Proposal, render func()) []fyne.CanvasObject {
 	rows := [][2]string{
 		{"Action", prop.Description},
 		{"Status", string(prop.Status)},
@@ -676,38 +694,89 @@ func (p *safePane) showProposalReview(desc safe.Descriptor, prop safe.Proposal) 
 		grid.Add(monoLabel(r[1]))
 	}
 
-	signMsg := widget.NewLabel(p.signGuidance(desc, prop))
-	signMsg.Wrapping = fyne.TextWrapWord
 	signers := container.NewVBox()
 	for _, s := range prop.Signatures {
 		signers.Add(monoLabel("✓ " + address.Short(s.Signer)))
 	}
+	signMsg := widget.NewLabel(p.signGuidance(desc, prop))
+	signMsg.Wrapping = fyne.TextWrapWord
 
-	content := container.NewVBox(grid, widget.NewSeparator(), signers, signMsg)
-
-	buttons := container.NewHBox()
-	buttons.Add(widget.NewButton("Sign", func() { p.signProposal(desc, prop) }))
-	if len(prop.Signatures) >= int(desc.Threshold) && prop.Status != safe.StatusExecuted {
-		exec := widget.NewButton("Sign & execute", func() { p.executeProposal(desc, prop) })
-		exec.Importance = widget.HighImportance
-		buttons.Add(exec)
-	}
-	if prop.Kind != safe.KindReject && prop.Status != safe.StatusExecuted && prop.Status != safe.StatusRejected {
-		buttons.Add(widget.NewButton("Reject…", func() { p.rejectProposal(desc, prop) }))
-	}
-	content.Add(buttons)
-
-	d := dialog.NewCustom("Proposal", "Close", content, p.app.window)
-	d.Resize(fyne.NewSize(680, 560))
-	d.Show()
+	return []fyne.CanvasObject{grid, widget.NewSeparator(), signers, signMsg, p.reviewButtons(desc, prop, render)}
 }
 
-// signGuidance explains what's needed to sign, based on the currently unlocked
-// wallet.
+// reviewButtons builds the action row for a proposal's current state:
+//   - below threshold, with a matching owner unlocked → Sign; and, when that
+//     signature would be the final one, also Sign & execute (bundle the last
+//     signature with execution);
+//   - at/over threshold → Execute (no more signing needed);
+//   - plus Reject (non-rejection proposals) and a Refresh that re-reads state.
+func (p *safePane) reviewButtons(desc safe.Descriptor, prop safe.Proposal, render func()) fyne.CanvasObject {
+	sigs := len(prop.Signatures)
+	threshold := int(desc.Threshold)
+	met := sigs >= threshold
+	terminal := prop.Status == safe.StatusExecuted || prop.Status == safe.StatusRejected
+
+	canSign := false
+	if s, _, ok := p.app.currentSigner(); ok {
+		_, isHashSigner := s.(signer.SafeHashSigner)
+		canSign = isHashSigner && isOwner(desc, s.Address()) && !prop.SignedBy(s.Address())
+	}
+
+	buttons := container.NewHBox()
+	if !terminal {
+		if !met && canSign {
+			buttons.Add(widget.NewButton("Sign", func() { p.signProposal(desc, prop, render) }))
+			if sigs+1 >= threshold {
+				se := widget.NewButton("Sign & execute", func() { p.signAndExecute(desc, prop, render) })
+				se.Importance = widget.HighImportance
+				buttons.Add(se)
+			}
+		}
+		if met {
+			ex := widget.NewButton("Execute", func() { p.executeProposal(desc, prop, render) })
+			ex.Importance = widget.HighImportance
+			buttons.Add(ex)
+		}
+		if prop.Kind != safe.KindReject {
+			buttons.Add(widget.NewButton("Reject…", func() { p.rejectProposal(desc, prop) }))
+		}
+	}
+	buttons.Add(widget.NewButton("Refresh", render))
+	return buttons
+}
+
+// latestProposal re-reads a proposal by id so an open dialog reflects newly
+// collected signatures or a status change, falling back to the snapshot when
+// there is no store (tests) or on error.
+func (p *safePane) latestProposal(id int64, fallback safe.Proposal) safe.Proposal {
+	if p.app.safeProposals != nil {
+		if fresh, err := p.app.safeProposals.Get(id); err == nil {
+			return fresh
+		}
+	}
+	return fallback
+}
+
+// signGuidance explains the next step based on the proposal state and the
+// currently unlocked wallet.
 func (p *safePane) signGuidance(desc safe.Descriptor, prop safe.Proposal) string {
+	switch prop.Status {
+	case safe.StatusExecuted:
+		return "Executed."
+	case safe.StatusRejected:
+		return "Rejected (a same-nonce rejection was executed)."
+	}
+	met := len(prop.Signatures) >= int(desc.Threshold)
 	s, _, ok := p.app.currentSigner()
+	ownerUnlocked := ok && isOwner(desc, s.Address())
+	if met {
+		if ownerUnlocked {
+			return "Threshold met — ready to execute with " + address.Short(s.Address()) + " (it pays the gas)."
+		}
+		return "Threshold met. Unlock any owner in the Wallets tab to execute (it pays the gas)."
+	}
 	if !ok {
-		return "Unlock an owner wallet in the Wallets tab, then click Sign. Switch wallets to collect more signatures."
+		return "Unlock an owner wallet in the Wallets tab, then Sign. Switch wallets to collect more signatures."
 	}
 	if !isOwner(desc, s.Address()) {
 		return "The unlocked wallet (" + address.Short(s.Address()) + ") is not an owner of this Safe."
@@ -715,11 +784,15 @@ func (p *safePane) signGuidance(desc safe.Descriptor, prop safe.Proposal) string
 	if prop.SignedBy(s.Address()) {
 		return "This owner has already signed. Unlock a different owner to add another signature."
 	}
+	if len(prop.Signatures)+1 >= int(desc.Threshold) {
+		return "Ready to sign with " + address.Short(s.Address()) + ". This would be the final signature — use Sign & execute to finish in one step, or Sign to collect it without executing yet."
+	}
 	return "Ready to sign with " + address.Short(s.Address()) + "."
 }
 
-// signProposal collects a signature from the currently unlocked owner.
-func (p *safePane) signProposal(desc safe.Descriptor, prop safe.Proposal) {
+// signProposal collects a signature from the currently unlocked owner, then runs
+// after (e.g. re-render the review dialog) on success.
+func (p *safePane) signProposal(desc safe.Descriptor, prop safe.Proposal, after func()) {
 	s, _, ok := p.app.currentSigner()
 	if !ok {
 		dialog.ShowError(fmt.Errorf("unlock an owner wallet in the Wallets tab first"), p.app.window)
@@ -761,8 +834,20 @@ func (p *safePane) signProposal(desc safe.Descriptor, prop safe.Proposal) {
 		fyne.Do(func() {
 			p.status.SetText("Signature collected from " + address.Short(s.Address()))
 			p.refreshProposals(desc)
+			if after != nil {
+				after()
+			}
 		})
 	}()
+}
+
+// signAndExecute collects the final signature and, on success, immediately
+// executes — the one-step path when the current owner provides the signature that
+// meets the threshold.
+func (p *safePane) signAndExecute(desc safe.Descriptor, prop safe.Proposal, after func()) {
+	p.signProposal(desc, prop, func() {
+		p.executeProposal(desc, p.latestProposal(prop.ID, prop), after)
+	})
 }
 
 // maybeMarkReady flips a proposal to "ready" once the threshold is met.
@@ -780,8 +865,9 @@ func (p *safePane) maybeMarkReady(proposalID int64, threshold uint64) {
 }
 
 // executeProposal packs the collected signatures and executes the Safe tx as a
-// normal EOA transaction from the currently unlocked owner.
-func (p *safePane) executeProposal(desc safe.Descriptor, prop safe.Proposal) {
+// normal EOA transaction from the currently unlocked owner, then runs after (e.g.
+// re-render the review dialog) once submitted.
+func (p *safePane) executeProposal(desc safe.Descriptor, prop safe.Proposal, after func()) {
 	executor, _, ok := p.app.currentSigner()
 	if !ok {
 		dialog.ShowError(fmt.Errorf("unlock an owner wallet to execute (it pays the gas)"), p.app.window)
@@ -856,6 +942,9 @@ func (p *safePane) executeProposal(desc safe.Descriptor, prop safe.Proposal) {
 			p.refreshProposals(desc)
 			p.showExecResult(hash.Hex(), info)
 			p.notifyHistory()
+			if after != nil {
+				after()
+			}
 		})
 		go p.trackExecInclusion(desc, prop, hash, info)
 	}()

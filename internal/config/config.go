@@ -16,6 +16,9 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/ethereum/go-ethereum/common"
+
+	"codeberg.org/pasiphae/callisto/internal/assets"
 	"codeberg.org/pasiphae/callisto/internal/rpc"
 	"codeberg.org/pasiphae/callisto/internal/wallet"
 )
@@ -36,6 +39,8 @@ type Config struct {
 	Wallets []wallet.Descriptor `json:"wallets"`
 	// ActiveWallet is the ID of the currently selected wallet ("" = none).
 	ActiveWallet string `json:"active_wallet"`
+	// Tokens is the user-added ERC-20 token list (metadata resolved on-chain).
+	Tokens []assets.TokenRef `json:"tokens"`
 }
 
 // Dir returns the Callisto config directory, creating it if needed.
@@ -210,4 +215,30 @@ func (c *Config) RemoveWallet(id string) bool {
 		}
 	}
 	return false
+}
+
+// TokensForChain returns the user-added token contract addresses for a chain.
+func (c *Config) TokensForChain(chainID uint64) []common.Address {
+	var out []common.Address
+	for _, t := range c.Tokens {
+		if t.ChainID == chainID {
+			out = append(out, common.HexToAddress(t.Address))
+		}
+	}
+	return out
+}
+
+// AddToken records a user token for a chain, deduplicated by (chain, address).
+// Reports false if it was already present.
+func (c *Config) AddToken(ref assets.TokenRef) bool {
+	want := common.HexToAddress(ref.Address)
+	for _, t := range c.Tokens {
+		if t.ChainID == ref.ChainID && common.HexToAddress(t.Address) == want {
+			return false
+		}
+	}
+	// Store the checksummed form for readability.
+	ref.Address = want.Hex()
+	c.Tokens = append(c.Tokens, ref)
+	return true
 }

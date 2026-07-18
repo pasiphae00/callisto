@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"codeberg.org/pasiphae/callisto/internal/assets"
 	"codeberg.org/pasiphae/callisto/internal/rpc"
 	"codeberg.org/pasiphae/callisto/internal/wallet"
 )
@@ -103,6 +104,32 @@ func TestRemoveClearsActive(t *testing.T) {
 	}
 	if c.ActiveEndpoint != "" {
 		t.Error("removing active endpoint should clear ActiveEndpoint")
+	}
+}
+
+func TestTokensPerChainAndDedup(t *testing.T) {
+	c := &Config{}
+	usdcLower := "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
+	if !c.AddToken(assets.TokenRef{ChainID: 1, Address: usdcLower}) {
+		t.Fatal("first add should succeed")
+	}
+	// Same token, different case, same chain -> dedup.
+	if c.AddToken(assets.TokenRef{ChainID: 1, Address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"}) {
+		t.Error("duplicate token (case-insensitive) should be rejected")
+	}
+	// Same address, different chain -> allowed.
+	if !c.AddToken(assets.TokenRef{ChainID: 11155111, Address: usdcLower}) {
+		t.Error("same address on a different chain should be allowed")
+	}
+	if got := c.TokensForChain(1); len(got) != 1 {
+		t.Errorf("chain 1 tokens = %d, want 1", len(got))
+	}
+	if got := c.TokensForChain(11155111); len(got) != 1 {
+		t.Errorf("sepolia tokens = %d, want 1", len(got))
+	}
+	// Stored address is checksummed for readability.
+	if c.Tokens[0].Address != "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48" {
+		t.Errorf("stored address = %s, want checksummed", c.Tokens[0].Address)
 	}
 }
 

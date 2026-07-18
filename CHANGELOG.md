@@ -10,6 +10,15 @@ changes; `v1.0.0` marks the first stable, documented release.
 ## [Unreleased]
 
 ### Added
+- `internal/assets`: account asset detection and display. Native currency first,
+  then curated + user-added ERC-20 tokens; metadata (name/symbol/decimals) read
+  on-chain with a bytes32 fallback for legacy tokens; per-token failures are
+  skipped rather than failing the whole load. Human⇄base-unit conversion is done
+  with big.Int arithmetic (no floats) and rigorously tested; verified against
+  real mainnet contracts (USDC, vitalik.eth balances) via integration tests.
+- Assets pane: shows the active wallet's balances on the active connection
+  (works whether or not the wallet is unlocked), reloads on each new block and on
+  demand, and supports adding tokens by contract address (persisted per chain).
 - `internal/signer`: common `Signer` interface (`Address`/`SignTx`/`Kind`) that
   all wallet types implement, plus `Lockable` for wiping in-memory key material.
 - `internal/signer/hot`: in-memory seed-derived signer. BIP-32/BIP-44 HD

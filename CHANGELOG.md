@@ -9,6 +9,15 @@ changes; `v1.0.0` marks the first stable, documented release.
 
 ## [Unreleased]
 
+### Added
+- `internal/tx`: chain/gas-agnostic transaction-build core. `BuildNativeSend`
+  and `BuildERC20Send` produce a `Send` (recipient/asset/amount + the concrete
+  to/value/calldata); ERC-20 calldata encoding is verified byte-for-byte.
+  `NativeSendAll` computes the max native amount after reserving the fee.
+- Send pane: pick an asset, enter an ENS-or-address recipient and amount (with
+  Max), and prepare a transfer. Validates against balance and shows a summary.
+  Gas estimation, review, and signing follow in later phases.
+
 ## [0.1.0] - 2026-07-18
 
 First tagged milestone: a runnable Fyne desktop app that connects to a

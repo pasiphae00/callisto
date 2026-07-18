@@ -122,7 +122,7 @@ func (a *App) buildRoot() fyne.CanvasObject {
 	tabs := container.NewAppTabs(
 		container.NewTabItem("Wallets", newWalletsPane(a).build()),
 		container.NewTabItem("Assets", newAssetsPane(a).build()),
-		container.NewTabItem("Send", a.placeholder("Send", "Prepare a basic ETH or ERC-20 transfer.")),
+		container.NewTabItem("Send", newSendPane(a).build()),
 		container.NewTabItem("History", a.placeholder("History", "Transactions Callisto has prepared.")),
 		container.NewTabItem("Settings", newSettingsPane(a).build()),
 	)

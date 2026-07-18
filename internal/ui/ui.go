@@ -8,10 +8,13 @@
 package ui
 
 import (
+	"fmt"
+	"image/color"
 	"sync"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
+	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
 
@@ -138,6 +141,17 @@ func (a *App) placeholder(title, subtitle string) fyne.CanvasObject {
 	return container.NewVBox(head, body)
 }
 
+// Status-indicator colors. The connection dot is the at-a-glance health signal:
+//
+//	green  — connected to a live endpoint
+//	amber  — an endpoint is selected but not currently connected
+//	gray   — no endpoint configured/selected
+var (
+	statusGreen = color.NRGBA{R: 0x2e, G: 0x7d, B: 0x32, A: 0xff}
+	statusAmber = color.NRGBA{R: 0xef, G: 0x6c, B: 0x00, A: 0xff}
+	statusGray  = color.NRGBA{R: 0x9e, G: 0x9e, B: 0x9e, A: 0xff}
+)
+
 // refreshStatusBar rebuilds the bottom status bar to reflect live connection and
 // wallet-selection state. Safe to call from the UI thread at any time; callers on
 // a background goroutine must wrap it in fyne.Do.
@@ -145,18 +159,30 @@ func (a *App) refreshStatusBar() {
 	if a.statusBarBox == nil {
 		return
 	}
+	// Connection: colored dot + label.
+	dotColor := statusGray
 	endpoint := "no RPC connected"
 	if conn, ok := a.rpc.Active(); ok {
-		net := conn.ChainInfo.Name
-		endpoint = "● " + conn.Endpoint.Name + " · " + net
+		dotColor = statusGreen
+		endpoint = conn.Endpoint.Name + " · " + conn.ChainInfo.Name
 	} else if e, ok := a.cfg.ActiveEndpointConfig(); ok {
-		endpoint = "○ " + e.Name + " (not connected)"
+		dotColor = statusAmber
+		endpoint = e.Name + " (not connected)"
 	}
+	dot := canvas.NewText("●", dotColor)
+
+	// Wallet: label + lock state.
 	wallet := "no wallet selected"
 	if w, ok := a.cfg.WalletByID(a.cfg.ActiveWallet); ok && w.Label != "" {
-		wallet = "Wallet: " + w.Label
+		state := "locked"
+		if _, id, unlocked := a.currentSigner(); unlocked && id == w.ID {
+			state = "unlocked"
+		}
+		wallet = fmt.Sprintf("%s (%s)", w.Label, state)
 	}
+
 	a.statusBarBox.Objects = []fyne.CanvasObject{
+		dot,
 		widget.NewLabel(endpoint),
 		widget.NewSeparator(),
 		widget.NewLabel(wallet),

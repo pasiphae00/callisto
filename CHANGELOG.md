@@ -10,6 +10,18 @@ changes; `v1.0.0` marks the first stable, documented release.
 ## [Unreleased]
 
 ### Added
+- Gas estimation + pre-sign review: EIP-1559 fee estimation (`internal/tx`
+  `EstimateFees`/`Prepare`) — estimated gas with headroom, node-suggested tip,
+  and a `2*baseFee + tip` max fee — assembled into a dynamic-fee transaction. The
+  Send flow now shows a full review (decoded transfer, nonce, per-gas fees, and
+  max total fee) before signing. Verified against live Sepolia fee data.
+- Sign / broadcast / inclusion tracking: the review's "Sign & send" signs with the
+  unlocked wallet (only when it matches the sender), broadcasts, surfaces the hash
+  with an explorer link, then tracks inclusion (status/block/timestamp) in the
+  background.
+- `internal/history` + History pane: transactions are recorded through their
+  lifecycle (prepared → submitted → included/failed) in the SQLite store and
+  listed with status and an explorer link.
 - `internal/tx`: chain/gas-agnostic transaction-build core. `BuildNativeSend`
   and `BuildERC20Send` produce a `Send` (recipient/asset/amount + the concrete
   to/value/calldata); ERC-20 calldata encoding is verified byte-for-byte.

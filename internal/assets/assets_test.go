@@ -12,8 +12,8 @@ import (
 
 // mockClient implements rpc.Client; only BalanceAt and CallContract are used.
 type mockClient struct {
-	native   *big.Int
-	handler  func(to common.Address, sel [4]byte) ([]byte, error)
+	native  *big.Int
+	handler func(to common.Address, sel [4]byte) ([]byte, error)
 }
 
 func (m *mockClient) BalanceAt(ctx context.Context, account common.Address, block *big.Int) (*big.Int, error) {
@@ -26,14 +26,18 @@ func (m *mockClient) CallContract(ctx context.Context, msg ethereum.CallMsg, blo
 }
 
 // unused interface methods
-func (m *mockClient) ChainID(context.Context) (*big.Int, error)                             { return big.NewInt(1), nil }
-func (m *mockClient) BlockNumber(context.Context) (uint64, error)                           { return 0, nil }
-func (m *mockClient) HeaderByNumber(context.Context, *big.Int) (*types.Header, error)       { return nil, nil }
-func (m *mockClient) NonceAt(context.Context, common.Address, *big.Int) (uint64, error)     { return 0, nil }
-func (m *mockClient) PendingNonceAt(context.Context, common.Address) (uint64, error)        { return 0, nil }
-func (m *mockClient) SuggestGasTipCap(context.Context) (*big.Int, error)                    { return big.NewInt(0), nil }
-func (m *mockClient) EstimateGas(context.Context, ethereum.CallMsg) (uint64, error)         { return 0, nil }
-func (m *mockClient) SendTransaction(context.Context, *types.Transaction) error             { return nil }
+func (m *mockClient) ChainID(context.Context) (*big.Int, error)   { return big.NewInt(1), nil }
+func (m *mockClient) BlockNumber(context.Context) (uint64, error) { return 0, nil }
+func (m *mockClient) HeaderByNumber(context.Context, *big.Int) (*types.Header, error) {
+	return nil, nil
+}
+func (m *mockClient) NonceAt(context.Context, common.Address, *big.Int) (uint64, error) {
+	return 0, nil
+}
+func (m *mockClient) PendingNonceAt(context.Context, common.Address) (uint64, error) { return 0, nil }
+func (m *mockClient) SuggestGasTipCap(context.Context) (*big.Int, error)             { return big.NewInt(0), nil }
+func (m *mockClient) EstimateGas(context.Context, ethereum.CallMsg) (uint64, error)  { return 0, nil }
+func (m *mockClient) SendTransaction(context.Context, *types.Transaction) error      { return nil }
 func (m *mockClient) TransactionReceipt(context.Context, common.Hash) (*types.Receipt, error) {
 	return nil, nil
 }

@@ -3,15 +3,22 @@ package ui
 import (
 	"context"
 	"fmt"
+	"math/big"
 	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
+
+	"github.com/ethereum/go-ethereum/common"
 
 	"codeberg.org/pasiphae/callisto/internal/address"
 	"codeberg.org/pasiphae/callisto/internal/assets"
+	"codeberg.org/pasiphae/callisto/internal/chain"
+	"codeberg.org/pasiphae/callisto/internal/history"
+	"codeberg.org/pasiphae/callisto/internal/rpc"
 	"codeberg.org/pasiphae/callisto/internal/tx"
 )
 
@@ -208,32 +215,289 @@ func (p *sendPane) prepare() {
 		dialog.ShowError(err, p.app.window)
 		return
 	}
-	p.showSummary(send)
+
+	// Estimate gas + assemble the transaction off the UI thread, then review.
+	conn, ok := p.app.rpc.Active()
+	if !ok {
+		dialog.ShowError(fmt.Errorf("connect an RPC endpoint first"), p.app.window)
+		return
+	}
+	p.prepareBtn.Disable()
+	p.status.SetText("Estimating gas…")
+	client := conn.Client
+	chainID := new(big.Int).Set(conn.ChainID)
+
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		prep, prepErr := tx.Prepare(ctx, client, chainID, send)
+		fyne.Do(func() {
+			p.prepareBtn.Enable()
+			p.updatePrepareState()
+			if prepErr != nil {
+				dialog.ShowError(fmt.Errorf("could not prepare transaction: %w", prepErr), p.app.window)
+				p.status.SetText("Ready")
+				return
+			}
+			p.showReview(prep, conn.ChainInfo)
+		})
+	}()
 }
 
-// showSummary displays the prepared transfer. In later phases this becomes the
-// full pre-sign review with gas and a Sign action.
-func (p *sendPane) showSummary(s tx.Send) {
-	lines := []string{
-		fmt.Sprintf("Send %s %s", assets.FormatUnits(s.Amount, s.Decimals), s.Symbol),
-		fmt.Sprintf("To:    %s", address.Format(s.Recipient)),
-		fmt.Sprintf("From:  %s", address.Format(s.From)),
+// showReview presents the full pre-sign review: decoded transfer, fees, and a
+// Sign & send action enabled only when the matching wallet is unlocked.
+func (p *sendPane) showReview(prep tx.Prepared, info chain.Info) {
+	s := prep.Send
+	nativeSym := info.Native.Symbol
+
+	rows := [][2]string{
+		{"Amount", fmt.Sprintf("%s %s", assets.FormatUnits(s.Amount, s.Decimals), s.Symbol)},
+		{"To", address.Format(s.Recipient)},
+		{"From", address.Format(s.From)},
+		{"Network", info.Name},
+		{"Nonce", fmt.Sprintf("%d", prep.Nonce)},
 	}
-	if s.IsNative {
-		lines = append(lines, fmt.Sprintf("Type:  native transfer"))
-	} else {
-		lines = append(lines,
-			fmt.Sprintf("Type:  ERC-20 transfer"),
-			fmt.Sprintf("Token: %s", address.Format(s.Token)),
-			fmt.Sprintf("Data:  0x%x", s.Call.Data),
+	if !s.IsNative {
+		rows = append(rows,
+			[2]string{"Type", "ERC-20 transfer"},
+			[2]string{"Token", address.Format(s.Token)},
+			[2]string{"Call", fmt.Sprintf("transfer(%s, %s)", address.Short(s.Recipient), assets.FormatUnits(s.Amount, s.Decimals))},
 		)
+	} else {
+		rows = append(rows, [2]string{"Type", "Native transfer"})
 	}
-	lines = append(lines, "", "Gas estimation, review, and signing come next.")
+	rows = append(rows,
+		[2]string{"Gas limit", fmt.Sprintf("%d", prep.Fees.GasLimit)},
+		[2]string{"Base fee", assets.FormatUnits(prep.Fees.BaseFee, 9) + " gwei"},
+		[2]string{"Priority tip", assets.FormatUnits(prep.Fees.GasTipCap, 9) + " gwei"},
+		[2]string{"Max fee/gas", assets.FormatUnits(prep.Fees.GasFeeCap, 9) + " gwei"},
+		[2]string{"Max total fee", assets.FormatUnits(prep.Fees.MaxFeeWei(), 18) + " " + nativeSym},
+	)
 
-	body := widget.NewLabel(joinLines(lines))
-	dialog.ShowCustom("Prepared transfer", "Close", container.NewPadded(body), p.app.window)
+	grid := container.New(layout.NewFormLayout())
+	for _, r := range rows {
+		key := widget.NewLabelWithStyle(r[0], fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+		grid.Add(key)
+		grid.Add(widget.NewLabel(r[1]))
+	}
+
+	// Determine whether we can sign right now.
+	signReady, signMsg := p.signAvailability(s.From)
+	notice := widget.NewLabel(signMsg)
+	notice.Wrapping = fyne.TextWrapWord
+
+	content := container.NewVBox(grid, widget.NewSeparator(), notice)
+
+	d := dialog.NewCustomConfirm("Review transaction", "Sign & send", "Cancel", content,
+		func(confirm bool) {
+			if confirm {
+				p.signAndSend(prep, info)
+			}
+		}, p.app.window)
+	d.Resize(fyne.NewSize(640, 520))
+	// Only allow confirming when a matching unlocked signer is available.
+	if !signReady {
+		d.SetConfirmText("Unlock to sign")
+	}
+	d.Show()
+	if !signReady {
+		// Fyne has no per-dialog disable of the confirm button, so guard in the
+		// handler: if not ready, signAndSend re-checks and shows an error.
+	}
 }
 
+// signAvailability reports whether the active signer can sign for `from`.
+func (p *sendPane) signAvailability(from common.Address) (bool, string) {
+	s, _, ok := p.app.currentSigner()
+	if !ok {
+		return false, "No wallet is unlocked. Unlock the sending wallet in the Wallets tab, then sign."
+	}
+	if s.Address() != from {
+		return false, "The unlocked wallet does not match the sender. Unlock " + address.Short(from) + " to sign."
+	}
+	return true, "Ready to sign with the unlocked wallet."
+}
+
+// signAndSend signs the prepared transaction with the active signer, broadcasts
+// it, records history, and tracks inclusion — all off the UI thread.
+func (p *sendPane) signAndSend(prep tx.Prepared, info chain.Info) {
+	from := prep.Send.From
+	ready, msg := p.signAvailability(from)
+	if !ready {
+		dialog.ShowError(fmt.Errorf("%s", msg), p.app.window)
+		return
+	}
+	signerObj, _, _ := p.app.currentSigner()
+	conn, ok := p.app.rpc.Active()
+	if !ok {
+		dialog.ShowError(fmt.Errorf("connection lost; reconnect and try again"), p.app.window)
+		return
+	}
+	client := conn.Client
+
+	// Record the intent up front so history reflects even a failed submit.
+	rec := history.Record{
+		ChainID:       info.ID,
+		WalletAddress: address.Format(from),
+		Kind:          sendKind(prep.Send),
+		Instructions:  sendSummary(prep.Send),
+		ToAddress:     address.Format(prep.Send.Recipient),
+		ValueWei:      prep.Send.Amount.String(),
+		Status:        history.StatusPrepared,
+	}
+	recID := p.insertHistory(rec)
+
+	p.status.SetText("Signing…")
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		signed, err := signerObj.SignTx(ctx, prep.Tx, prep.ChainID)
+		if err != nil {
+			p.finishError(recID, "sign: "+err.Error())
+			return
+		}
+		hash, err := tx.Broadcast(ctx, client, signed)
+		if err != nil {
+			p.finishError(recID, err.Error())
+			return
+		}
+		p.markSubmitted(recID, hash.Hex())
+
+		fyne.Do(func() {
+			p.status.SetText("Submitted: " + hash.Hex())
+			p.showBroadcastResult(hash.Hex(), info)
+			p.notifyHistory()
+		})
+
+		// Track inclusion in the background (own context, survives the dialog).
+		go p.trackInclusion(recID, client, hash, info)
+	}()
+}
+
+// trackInclusion waits for the receipt, records the outcome, and notifies the
+// user. It uses its own context so it outlives the review dialog.
+func (p *sendPane) trackInclusion(recID int64, client rpc.Client, hash common.Hash, info chain.Info) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+
+	receipt, err := tx.WaitForReceipt(ctx, client, hash)
+	if err != nil {
+		fyne.Do(func() { p.status.SetText("Could not confirm inclusion: " + err.Error()) })
+		return
+	}
+	success := tx.Succeeded(receipt)
+	blockNum := receipt.BlockNumber.Int64()
+
+	// Fetch the block timestamp (best-effort).
+	var blockTime int64
+	if head, herr := client.HeaderByNumber(ctx, receipt.BlockNumber); herr == nil && head != nil {
+		blockTime = int64(head.Time)
+	}
+	p.markIncluded(recID, blockNum, blockTime, success)
+
+	fyne.Do(func() {
+		outcome := "succeeded"
+		if !success {
+			outcome = "failed"
+		}
+		p.status.SetText(fmt.Sprintf("Tx %s in block %d", outcome, blockNum))
+		p.notifyHistory()
+		p.showInclusionResult(hash.Hex(), blockNum, blockTime, success, info)
+	})
+}
+
+// showBroadcastResult shows the submitted hash with a link to the explorer.
+func (p *sendPane) showBroadcastResult(hash string, info chain.Info) {
+	body := container.NewVBox(
+		widget.NewLabel("Transaction submitted. Waiting for inclusion…"),
+		widget.NewLabel(hash),
+	)
+	if link := info.TxURL(hash); link != "" {
+		body.Add(widget.NewButton("View on explorer", func() { p.app.openURL(link) }))
+	}
+	dialog.ShowCustom("Broadcast", "Close", body, p.app.window)
+}
+
+// showInclusionResult reports the mined outcome.
+func (p *sendPane) showInclusionResult(hash string, block, blockTime int64, success bool, info chain.Info) {
+	title := "Transaction included"
+	status := "Execution: success ✓"
+	if !success {
+		title = "Transaction reverted"
+		status = "Execution: failed ✗"
+	}
+	lines := []string{status, fmt.Sprintf("Block: %d", block)}
+	if blockTime > 0 {
+		lines = append(lines, "Time:  "+time.Unix(blockTime, 0).Local().Format(time.RFC1123))
+	}
+	body := container.NewVBox(widget.NewLabel(joinLines(lines)))
+	if link := info.TxURL(hash); link != "" {
+		body.Add(widget.NewButton("View on explorer", func() { p.app.openURL(link) }))
+	}
+	dialog.ShowCustom(title, "Close", body, p.app.window)
+	// Refresh balances after a state change.
+	p.reload()
+}
+
+// --- history helpers (nil-safe for tests without a store) -------------------
+
+func (p *sendPane) insertHistory(rec history.Record) int64 {
+	if p.app.history == nil {
+		return 0
+	}
+	id, err := p.app.history.Insert(rec)
+	if err != nil {
+		return 0
+	}
+	return id
+}
+
+func (p *sendPane) markSubmitted(id int64, hash string) {
+	if p.app.history != nil && id != 0 {
+		_ = p.app.history.MarkSubmitted(id, hash)
+	}
+}
+
+func (p *sendPane) markIncluded(id, block, blockTime int64, success bool) {
+	if p.app.history != nil && id != 0 {
+		_ = p.app.history.MarkIncluded(id, block, blockTime, success)
+	}
+}
+
+// finishError records a terminal error and surfaces it on the UI thread.
+func (p *sendPane) finishError(id int64, msg string) {
+	if p.app.history != nil && id != 0 {
+		_ = p.app.history.MarkError(id, msg)
+	}
+	fyne.Do(func() {
+		p.status.SetText("Failed: " + msg)
+		dialog.ShowError(fmt.Errorf("%s", msg), p.app.window)
+		p.notifyHistory()
+	})
+}
+
+func (p *sendPane) notifyHistory() {
+	if p.app.historyReload != nil {
+		p.app.historyReload()
+	}
+}
+
+// sendKind classifies a Send for history.
+func sendKind(s tx.Send) string {
+	if s.IsNative {
+		return "send-native"
+	}
+	return "send-erc20"
+}
+
+// sendSummary is a human description stored with the history record.
+func sendSummary(s tx.Send) string {
+	return fmt.Sprintf("Send %s %s to %s",
+		assets.FormatUnits(s.Amount, s.Decimals), s.Symbol, address.Short(s.Recipient))
+}
+
+// joinLines joins lines with newlines.
 func joinLines(lines []string) string {
 	out := ""
 	for i, l := range lines {

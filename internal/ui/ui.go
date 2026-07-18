@@ -10,6 +10,7 @@ package ui
 import (
 	"fmt"
 	"image/color"
+	"net/url"
 	"sync"
 
 	"fyne.io/fyne/v2"
@@ -20,6 +21,7 @@ import (
 
 	"codeberg.org/pasiphae/callisto/internal/config"
 	"codeberg.org/pasiphae/callisto/internal/ens"
+	"codeberg.org/pasiphae/callisto/internal/history"
 	"codeberg.org/pasiphae/callisto/internal/rpc"
 	"codeberg.org/pasiphae/callisto/internal/signer"
 	"codeberg.org/pasiphae/callisto/internal/store"
@@ -29,14 +31,18 @@ import (
 // via Config.Save(); Store backs history and the contract address book; rpc is
 // the live connection manager.
 type App struct {
-	cfg   *config.Config
-	store *store.Store
-	rpc   *rpc.Manager
+	cfg     *config.Config
+	store   *store.Store
+	rpc     *rpc.Manager
+	history *history.Repo
 
 	fyneApp fyne.App
 	window  fyne.Window
 
 	statusBarBox *fyne.Container
+
+	// historyReload, if set by the History pane, refreshes it after a send.
+	historyReload func()
 
 	// Live signer session for the currently unlocked wallet, if any. Held in
 	// memory only; wiped on lock/disconnect/close. Never persisted.
@@ -48,7 +54,21 @@ type App struct {
 // New constructs the App wiring. It does not create any windows or a driver, so
 // it is safe to call in tests; call Run to actually launch the GUI.
 func New(cfg *config.Config, st *store.Store) *App {
-	return &App{cfg: cfg, store: st, rpc: rpc.NewManager()}
+	a := &App{cfg: cfg, store: st, rpc: rpc.NewManager()}
+	if st != nil {
+		a.history = history.New(st)
+	}
+	return a
+}
+
+// openURL opens a URL in the user's browser if a Fyne app is running.
+func (a *App) openURL(raw string) {
+	if a.fyneApp == nil || raw == "" {
+		return
+	}
+	if u, err := url.Parse(raw); err == nil {
+		_ = a.fyneApp.OpenURL(u)
+	}
 }
 
 // currentResolver returns an ENS resolver bound to the active connection, or nil
@@ -123,7 +143,7 @@ func (a *App) buildRoot() fyne.CanvasObject {
 		container.NewTabItem("Wallets", newWalletsPane(a).build()),
 		container.NewTabItem("Assets", newAssetsPane(a).build()),
 		container.NewTabItem("Send", newSendPane(a).build()),
-		container.NewTabItem("History", a.placeholder("History", "Transactions Callisto has prepared.")),
+		container.NewTabItem("History", newHistoryPane(a).build()),
 		container.NewTabItem("Settings", newSettingsPane(a).build()),
 	)
 	tabs.SetTabLocation(container.TabLocationLeading)

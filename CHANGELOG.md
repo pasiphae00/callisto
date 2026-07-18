@@ -9,6 +9,16 @@ changes; `v1.0.0` marks the first stable, documented release.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-18
+
+Hardware wallets now genuinely work: Trezor Safe-family devices went from
+completely undetectable to fully functional (detection, signing, hidden
+wallets, on-device passphrase entry) across both the standalone Trezor
+Bridge and the newer bridge embedded in recent Trezor Suite builds — found
+and fixed through extensive live-hardware testing this round, not just
+code review. Also adds the About dialog, app icon, and full/copyable
+wallet addresses.
+
 ### Fixed
 - Trezor Safe-family devices (confirmed: Safe 5) were never detected, even
   connected and unlocked — fixed and verified live end-to-end (address
@@ -186,6 +196,7 @@ keys), and shows live balances — the foundation for the v1 transaction flows.
   (already vendored by go-ethereum) rather than pulling in `btcutil`, which drags
   a personal-fork transitive dependency into a signing wallet.
 
-[Unreleased]: https://codeberg.org/pasiphae/callisto/compare/v0.2.0...HEAD
+[Unreleased]: https://codeberg.org/pasiphae/callisto/compare/v0.3.0...HEAD
+[0.3.0]: https://codeberg.org/pasiphae/callisto/compare/v0.2.0...v0.3.0
 [0.2.0]: https://codeberg.org/pasiphae/callisto/compare/v0.1.0...v0.2.0
 [0.1.0]: https://codeberg.org/pasiphae/callisto/releases/tag/v0.1.0

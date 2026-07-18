@@ -8,9 +8,9 @@ package main
 import (
 	"log"
 
-	"github.com/pasiphae/callisto/internal/config"
-	"github.com/pasiphae/callisto/internal/store"
-	"github.com/pasiphae/callisto/internal/ui"
+	"codeberg.org/pasiphae/callisto/internal/config"
+	"codeberg.org/pasiphae/callisto/internal/store"
+	"codeberg.org/pasiphae/callisto/internal/ui"
 )
 
 func main() {

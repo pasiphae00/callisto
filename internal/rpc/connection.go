@@ -7,7 +7,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/ethclient"
 
-	"github.com/pasiphae/callisto/internal/chain"
+	"codeberg.org/pasiphae/callisto/internal/chain"
 )
 
 // Connection is a live, dialed link to one endpoint. It bundles the low-level

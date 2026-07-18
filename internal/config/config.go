@@ -16,8 +16,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/pasiphae/callisto/internal/rpc"
-	"github.com/pasiphae/callisto/internal/wallet"
+	"codeberg.org/pasiphae/callisto/internal/rpc"
+	"codeberg.org/pasiphae/callisto/internal/wallet"
 )
 
 // appDir is the subdirectory under os.UserConfigDir used for all Callisto data.

@@ -13,9 +13,10 @@ import (
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
 
-	"github.com/pasiphae/callisto/internal/config"
-	"github.com/pasiphae/callisto/internal/rpc"
-	"github.com/pasiphae/callisto/internal/store"
+	"codeberg.org/pasiphae/callisto/internal/config"
+	"codeberg.org/pasiphae/callisto/internal/ens"
+	"codeberg.org/pasiphae/callisto/internal/rpc"
+	"codeberg.org/pasiphae/callisto/internal/store"
 )
 
 // App holds the wiring shared across panes. Panes read/update Config and persist
@@ -36,6 +37,16 @@ type App struct {
 // it is safe to call in tests; call Run to actually launch the GUI.
 func New(cfg *config.Config, st *store.Store) *App {
 	return &App{cfg: cfg, store: st, rpc: rpc.NewManager()}
+}
+
+// currentResolver returns an ENS resolver bound to the active connection, or nil
+// if no RPC is connected. Widgets call this each time they need to resolve so
+// they always use the current endpoint.
+func (a *App) currentResolver() *ens.Resolver {
+	if conn, ok := a.rpc.Active(); ok {
+		return ens.NewResolver(conn.Client)
+	}
+	return nil
 }
 
 // Run creates the Fyne application + main window and blocks until the window is

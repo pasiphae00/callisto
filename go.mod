@@ -1,4 +1,4 @@
-module github.com/pasiphae/callisto
+module codeberg.org/pasiphae/callisto
 
 go 1.26.5
 

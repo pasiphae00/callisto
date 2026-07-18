@@ -10,7 +10,7 @@ import (
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
 
-	"github.com/pasiphae/callisto/internal/rpc"
+	"codeberg.org/pasiphae/callisto/internal/rpc"
 )
 
 // settingsPane manages the persisted RPC endpoint list: add, remove, select, and
@@ -19,8 +19,8 @@ import (
 type settingsPane struct {
 	app *App
 
-	list      *widget.List
-	statusLbl *widget.Label
+	list       *widget.List
+	statusLbl  *widget.Label
 	connectBtn *widget.Button
 	removeBtn  *widget.Button
 

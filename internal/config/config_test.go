@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/pasiphae/callisto/internal/rpc"
-	"github.com/pasiphae/callisto/internal/wallet"
+	"codeberg.org/pasiphae/callisto/internal/rpc"
+	"codeberg.org/pasiphae/callisto/internal/wallet"
 )
 
 // isolate points os.UserConfigDir at a temp location for the duration of a test.

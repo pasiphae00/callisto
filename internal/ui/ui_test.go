@@ -6,9 +6,9 @@ import (
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/test"
 
-	"github.com/pasiphae/callisto/internal/config"
-	"github.com/pasiphae/callisto/internal/rpc"
-	"github.com/pasiphae/callisto/internal/store"
+	"codeberg.org/pasiphae/callisto/internal/config"
+	"codeberg.org/pasiphae/callisto/internal/rpc"
+	"codeberg.org/pasiphae/callisto/internal/store"
 )
 
 // TestBuildRootHeadless verifies the root layout constructs under the Fyne test

@@ -202,6 +202,10 @@
     (macOS Keychain; Secret Service / DPAPI elsewhere) for defense in depth beyond the
     passphrase-encrypted file. Deferred; noted in the README roadmap.
 
+### support wallet connect
+- user should be able to paste a walletconnect link and use callisto to sign transactions with their configured wallet on arbitrary web3 dApps
+- like Safe, this should be a separate pane. it should link via walletconnect whichever wallet is selected 
+
 ### trezor wallet types — ✅ done (see "bugs" above for the full story)
 - ~~trezor is kind of weird... "unlock with pin (on device) -> enter passphrase
   (on computer) -> THEN select derivation index"~~

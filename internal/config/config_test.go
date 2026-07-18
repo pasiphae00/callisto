@@ -38,6 +38,24 @@ func TestSafeRegistry(t *testing.T) {
 	}
 }
 
+func TestKeystoreDir(t *testing.T) {
+	isolate(t)
+	dir, err := KeystoreDir()
+	if err != nil {
+		t.Fatalf("KeystoreDir: %v", err)
+	}
+	if filepath.Base(dir) != "keystores" {
+		t.Errorf("keystore dir = %q, want .../keystores", dir)
+	}
+	info, err := os.Stat(dir)
+	if err != nil {
+		t.Fatalf("keystore dir not created: %v", err)
+	}
+	if !info.IsDir() {
+		t.Error("keystore path is not a directory")
+	}
+}
+
 func TestUpsertSafeRejectsInvalid(t *testing.T) {
 	c := &Config{}
 	if err := c.UpsertSafe(safe.Descriptor{Label: "no id"}); err == nil {

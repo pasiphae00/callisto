@@ -3,7 +3,9 @@ package ui
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
+	"path/filepath"
 	"strconv"
 
 	"fyne.io/fyne/v2"
@@ -13,6 +15,8 @@ import (
 	"fyne.io/fyne/v2/widget"
 
 	"codeberg.org/pasiphae/callisto/internal/address"
+	"codeberg.org/pasiphae/callisto/internal/config"
+	"codeberg.org/pasiphae/callisto/internal/keystore"
 	"codeberg.org/pasiphae/callisto/internal/signer"
 	"codeberg.org/pasiphae/callisto/internal/signer/hardware"
 	"codeberg.org/pasiphae/callisto/internal/signer/hot"
@@ -20,6 +24,11 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 )
+
+// minKeystorePassphraseLen is a soft minimum for the wallet-encryption passphrase.
+// The seed phrase remains the real backup, but the passphrase guards the on-disk
+// keystore, so we nudge users away from trivially short ones.
+const minKeystorePassphraseLen = 8
 
 // walletsPane manages the persisted wallet registry and the live signer session.
 // Descriptors (address + derivation path, no secrets) persist; unlocking a wallet
@@ -177,59 +186,161 @@ func (p *walletsPane) refresh() {
 	p.app.refreshStatusBar()
 }
 
-// showAddHotWallet collects a label, mnemonic, optional passphrase, and account
-// index, derives the wallet, persists the descriptor, and holds the live signer.
+// showAddHotWallet runs the one-time hot-wallet import: enter the recovery phrase
+// once, pick the account(s) to add from a derived index→address list, and set an
+// encryption passphrase. The seed is then stored only as an encrypted keystore;
+// subsequent unlocks need just the passphrase (see unlockHotKeystore).
 func (p *walletsPane) showAddHotWallet() {
-	label := widget.NewEntry()
-	label.SetPlaceHolder("e.g. Main")
+	labelPrefix := widget.NewEntry()
+	labelPrefix.SetPlaceHolder("e.g. Main")
 	mnemonic := widget.NewMultiLineEntry()
 	mnemonic.SetPlaceHolder("12 or 24 word recovery phrase")
 	mnemonic.Wrapping = fyne.TextWrapWord
-	passphrase := widget.NewPasswordEntry()
-	passphrase.SetPlaceHolder("optional BIP-39 passphrase")
-	index := widget.NewEntry()
-	index.SetText("0")
+	bip39pass := widget.NewPasswordEntry()
+	bip39pass.SetPlaceHolder("optional BIP-39 passphrase (25th word)")
+	ksPass := widget.NewPasswordEntry()
+	ksPass.SetPlaceHolder("passphrase to encrypt this wallet")
+	ksPass2 := widget.NewPasswordEntry()
+	ksPass2.SetPlaceHolder("confirm passphrase")
 
-	items := []*widget.FormItem{
-		widget.NewFormItem("Label", label),
-		widget.NewFormItem("Recovery phrase", mnemonic),
-		widget.NewFormItem("Passphrase", passphrase),
-		widget.NewFormItem("Account #", index),
-	}
-	d := dialog.NewForm("Add hot wallet", "Add", "Cancel", items, func(ok bool) {
-		// Best-effort: drop the reference to the entered phrase text.
-		defer mnemonic.SetText("")
-		if !ok {
-			return
-		}
-		idx, err := strconv.ParseUint(index.Text, 10, 32)
-		if err != nil {
-			dialog.ShowError(fmt.Errorf("account # must be a non-negative integer"), p.app.window)
-			return
-		}
-		w, err := hot.Open(mnemonic.Text, passphrase.Text, hot.DefaultPath(uint32(idx)))
+	// Account-selection state, populated on demand from the phrase.
+	var checks []*widget.Check
+	var accounts []hot.Account
+	accountsBox := container.NewVBox()
+	var shown uint32
+	hint := widget.NewLabel("Enter your phrase, then Load accounts to pick which to add.")
+	hint.Wrapping = fyne.TextWrapWord
+
+	loadMore := func() {
+		got, err := hot.PreviewAccounts(mnemonic.Text, bip39pass.Text, shown, 10)
 		if err != nil {
 			dialog.ShowError(err, p.app.window)
 			return
 		}
+		for _, a := range got {
+			label := fmt.Sprintf("#%d   %s", a.Index, address.Format(a.Address))
+			chk := widget.NewCheck(label, nil)
+			if a.Index == 0 {
+				chk.SetChecked(true) // sensible default
+			}
+			chk.Refresh()
+			checks = append(checks, chk)
+			accounts = append(accounts, a)
+			accountsBox.Add(chk)
+		}
+		shown += uint32(len(got))
+		hint.SetText("Tick the account(s) to add. Show more to reveal higher indexes.")
+		accountsBox.Refresh()
+	}
+	loadBtn := widget.NewButton("Load accounts", func() {
+		accountsBox.Objects = nil
+		checks, accounts, shown = nil, nil, 0
+		loadMore()
+	})
+	moreBtn := widget.NewButton("Show more", loadMore)
+
+	form := container.NewVBox(
+		widget.NewLabelWithStyle("Label prefix", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
+		labelPrefix,
+		widget.NewLabelWithStyle("Recovery phrase (one-time import)", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
+		mnemonic,
+		widget.NewLabelWithStyle("BIP-39 passphrase (optional)", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
+		bip39pass,
+		container.NewHBox(loadBtn, moreBtn),
+		hint,
+		accountsBox,
+		widget.NewSeparator(),
+		widget.NewLabelWithStyle("Encryption passphrase (used to unlock later)", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
+		ksPass,
+		ksPass2,
+	)
+
+	d := dialog.NewCustomConfirm("Import hot wallet", "Import", "Cancel",
+		container.NewVScroll(form), func(okBtn bool) {
+			defer mnemonic.SetText("")
+			if !okBtn {
+				return
+			}
+			p.doImportHot(labelPrefix.Text, mnemonic.Text, bip39pass.Text, ksPass.Text, ksPass2.Text, checks, accounts)
+		}, p.app.window)
+	d.Resize(fyne.NewSize(620, 640))
+	d.Show()
+}
+
+// doImportHot validates the import inputs, encrypts the seed to a shared keystore,
+// and creates one descriptor per selected account.
+func (p *walletsPane) doImportHot(labelPrefix, mnemonic, bip39pass, ksPass, ksPass2 string, checks []*widget.Check, accounts []hot.Account) {
+	var selected []hot.Account
+	for i, c := range checks {
+		if c.Checked && i < len(accounts) {
+			selected = append(selected, accounts[i])
+		}
+	}
+	if len(selected) == 0 {
+		dialog.ShowError(fmt.Errorf("load accounts and tick at least one to import"), p.app.window)
+		return
+	}
+	if len(ksPass) < minKeystorePassphraseLen {
+		dialog.ShowError(fmt.Errorf("choose an encryption passphrase of at least %d characters", minKeystorePassphraseLen), p.app.window)
+		return
+	}
+	if ksPass != ksPass2 {
+		dialog.ShowError(fmt.Errorf("the encryption passphrases do not match"), p.app.window)
+		return
+	}
+
+	// Encrypt the seed once (also validates the mnemonic).
+	ks, err := hot.NewKeystore(mnemonic, bip39pass, ksPass)
+	if err != nil {
+		dialog.ShowError(err, p.app.window)
+		return
+	}
+	ksDir, err := config.KeystoreDir()
+	if err != nil {
+		dialog.ShowError(err, p.app.window)
+		return
+	}
+	ksID := newWalletID()
+	if err := keystore.Save(filepath.Join(ksDir, ksID+".json"), ks); err != nil {
+		dialog.ShowError(fmt.Errorf("save keystore: %w", err), p.app.window)
+		return
+	}
+
+	prefix := labelPrefix
+	if prefix == "" {
+		prefix = "Wallet"
+	}
+	created := 0
+	for _, a := range selected {
 		desc := wallet.Descriptor{
 			ID:             newWalletID(),
-			Label:          label.Text,
-			Address:        address.Format(w.Address()),
+			Label:          fmt.Sprintf("%s #%d", prefix, a.Index),
+			Address:        address.Format(a.Address),
 			Kind:           wallet.KindHot,
-			DerivationPath: hot.DefaultPath(uint32(idx)),
+			DerivationPath: a.Path,
+			KeystoreID:     ksID,
 		}
-		if err := p.persistAndActivate(desc, w); err != nil {
-			w.Lock()
-			dialog.ShowError(err, p.app.window)
-			return
+		if err := p.app.cfg.UpsertWallet(desc); err != nil {
+			continue
 		}
-		p.refresh()
-		dialog.ShowInformation("Wallet added",
-			fmt.Sprintf("%s\n%s", desc.Label, desc.Address), p.app.window)
-	}, p.app.window)
-	d.Resize(fyne.NewSize(560, 380))
-	d.Show()
+		if created == 0 {
+			p.app.cfg.ActiveWallet = desc.ID
+		}
+		created++
+	}
+	if created == 0 {
+		_ = keystore.Wipe(filepath.Join(ksDir, ksID+".json"))
+		dialog.ShowError(fmt.Errorf("no accounts could be imported"), p.app.window)
+		return
+	}
+	if err := p.app.cfg.Save(); err != nil {
+		dialog.ShowError(err, p.app.window)
+		return
+	}
+	p.refresh()
+	dialog.ShowInformation("Wallet imported",
+		fmt.Sprintf("%d account(s) imported and encrypted.\nUnlock with your passphrase — no recovery phrase needed again.", created),
+		p.app.window)
 }
 
 // showAddHardwareWallet connects a Ledger or Trezor, derives an account, and
@@ -297,20 +408,93 @@ func (p *walletsPane) showAddHardwareWallet() {
 	d.Show()
 }
 
-// unlockSelected re-derives the selected wallet from a freshly entered phrase and,
-// only if the derived address matches the stored descriptor, installs the signer.
-// Hardware wallets reconnect the device instead of prompting for a phrase.
+// unlockSelected installs a live signer for the selected wallet. Hardware wallets
+// reconnect the device; hot wallets with an encrypted keystore unlock with just
+// their passphrase; legacy hot wallets (imported before keystores) fall back to
+// re-entering the recovery phrase.
 func (p *walletsPane) unlockSelected() {
 	if p.selected < 0 || p.selected >= len(p.app.cfg.Wallets) {
 		return
 	}
 	desc := p.app.cfg.Wallets[p.selected]
 
-	if desc.IsHardware() {
+	switch {
+	case desc.IsHardware():
 		p.unlockHardware(desc)
+	case desc.KeystoreID != "":
+		p.unlockHotKeystore(desc)
+	default:
+		p.unlockHotLegacy(desc)
+	}
+}
+
+// unlockHotKeystore unlocks an encrypted hot wallet with its passphrase only.
+func (p *walletsPane) unlockHotKeystore(desc wallet.Descriptor) {
+	pass := widget.NewPasswordEntry()
+	pass.SetPlaceHolder("wallet passphrase")
+	d := dialog.NewForm("Unlock "+displayName(desc), "Unlock", "Cancel",
+		[]*widget.FormItem{widget.NewFormItem("Passphrase", pass)},
+		func(ok bool) {
+			if !ok {
+				return
+			}
+			p.openFromKeystore(desc, pass.Text)
+		}, p.app.window)
+	d.Resize(fyne.NewSize(460, 180))
+	d.Show()
+}
+
+// openFromKeystore decrypts the wallet's keystore off the UI thread (scrypt is
+// deliberately slow) and installs the signer only if the derived address matches.
+func (p *walletsPane) openFromKeystore(desc wallet.Descriptor, pass string) {
+	ksDir, err := config.KeystoreDir()
+	if err != nil {
+		dialog.ShowError(err, p.app.window)
 		return
 	}
+	ks, err := keystore.Load(filepath.Join(ksDir, desc.KeystoreID+".json"))
+	if err != nil {
+		dialog.ShowError(fmt.Errorf("keystore not found for this wallet: %w", err), p.app.window)
+		return
+	}
+	path := desc.DerivationPath
+	if path == "" {
+		path = hot.DefaultPath(0)
+	}
 
+	progress := dialog.NewCustomWithoutButtons("Unlocking…",
+		widget.NewLabel("Decrypting keystore…"), p.app.window)
+	progress.Show()
+	go func() {
+		w, err := hot.OpenFromKeystore(ks, pass, path)
+		fyne.Do(func() {
+			progress.Hide()
+			if err != nil {
+				if errors.Is(err, keystore.ErrBadPassphrase) {
+					dialog.ShowError(fmt.Errorf("wrong passphrase"), p.app.window)
+				} else {
+					dialog.ShowError(err, p.app.window)
+				}
+				return
+			}
+			if !addrEqual(w.Address(), desc.Address) {
+				w.Lock()
+				dialog.ShowError(fmt.Errorf("the keystore derived a different address than this wallet"), p.app.window)
+				return
+			}
+			p.app.setSigner(desc.ID, w)
+			p.app.cfg.ActiveWallet = desc.ID
+			if err := p.app.cfg.Save(); err != nil {
+				dialog.ShowError(err, p.app.window)
+			}
+			p.refresh()
+		})
+	}()
+}
+
+// unlockHotLegacy unlocks a pre-keystore hot wallet by re-entering the recovery
+// phrase (the old flow), kept for wallets imported before encrypted keystores.
+func (p *walletsPane) unlockHotLegacy(desc wallet.Descriptor) {
 	mnemonic := widget.NewMultiLineEntry()
 	mnemonic.SetPlaceHolder("recovery phrase for " + desc.Address)
 	mnemonic.Wrapping = fyne.TextWrapWord
@@ -412,13 +596,19 @@ func (p *walletsPane) lockActive() {
 }
 
 // removeSelected deletes a wallet descriptor (locking it first if it is active).
+// For an encrypted hot wallet, the encrypted keystore file is securely wiped once
+// no remaining wallet references it (accounts from one import share a keystore).
 func (p *walletsPane) removeSelected() {
 	if p.selected < 0 || p.selected >= len(p.app.cfg.Wallets) {
 		return
 	}
 	desc := p.app.cfg.Wallets[p.selected]
-	dialog.ShowConfirm("Remove wallet",
-		fmt.Sprintf("Remove %q?\nThis only forgets the address/label — your seed phrase is your backup.", displayName(desc)),
+
+	msg := fmt.Sprintf("Remove %q?\nThis only forgets the address/label — your recovery phrase is your backup.", displayName(desc))
+	if desc.KeystoreID != "" && p.lastKeystoreReference(desc) {
+		msg = fmt.Sprintf("Remove %q?\nThis deletes its encrypted keystore from this device (no other account uses it). Your recovery phrase remains your backup.", displayName(desc))
+	}
+	dialog.ShowConfirm("Remove wallet", msg,
 		func(ok bool) {
 			if !ok {
 				return
@@ -430,10 +620,42 @@ func (p *walletsPane) removeSelected() {
 			if err := p.app.cfg.Save(); err != nil {
 				dialog.ShowError(err, p.app.window)
 			}
+			p.maybeWipeKeystore(desc)
 			p.selected = -1
 			p.list.UnselectAll()
 			p.refresh()
 		}, p.app.window)
+}
+
+// lastKeystoreReference reports whether removed is the only remaining wallet that
+// references its keystore (i.e. removing it should wipe the keystore file). It must
+// be called before the descriptor is removed from the config.
+func (p *walletsPane) lastKeystoreReference(removed wallet.Descriptor) bool {
+	if removed.KeystoreID == "" {
+		return false
+	}
+	for _, w := range p.app.cfg.Wallets {
+		if w.ID != removed.ID && w.KeystoreID == removed.KeystoreID {
+			return false
+		}
+	}
+	return true
+}
+
+// maybeWipeKeystore deletes a removed wallet's keystore file if no other wallet
+// still references it. Called after the descriptor has been removed from config.
+func (p *walletsPane) maybeWipeKeystore(removed wallet.Descriptor) {
+	if removed.KeystoreID == "" {
+		return
+	}
+	for _, w := range p.app.cfg.Wallets {
+		if w.KeystoreID == removed.KeystoreID {
+			return // still referenced by another account
+		}
+	}
+	if ksDir, err := config.KeystoreDir(); err == nil {
+		_ = keystore.Wipe(filepath.Join(ksDir, removed.KeystoreID+".json"))
+	}
 }
 
 // persistAndActivate saves a new descriptor, marks it active, and installs the

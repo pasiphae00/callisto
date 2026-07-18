@@ -11,6 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	bip39 "github.com/tyler-smith/go-bip39"
 
+	"codeberg.org/pasiphae/callisto/internal/keystore"
 	"codeberg.org/pasiphae/callisto/internal/signer"
 )
 
@@ -62,13 +63,58 @@ func Open(mnemonic, passphrase, path string) (*Wallet, error) {
 	}
 	// NewSeed applies PBKDF2 to the (already checksum-valid) mnemonic.
 	seed := bip39.NewSeed(mnemonic, passphrase)
+	// newFromSeed copies the seed; drop this transient one.
+	defer zero(seed)
+	return newFromSeed(seed, path)
+}
 
-	w := &Wallet{seed: seed}
+// newFromSeed builds an unlocked wallet holding a copy of seed, with the account
+// at path selected. The caller retains ownership of the passed seed slice.
+func newFromSeed(seed []byte, path string) (*Wallet, error) {
+	w := &Wallet{seed: append([]byte(nil), seed...)}
 	if err := w.selectPathLocked(path); err != nil {
 		w.Lock()
 		return nil, err
 	}
 	return w, nil
+}
+
+// NewKeystore validates a mnemonic and returns an encrypted keystore of the
+// derived BIP-39 seed, sealed under keystorePassphrase, for one-time import. The
+// seed and mnemonic are not retained. An optional BIP-39 passphrase ("25th word")
+// is folded into the seed here; it is not needed again to unlock, since the
+// encrypted seed already incorporates it.
+func NewKeystore(mnemonic, bip39Passphrase, keystorePassphrase string) (*keystore.Keystore, error) {
+	if !bip39.IsMnemonicValid(mnemonic) {
+		return nil, ErrInvalidMnemonic
+	}
+	seed := bip39.NewSeed(mnemonic, bip39Passphrase)
+	defer zero(seed)
+	return keystore.Encrypt(seed, keystorePassphrase)
+}
+
+// OpenFromKeystore decrypts an encrypted seed keystore with keystorePassphrase and
+// returns an unlocked wallet with the account at path selected. It returns
+// keystore.ErrBadPassphrase if the passphrase is wrong or the keystore is corrupt.
+func OpenFromKeystore(ks *keystore.Keystore, keystorePassphrase, path string) (*Wallet, error) {
+	seed, err := ks.Decrypt(keystorePassphrase)
+	if err != nil {
+		return nil, err
+	}
+	defer zero(seed)
+	return newFromSeed(seed, path)
+}
+
+// PreviewAccounts derives count accounts starting at start from a mnemonic without
+// retaining an unlocked wallet — used to show an index→address list at import so
+// the user can pick the account(s) they recognize instead of guessing an index.
+func PreviewAccounts(mnemonic, bip39Passphrase string, start, count uint32) ([]Account, error) {
+	w, err := Open(mnemonic, bip39Passphrase, DefaultPath(start))
+	if err != nil {
+		return nil, err
+	}
+	defer w.Lock()
+	return w.DeriveAccounts(start, count)
 }
 
 // Address returns the currently selected account address. It remains available

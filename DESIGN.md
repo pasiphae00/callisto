@@ -128,12 +128,14 @@ Callisto MUST support BOTH externally-owned accounts (EOAs) as simple single-wal
 Callisto MUST initially support the following signer/wallet types through a common interface enabling future expansion of signer support.
 
 - hot wallets
-  - pass in 12-word seed phrase and select a derived account
+  - pass in 12-word seed phrase as a **one-time import**, and select the derived account(s) to add from a derived index→address list (single or multiple)
+  - the seed MUST be persisted only as a passphrase-encrypted keystore (scrypt + AES-256-GCM), never in the clear; the recovery phrase is not re-entered to unlock — a user-set passphrase is
   - ability to select one of several derived acounts
   - ability to switch between derived accounts on one wallet
-  - automatic discard of phrase and private key on close
+  - automatic discard of the decrypted seed and private key on close
   - support "disconnect" featuer to manually clear sensitive memory
   - maximum protection of key material while "unlocked
+  - a full delete path MUST wipe the encrypted keystore, not just the descriptor
 
 - hardware wallets
   - support for trezor

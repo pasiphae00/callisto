@@ -375,6 +375,11 @@ myetherwallet/
 !go.mod
 !go.sum
 !**/*.json
+# The keystore *source* package is a directory named "keystore", which the
+# broad `keystore/` guard above excludes; git won't apply the *.go negations to
+# files inside an excluded directory, so re-include the source dir explicitly.
+# (Real keystore *data* lives in the OS config dir, never in the repo.)
+!internal/keystore/
 # ...but never let a real secrets/keystore directory back in.
 /.local/
 /keystore/

@@ -91,6 +91,20 @@ func Path() (string, error) {
 	return filepath.Join(dir, configFile), nil
 }
 
+// KeystoreDir returns the directory holding encrypted hot-wallet keystores,
+// creating it (0700) if needed. Keystore files are named "<keystore-id>.json".
+func KeystoreDir() (string, error) {
+	dir, err := Dir()
+	if err != nil {
+		return "", err
+	}
+	ks := filepath.Join(dir, "keystores")
+	if err := os.MkdirAll(ks, 0o700); err != nil {
+		return "", fmt.Errorf("create keystore dir: %w", err)
+	}
+	return ks, nil
+}
+
 // Load reads the config from disk. A missing file is not an error: it returns a
 // zero-value Config ready to be populated (first run).
 func Load() (*Config, error) {

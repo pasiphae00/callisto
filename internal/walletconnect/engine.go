@@ -99,6 +99,17 @@ func (c *Client) Sessions() []Session {
 	return out
 }
 
+// Session returns the session for a topic, if present.
+func (c *Client) Session(topic string) (Session, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	s, ok := c.sessions[topic]
+	if !ok {
+		return Session{}, false
+	}
+	return *s, true
+}
+
 // Pair consumes a wc: URI: it stores the pairing key and subscribes to the pairing
 // topic, on which the dApp's wc_sessionPropose will arrive (→ OnProposal).
 func (c *Client) Pair(ctx context.Context, rawURI string) error {

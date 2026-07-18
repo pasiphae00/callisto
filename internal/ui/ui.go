@@ -28,6 +28,7 @@ import (
 	"codeberg.org/pasiphae/callisto/internal/safe"
 	"codeberg.org/pasiphae/callisto/internal/signer"
 	"codeberg.org/pasiphae/callisto/internal/store"
+	"codeberg.org/pasiphae/callisto/internal/walletconnect"
 )
 
 // App holds the wiring shared across panes. Panes read/update Config and persist
@@ -53,6 +54,29 @@ type App struct {
 	signerMu     sync.Mutex
 	activeSigner signer.Signer
 	signerWallet string // wallet ID the active signer belongs to
+
+	// wc is the WalletConnect client, created lazily by the WalletConnect pane on
+	// first connect and torn down on app close.
+	wcMu sync.Mutex
+	wc   *walletconnect.Client
+}
+
+// setWalletConnect stores the WalletConnect client for teardown at app close.
+func (a *App) setWalletConnect(c *walletconnect.Client) {
+	a.wcMu.Lock()
+	a.wc = c
+	a.wcMu.Unlock()
+}
+
+// closeWalletConnect tears down the WalletConnect relay connection, if any.
+func (a *App) closeWalletConnect() {
+	a.wcMu.Lock()
+	c := a.wc
+	a.wc = nil
+	a.wcMu.Unlock()
+	if c != nil {
+		c.Close()
+	}
 }
 
 // New constructs the App wiring. It does not create any windows or a driver, so
@@ -168,6 +192,7 @@ func (a *App) Run() {
 	// and any unlocked signer's key material is wiped, when the window closes.
 	defer a.rpc.Disconnect()
 	defer a.clearSigner()
+	defer a.closeWalletConnect()
 	a.window.ShowAndRun()
 }
 
@@ -180,6 +205,7 @@ func (a *App) buildRoot() fyne.CanvasObject {
 		container.NewTabItem("Assets", newAssetsPane(a).build()),
 		container.NewTabItem("Send", newSendPane(a).build()),
 		container.NewTabItem("Safe", newSafePane(a).build()),
+		container.NewTabItem("WalletConnect", newWalletConnectPane(a).build()),
 		container.NewTabItem("History", newHistoryPane(a).build()),
 		container.NewTabItem("Settings", newSettingsPane(a).build()),
 	)

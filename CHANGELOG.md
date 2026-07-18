@@ -9,6 +9,22 @@ changes; `v1.0.0` marks the first stable, documented release.
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-07-18
+
+### Fixed
+- Signing an ETH transfer with a Trezor failed with "transaction type not
+  supported" — after the device had already signed it. Callisto builds EIP-1559
+  (dynamic-fee) transactions, but go-ethereum's vendored Trezor protobuf only
+  has the legacy `EthereumSignTx` message; the driver signed the tx as legacy
+  on-device, then couldn't apply that signature back to the dynamic-fee tx
+  (`EIP155Signer` rejects non-legacy types). Trezor is now signed **natively as
+  EIP-1559**: the local fork sends the `EthereumSignTxEIP1559` message (message
+  type 452, hand-encoded since the vendored package has no Go type for it, with
+  field encoding verified by tests) and applies the resulting signature with the
+  dynamic-fee signer — matching how Frame and Trezor Suite sign. Genuine legacy
+  transactions still use the legacy path. **Verified live**: a real ETH transfer
+  signed on a Trezor Safe 5 broadcast and confirmed successfully.
+
 ## [0.3.1] - 2026-07-18
 
 ### Fixed
@@ -206,7 +222,8 @@ keys), and shows live balances — the foundation for the v1 transaction flows.
   (already vendored by go-ethereum) rather than pulling in `btcutil`, which drags
   a personal-fork transitive dependency into a signing wallet.
 
-[Unreleased]: https://codeberg.org/pasiphae/callisto/compare/v0.3.1...HEAD
+[Unreleased]: https://codeberg.org/pasiphae/callisto/compare/v0.3.2...HEAD
+[0.3.2]: https://codeberg.org/pasiphae/callisto/compare/v0.3.1...v0.3.2
 [0.3.1]: https://codeberg.org/pasiphae/callisto/compare/v0.3.0...v0.3.1
 [0.3.0]: https://codeberg.org/pasiphae/callisto/compare/v0.2.0...v0.3.0
 [0.2.0]: https://codeberg.org/pasiphae/callisto/compare/v0.1.0...v0.2.0

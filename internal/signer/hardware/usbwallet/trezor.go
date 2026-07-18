@@ -38,6 +38,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
+	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -231,9 +232,20 @@ func (w *trezorDriver) Derive(path accounts.DerivationPath) (common.Address, err
 
 // SignTx implements usbwallet.driver, sending the transaction to the Trezor and
 // waiting for the user to confirm or deny the transaction.
+//
+// Callisto-local: EIP-1559 dynamic-fee transactions are signed natively via the
+// EthereumSignTxEIP1559 message (trezorSignEIP1559), not downgraded to legacy.
+// Upstream go-ethereum's vendored trezor protobuf predates that message and only
+// supports legacy signing, which is why signing an EIP-1559 tx used to fail with
+// "transaction type not supported" *after* the device signed — the device signed
+// a legacy tx but the resulting signature couldn't be applied back to the
+// dynamic-fee tx. See trezorSignEIP1559 and encodeEthereumSignTxEIP1559.
 func (w *trezorDriver) SignTx(path accounts.DerivationPath, tx *types.Transaction, chainID *big.Int) (common.Address, *types.Transaction, error) {
 	if w.transport == nil {
 		return common.Address{}, nil, accounts.ErrWalletClosed
+	}
+	if tx.Type() == types.DynamicFeeTxType {
+		return w.trezorSignEIP1559(path, tx, chainID)
 	}
 	return w.trezorSign(path, tx, chainID)
 }
@@ -325,7 +337,9 @@ func (w *trezorDriver) trezorSign(derivationPath []uint32, tx *types.Transaction
 		}
 	}
 
-	// Inject the final signature into the transaction and sanity check the sender
+	// Inject the final signature into the transaction and sanity check the sender.
+	// (This path handles legacy transactions; EIP-1559 dynamic-fee transactions
+	// are routed to trezorSignEIP1559 by SignTx — see the fork's doc comment.)
 	signed, err := tx.WithSignature(signer, signature)
 	if err != nil {
 		return common.Address{}, nil, err
@@ -335,6 +349,124 @@ func (w *trezorDriver) trezorSign(derivationPath []uint32, tx *types.Transaction
 		return common.Address{}, nil, err
 	}
 	return sender, signed, nil
+}
+
+// msgTypeEthereumSignTxEIP1559 is the Trezor wire message type for
+// EthereumSignTxEIP1559 (452, from trezor-firmware common/protob/messages.proto).
+// The vendored trezor protobuf package predates this message, so there is no
+// trezor.MessageType_* constant or Go type for it — hence the hardcoded number
+// and the hand-encoding in encodeEthereumSignTxEIP1559.
+const msgTypeEthereumSignTxEIP1559 = 452
+
+// trezorSignEIP1559 signs an EIP-1559 dynamic-fee transaction natively via the
+// EthereumSignTxEIP1559 message (Callisto-local; see SignTx). The request is
+// hand-encoded because the vendored trezor protobuf has no Go type for it; the
+// response (EthereumTxRequest) and the data-streaming/ack loop are identical to
+// legacy signing.
+func (w *trezorDriver) trezorSignEIP1559(derivationPath []uint32, tx *types.Transaction, chainID *big.Int) (common.Address, *types.Transaction, error) {
+	data := tx.Data()
+	length := uint32(len(data))
+	var initialChunk []byte
+	if length > 1024 { // stream large calldata in chunks, like the legacy path
+		initialChunk, data = data[:1024], data[1024:]
+	} else {
+		initialChunk, data = data, nil
+	}
+
+	reqBytes := encodeEthereumSignTxEIP1559(derivationPath, tx, chainID, initialChunk, length)
+
+	response := new(trezor.EthereumTxRequest)
+	if _, err := w.trezorExchangeRaw(msgTypeEthereumSignTxEIP1559, reqBytes, response); err != nil {
+		return common.Address{}, nil, err
+	}
+	for response.DataLength != nil && int(*response.DataLength) <= len(data) {
+		chunk := data[:*response.DataLength]
+		data = data[*response.DataLength:]
+		if _, err := w.trezorExchange(&trezor.EthereumTxAck{DataChunk: chunk}, response); err != nil {
+			return common.Address{}, nil, err
+		}
+	}
+
+	r, s := response.GetSignatureR(), response.GetSignatureS()
+	if len(r) == 0 || len(s) == 0 {
+		return common.Address{}, nil, errors.New("reply lacks signature")
+	}
+	// EIP-1559 uses the y-parity (0 or 1) for v — no EIP-155 offset. Trezor
+	// firmware has returned this as either 0/1 or 27/28 across versions; go-
+	// ethereum's dynamic-fee signer requires 0/1, so normalize the 27/28 form.
+	v := response.GetSignatureV()
+	if v >= 27 {
+		v -= 27
+	}
+	// Assemble the 65-byte [R || S || V] signature go-ethereum expects,
+	// left-padding R and S to 32 bytes each.
+	sig := make([]byte, 65)
+	copy(sig[:32], leftPad32(r))
+	copy(sig[32:64], leftPad32(s))
+	sig[64] = byte(v)
+
+	signer := types.LatestSignerForChainID(chainID)
+	signed, err := tx.WithSignature(signer, sig)
+	if err != nil {
+		return common.Address{}, nil, err
+	}
+	sender, err := types.Sender(signer, signed)
+	if err != nil {
+		return common.Address{}, nil, err
+	}
+	return sender, signed, nil
+}
+
+// encodeEthereumSignTxEIP1559 hand-encodes the EthereumSignTxEIP1559 protobuf
+// message (field numbers/types from trezor-firmware
+// common/protob/messages-ethereum.proto). Only the fields Callisto uses are
+// emitted; access_list and the other optional fields are omitted (empty).
+func encodeEthereumSignTxEIP1559(path []uint32, tx *types.Transaction, chainID *big.Int, initialChunk []byte, dataLength uint32) []byte {
+	var b []byte
+	for _, n := range path { // 1: address_n, repeated uint32
+		b = protowire.AppendTag(b, 1, protowire.VarintType)
+		b = protowire.AppendVarint(b, uint64(n))
+	}
+	b = appendProtoBytes(b, 2, uintBytes(tx.Nonce()))  // 2: nonce
+	b = appendProtoBytes(b, 3, tx.GasFeeCap().Bytes()) // 3: max_gas_fee
+	b = appendProtoBytes(b, 4, tx.GasTipCap().Bytes()) // 4: max_priority_fee
+	b = appendProtoBytes(b, 5, uintBytes(tx.Gas()))    // 5: gas_limit
+	if to := tx.To(); to != nil {                      // 6: to (optional string)
+		b = protowire.AppendTag(b, 6, protowire.BytesType)
+		b = protowire.AppendString(b, to.Hex())
+	}
+	b = appendProtoBytes(b, 7, tx.Value().Bytes()) // 7: value
+	if len(initialChunk) > 0 {                     // 8: data_initial_chunk (optional)
+		b = appendProtoBytes(b, 8, initialChunk)
+	}
+	b = protowire.AppendTag(b, 9, protowire.VarintType) // 9: data_length
+	b = protowire.AppendVarint(b, uint64(dataLength))
+	b = protowire.AppendTag(b, 10, protowire.VarintType) // 10: chain_id
+	b = protowire.AppendVarint(b, chainID.Uint64())
+	return b
+}
+
+// appendProtoBytes appends a length-delimited (bytes) protobuf field.
+func appendProtoBytes(b []byte, num protowire.Number, val []byte) []byte {
+	b = protowire.AppendTag(b, num, protowire.BytesType)
+	return protowire.AppendBytes(b, val)
+}
+
+// uintBytes returns the minimal big-endian encoding of v (empty for 0), the
+// format Trezor expects for its bytes-typed numeric fields — matching how the
+// legacy EthereumSignTx path encodes nonce/gas_limit.
+func uintBytes(v uint64) []byte {
+	return new(big.Int).SetUint64(v).Bytes()
+}
+
+// leftPad32 returns b left-padded (or right-truncated) to exactly 32 bytes.
+func leftPad32(b []byte) []byte {
+	if len(b) >= 32 {
+		return b[len(b)-32:]
+	}
+	out := make([]byte, 32)
+	copy(out[32-len(b):], b)
+	return out
 }
 
 // trezorExchange performs a data exchange with the Trezor wallet, sending it a
@@ -351,7 +483,17 @@ func (w *trezorDriver) trezorExchange(req proto.Message, results ...proto.Messag
 	if err != nil {
 		return 0, err
 	}
-	kind, reply, err := w.transport.exchange(trezor.Type(req), data)
+	return w.trezorExchangeRaw(trezor.Type(req), data, results...)
+}
+
+// trezorExchangeRaw is trezorExchange with the request already marshaled and its
+// message type explicit. Callisto-local: needed to send EthereumSignTxEIP1559
+// (message type 452), which the vendored trezor protobuf package has no Go type
+// for — encodeEthereumSignTxEIP1559 hand-encodes it and this sends it while
+// reusing all the response dispatch (Failure/ButtonRequest/PassphraseRequest/
+// result matching) unchanged.
+func (w *trezorDriver) trezorExchangeRaw(msgType uint16, data []byte, results ...proto.Message) (int, error) {
+	kind, reply, err := w.transport.exchange(msgType, data)
 	if err != nil {
 		return 0, err
 	}

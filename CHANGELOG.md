@@ -9,6 +9,28 @@ changes; `v1.0.0` marks the first stable, documented release.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-07-18
+
+### Added
+- **Encrypted hot-wallet keystores.** A recovery phrase is now a one-time import:
+  the BIP-39 seed is sealed with scrypt (memory-hard) + AES-256-GCM under a
+  passphrase you choose and written to a `0600` keystore file
+  (`<config>/keystores/<id>.json`). Every subsequent unlock needs only that
+  passphrase — the phrase is no longer re-entered. Wrong passphrase / tampering is
+  rejected cleanly (authenticated encryption). No new dependency.
+- **Account selection at import.** Import shows a derived index→address list; pick
+  one or several accounts to add (each becomes a wallet, all sharing one encrypted
+  keystore) instead of guessing a derivation index.
+- Deleting an encrypted hot wallet securely wipes its keystore file once no
+  remaining account references it (best-effort overwrite + remove).
+
+### Changed
+- Hot-wallet unlock is now passphrase-based. Wallets imported before this release
+  (no keystore) still unlock by re-entering the recovery phrase.
+- Security model: seeds are now persisted, but only as encrypted keystores —
+  updated in README/DESIGN/CLAUDE. The recovery phrase remains the authoritative
+  backup.
+
 ## [0.4.0] - 2026-07-18
 
 ### Added
@@ -254,7 +276,8 @@ keys), and shows live balances — the foundation for the v1 transaction flows.
   (already vendored by go-ethereum) rather than pulling in `btcutil`, which drags
   a personal-fork transitive dependency into a signing wallet.
 
-[Unreleased]: https://codeberg.org/pasiphae/callisto/compare/v0.4.0...HEAD
+[Unreleased]: https://codeberg.org/pasiphae/callisto/compare/v0.5.0...HEAD
+[0.5.0]: https://codeberg.org/pasiphae/callisto/compare/v0.4.0...v0.5.0
 [0.4.0]: https://codeberg.org/pasiphae/callisto/compare/v0.3.2...v0.4.0
 [0.3.2]: https://codeberg.org/pasiphae/callisto/compare/v0.3.1...v0.3.2
 [0.3.1]: https://codeberg.org/pasiphae/callisto/compare/v0.3.0...v0.3.1

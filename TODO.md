@@ -189,12 +189,18 @@
 
 ## medium
 
-### enable passphrase unlock of hot-wallets
-- the recovery phrase should only be needed on the first import of a hot wallet
-- we should enforce that the user provides a passphrase at input to encrypt the keystore
-- this way, on each "unlock" the user only needs to re-enter the passphrase they set that encrypts the keystore, rather than the whole recovery phrase again
-- this is a better pattern; the recovery phrase should not be treated like a password
-- it should be a one-time import flow, not the frequent lock/unlock flow
+### enable passphrase unlock of hot-wallets — ✅ done (v0.5.0)
+- ~~the recovery phrase should only be needed on the first import; enforce a passphrase to encrypt the keystore; unlock re-enters only the passphrase; one-time import, not a frequent phrase re-entry~~
+  - New `internal/keystore` (scrypt N=2^18 + AES-256-GCM, authenticated) encrypts the
+    BIP-39 seed under a user passphrase; `hot.NewKeystore`/`OpenFromKeystore`. Import is
+    now one-time with an **account-selection list** (index→address, multi-select); each
+    selected account is a descriptor sharing one keystore (`Descriptor.KeystoreID`).
+    Unlock is passphrase-only (legacy phrase-unlock kept as a fallback for pre-0.5
+    wallets). Delete wipes the keystore once the last referencing account is removed.
+    Security-model docs (README/DESIGN/CLAUDE) updated.
+  - **roadmap follow-up:** back the keystore with the **OS keychain** where available
+    (macOS Keychain; Secret Service / DPAPI elsewhere) for defense in depth beyond the
+    passphrase-encrypted file. Deferred; noted in the README roadmap.
 
 ### trezor wallet types — ✅ done (see "bugs" above for the full story)
 - ~~trezor is kind of weird... "unlock with pin (on device) -> enter passphrase

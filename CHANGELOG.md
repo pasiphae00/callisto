@@ -9,6 +9,16 @@ changes; `v1.0.0` marks the first stable, documented release.
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-07-18
+
+### Fixed
+- macOS menu bar showed two app menus ("callisto" and a separate "Callisto"):
+  Fyne's macOS driver only splices a custom menu item into the native app menu
+  when its label is exactly "About" (it then replaces the OS-provided item's
+  action) — any other label, including "About Callisto", creates a second menu
+  instead. The About item is now labeled "About" so it lands under the single
+  native app menu.
+
 ## [0.3.0] - 2026-07-18
 
 Hardware wallets now genuinely work: Trezor Safe-family devices went from
@@ -196,7 +206,8 @@ keys), and shows live balances — the foundation for the v1 transaction flows.
   (already vendored by go-ethereum) rather than pulling in `btcutil`, which drags
   a personal-fork transitive dependency into a signing wallet.
 
-[Unreleased]: https://codeberg.org/pasiphae/callisto/compare/v0.3.0...HEAD
+[Unreleased]: https://codeberg.org/pasiphae/callisto/compare/v0.3.1...HEAD
+[0.3.1]: https://codeberg.org/pasiphae/callisto/compare/v0.3.0...v0.3.1
 [0.3.0]: https://codeberg.org/pasiphae/callisto/compare/v0.2.0...v0.3.0
 [0.2.0]: https://codeberg.org/pasiphae/callisto/compare/v0.1.0...v0.2.0
 [0.1.0]: https://codeberg.org/pasiphae/callisto/releases/tag/v0.1.0

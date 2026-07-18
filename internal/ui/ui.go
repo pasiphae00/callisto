@@ -146,8 +146,14 @@ func (a *App) Run() {
 	a.applyMonoFont() // BerkeleyMono for addresses/amounts, if available
 	a.window = a.fyneApp.NewWindow("Callisto")
 	a.window.SetIcon(appIcon)
+	// The item label must be exactly "About" (not "About Callisto"): Fyne's
+	// macOS driver special-cases that exact string and splices it into the
+	// native app menu Cocoa already auto-generates (replacing its default
+	// action with ours), rather than creating a menu item of our own. Any
+	// other label creates a second, separate "Callisto" menu next to the
+	// auto-generated one — confirmed live, that's the bug this fixes.
 	a.window.SetMainMenu(fyne.NewMainMenu(
-		fyne.NewMenu("Callisto", fyne.NewMenuItem("About Callisto", func() { showAbout(a) })),
+		fyne.NewMenu("Callisto", fyne.NewMenuItem("About", func() { showAbout(a) })),
 	))
 	a.window.SetContent(a.buildRoot())
 	a.window.Resize(fyne.NewSize(1024, 720))

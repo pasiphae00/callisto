@@ -33,6 +33,7 @@ type safePane struct {
 	app *App
 
 	safeSelect  *widget.Select
+	content     *fyne.Container // inner VBox holding details/proposals/status
 	detailsBox  *fyne.Container
 	proposalBox *fyne.Container
 	status      *widget.Label
@@ -69,7 +70,8 @@ func (p *safePane) build() fyne.CanvasObject {
 		widget.NewSeparator(),
 	)
 
-	body := container.NewVScroll(container.NewVBox(p.detailsBox, widget.NewSeparator(), p.proposalBox, p.status))
+	p.content = container.NewVBox(p.detailsBox, widget.NewSeparator(), p.proposalBox, p.status)
+	body := container.NewVScroll(p.content)
 	p.refreshSafeSelect()
 	return container.NewBorder(top, nil, nil, nil, body)
 }
@@ -125,6 +127,7 @@ func (p *safePane) onSafeSelected() {
 		p.proposalBox.Objects = nil
 		p.proposalBox.Refresh()
 		p.status.SetText("No Safe selected. Import one to begin.")
+		p.relayout()
 		return
 	}
 	if p.app.cfg.ActiveSafe != desc.ID {
@@ -165,6 +168,7 @@ func (p *safePane) renderDetails(desc safe.Descriptor) {
 
 	p.detailsBox.Objects = []fyne.CanvasObject{grid, ownersHead, ownersBox, actions}
 	p.detailsBox.Refresh()
+	p.relayout()
 }
 
 // ownerRow renders one owner with its (editable) client-side label.
@@ -366,6 +370,17 @@ func (p *safePane) refreshProposals(desc safe.Descriptor) {
 	}
 	p.proposalBox.Objects = []fyne.CanvasObject{head, rows}
 	p.proposalBox.Refresh()
+	p.relayout()
+}
+
+// relayout re-runs the parent VBox's layout so that resized detail/proposal
+// sections reposition instead of overlapping. Fyne re-lays-out a container when
+// it (not just a child) is refreshed, so mutating a child's Objects needs an
+// explicit parent refresh.
+func (p *safePane) relayout() {
+	if p.content != nil {
+		p.content.Refresh()
+	}
 }
 
 func (p *safePane) proposalRow(desc safe.Descriptor, prop safe.Proposal) fyne.CanvasObject {

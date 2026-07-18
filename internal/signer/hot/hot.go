@@ -48,8 +48,9 @@ type Account struct {
 
 // compile-time interface checks.
 var (
-	_ signer.Signer   = (*Wallet)(nil)
-	_ signer.Lockable = (*Wallet)(nil)
+	_ signer.Signer         = (*Wallet)(nil)
+	_ signer.Lockable       = (*Wallet)(nil)
+	_ signer.SafeHashSigner = (*Wallet)(nil)
 )
 
 // Open unlocks a hot wallet from a BIP-39 mnemonic and selects the account at the
@@ -183,6 +184,28 @@ func (w *Wallet) SignTx(ctx context.Context, tx *types.Transaction, chainID *big
 	// lifetime as short as possible rather than pretending to wipe it; the
 	// durable secret we do control (w.key) is zeroed on Lock.
 	return signed, err
+}
+
+// SignSafeTxHash signs a Safe transaction hash (safeTxHash) directly with the
+// selected account, producing a 65-byte owner signature with v in {27,28} — the
+// EIP-712 "contract signature" form the Safe validates by ecrecover on the hash
+// itself (no eth_sign prefix). Returns ErrLocked after the wallet is locked.
+func (w *Wallet) SignSafeTxHash(ctx context.Context, safeTxHash common.Hash) ([]byte, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.locked || w.key == nil {
+		return nil, ErrLocked
+	}
+	priv, err := crypto.ToECDSA(w.key)
+	if err != nil {
+		return nil, err
+	}
+	sig, err := crypto.Sign(safeTxHash.Bytes(), priv) // 65 bytes, v in {0,1}
+	if err != nil {
+		return nil, err
+	}
+	sig[64] += 27 // Safe expects v in {27,28} for a direct-hash owner signature.
+	return sig, nil
 }
 
 // Lock wipes all in-memory key material and marks the wallet unusable for

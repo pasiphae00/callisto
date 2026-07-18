@@ -7,8 +7,43 @@ import (
 
 	"codeberg.org/pasiphae/callisto/internal/assets"
 	"codeberg.org/pasiphae/callisto/internal/rpc"
+	"codeberg.org/pasiphae/callisto/internal/safe"
 	"codeberg.org/pasiphae/callisto/internal/wallet"
 )
+
+func TestSafeRegistry(t *testing.T) {
+	c := &Config{}
+	d := safe.Descriptor{ID: "s1", Label: "Treasury", Address: "0x1c511D88ba898b4D9cd9113D13B9c360a02Fcea1", ChainID: 1, Threshold: 2}
+	if err := c.UpsertSafe(d); err != nil {
+		t.Fatalf("UpsertSafe: %v", err)
+	}
+	c.ActiveSafe = "s1"
+
+	// Upsert replaces by ID.
+	d.Label = "Main Treasury"
+	_ = c.UpsertSafe(d)
+	if len(c.Safes) != 1 || c.Safes[0].Label != "Main Treasury" {
+		t.Errorf("upsert should replace by id, got %+v", c.Safes)
+	}
+	if got, ok := c.ActiveSafeDescriptor(); !ok || got.ID != "s1" {
+		t.Error("ActiveSafeDescriptor should return the active safe")
+	}
+
+	// Remove clears the active selection.
+	if !c.RemoveSafe("s1") {
+		t.Fatal("RemoveSafe should report true")
+	}
+	if c.ActiveSafe != "" {
+		t.Error("removing the active Safe should clear ActiveSafe")
+	}
+}
+
+func TestUpsertSafeRejectsInvalid(t *testing.T) {
+	c := &Config{}
+	if err := c.UpsertSafe(safe.Descriptor{Label: "no id"}); err == nil {
+		t.Error("expected validation error for a Safe with no id/address/chain")
+	}
+}
 
 // isolate points os.UserConfigDir at a temp location for the duration of a test.
 // os.UserConfigDir derives from HOME on darwin and XDG_CONFIG_HOME on linux, so
@@ -20,14 +55,32 @@ func isolate(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, ".config"))
 }
 
-func TestLoadMissingReturnsEmpty(t *testing.T) {
+func TestLoadMissingSeedsDefaultEndpoint(t *testing.T) {
 	isolate(t)
 	c, err := Load()
 	if err != nil {
 		t.Fatalf("Load on fresh home: %v", err)
 	}
-	if len(c.Endpoints) != 0 || len(c.Wallets) != 0 {
-		t.Errorf("fresh config should be empty, got %+v", c)
+	// First run ships a working default RPC (Flashbots Protect), selected and
+	// auto-connecting, so Callisto is usable out of the box.
+	if len(c.Endpoints) != 1 {
+		t.Fatalf("fresh config should seed one endpoint, got %+v", c.Endpoints)
+	}
+	e := c.Endpoints[0]
+	if e.Name != DefaultEndpointName || e.URL != DefaultEndpointURL || !e.AutoConnect {
+		t.Errorf("seeded endpoint = %+v", e)
+	}
+	if c.ActiveEndpoint != DefaultEndpointName {
+		t.Errorf("default endpoint should be active, got %q", c.ActiveEndpoint)
+	}
+	if got, ok := c.AutoConnectEndpoint(); !ok || got.Name != DefaultEndpointName {
+		t.Error("default endpoint should be the auto-connect endpoint")
+	}
+	if err := e.Validate(); err != nil {
+		t.Errorf("seeded endpoint should be valid: %v", err)
+	}
+	if len(c.Wallets) != 0 {
+		t.Errorf("fresh config should have no wallets, got %+v", c.Wallets)
 	}
 }
 

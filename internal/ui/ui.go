@@ -25,6 +25,7 @@ import (
 	"codeberg.org/pasiphae/callisto/internal/ens"
 	"codeberg.org/pasiphae/callisto/internal/history"
 	"codeberg.org/pasiphae/callisto/internal/rpc"
+	"codeberg.org/pasiphae/callisto/internal/safe"
 	"codeberg.org/pasiphae/callisto/internal/signer"
 	"codeberg.org/pasiphae/callisto/internal/store"
 )
@@ -33,10 +34,11 @@ import (
 // via Config.Save(); Store backs history and the contract address book; rpc is
 // the live connection manager.
 type App struct {
-	cfg     *config.Config
-	store   *store.Store
-	rpc     *rpc.Manager
-	history *history.Repo
+	cfg           *config.Config
+	store         *store.Store
+	rpc           *rpc.Manager
+	history       *history.Repo
+	safeProposals *safe.ProposalRepo
 
 	fyneApp fyne.App
 	window  fyne.Window
@@ -59,6 +61,7 @@ func New(cfg *config.Config, st *store.Store) *App {
 	a := &App{cfg: cfg, store: st, rpc: rpc.NewManager()}
 	if st != nil {
 		a.history = history.New(st)
+		a.safeProposals = safe.NewProposalRepo(st.DB())
 	}
 	return a
 }
@@ -176,6 +179,7 @@ func (a *App) buildRoot() fyne.CanvasObject {
 		container.NewTabItem("Wallets", newWalletsPane(a).build()),
 		container.NewTabItem("Assets", newAssetsPane(a).build()),
 		container.NewTabItem("Send", newSendPane(a).build()),
+		container.NewTabItem("Safe", newSafePane(a).build()),
 		container.NewTabItem("History", newHistoryPane(a).build()),
 		container.NewTabItem("Settings", newSettingsPane(a).build()),
 	)

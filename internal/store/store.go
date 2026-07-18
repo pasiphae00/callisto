@@ -111,6 +111,39 @@ var migrations = []string{
 		selector   TEXT PRIMARY KEY,               -- "0x12345678"
 		signature  TEXT NOT NULL                    -- "transfer(address,uint256)"
 	)`,
+
+	// 4: Safe multisig proposals — one row per proposed Safe transaction, tracked
+	// through signature collection and execution. The Safe tx fields are stored so
+	// a proposal survives across sessions and signer switches.
+	`CREATE TABLE IF NOT EXISTS safe_proposals (
+		id               INTEGER PRIMARY KEY AUTOINCREMENT,
+		safe_address     TEXT    NOT NULL,          -- EIP-55 Safe address
+		chain_id         INTEGER NOT NULL,
+		to_address       TEXT    NOT NULL,          -- inner call target
+		value_wei        TEXT    NOT NULL,          -- decimal string
+		data             TEXT    NOT NULL,          -- 0x-hex inner calldata ("0x" if none)
+		operation        INTEGER NOT NULL DEFAULT 0,-- 0=Call
+		safe_nonce       INTEGER NOT NULL,
+		safe_tx_hash     TEXT    NOT NULL,          -- canonical hash owners sign
+		kind             TEXT    NOT NULL,          -- transfer|add-owner|remove-owner|swap-owner|change-threshold|reject
+		description      TEXT,                       -- human summary
+		status           TEXT    NOT NULL DEFAULT 'collecting', -- collecting|ready|executed|rejected|failed
+		created_at       INTEGER NOT NULL,
+		executed_tx_hash TEXT,                       -- outer EOA tx hash once executed
+		error            TEXT
+	)`,
+	`CREATE INDEX IF NOT EXISTS idx_safe_proposals_safe ON safe_proposals(safe_address, chain_id)`,
+	`CREATE INDEX IF NOT EXISTS idx_safe_proposals_hash ON safe_proposals(safe_tx_hash)`,
+
+	// 5: collected owner signatures for a proposal (one row per owner). The
+	// (proposal, signer) pair is unique so re-signing replaces rather than dupes.
+	`CREATE TABLE IF NOT EXISTS safe_signatures (
+		proposal_id    INTEGER NOT NULL REFERENCES safe_proposals(id) ON DELETE CASCADE,
+		signer_address TEXT    NOT NULL,            -- EIP-55 owner address
+		signature      TEXT    NOT NULL,            -- 0x-hex 65-byte signature
+		signed_at      INTEGER NOT NULL,
+		PRIMARY KEY (proposal_id, signer_address)
+	)`,
 }
 
 // migrate applies any not-yet-applied migrations inside a transaction.

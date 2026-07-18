@@ -74,6 +74,11 @@ type driver interface {
 	SignTx(path accounts.DerivationPath, tx *types.Transaction, chainID *big.Int) (common.Address, *types.Transaction, error)
 
 	SignTypedMessage(path accounts.DerivationPath, messageHash []byte, domainHash []byte) ([]byte, error)
+
+	// SignMessage signs an Ethereum personal message (EIP-191 / eth_sign): the
+	// device applies the "\x19Ethereum Signed Message:\n" prefix itself and signs
+	// the raw message bytes. Used for Safe owner signatures.
+	SignMessage(path accounts.DerivationPath, message []byte) ([]byte, error)
 }
 
 // deviceReadTimeoutMs bounds every read from the device (see readTimeoutWriter).
@@ -655,8 +660,35 @@ func (w *wallet) SignDataWithPassphrase(account accounts.Account, passphrase, mi
 	return w.SignData(account, mimeType, data)
 }
 
+// SignText signs text as an Ethereum personal message. Unlike the upstream
+// (Ledger-shaped) implementation, which pre-hashes and dispatches to signHash,
+// this fork routes to the driver's SignMessage so the Trezor device does the
+// EIP-191 prefixing and signing itself (EthereumSignMessage). The locking mirrors
+// SignData.
 func (w *wallet) SignText(account accounts.Account, text []byte) ([]byte, error) {
-	return w.signHash(account, accounts.TextHash(text))
+	w.stateLock.RLock()
+	defer w.stateLock.RUnlock()
+
+	if w.device == nil {
+		return nil, accounts.ErrWalletClosed
+	}
+	path, ok := w.paths[account.Address]
+	if !ok {
+		return nil, accounts.ErrUnknownAccount
+	}
+	<-w.commsLock
+	defer func() { w.commsLock <- struct{}{} }()
+
+	w.hub.commsLock.Lock()
+	w.hub.commsPend++
+	w.hub.commsLock.Unlock()
+	defer func() {
+		w.hub.commsLock.Lock()
+		w.hub.commsPend--
+		w.hub.commsLock.Unlock()
+	}()
+
+	return w.driver.SignMessage(path, text)
 }
 
 // SignTx implements accounts.Wallet. It sends the transaction over to the Ledger

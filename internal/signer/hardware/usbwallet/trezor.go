@@ -254,6 +254,25 @@ func (w *trezorDriver) SignTypedMessage(path accounts.DerivationPath, domainHash
 	return nil, accounts.ErrNotSupported
 }
 
+// SignMessage asks the Trezor to sign an Ethereum personal message (eth_sign):
+// the device prepends the "\x19Ethereum Signed Message:\n" prefix and signs. Used
+// to produce Safe owner signatures over a safeTxHash. Returns the 65-byte
+// signature (r||s||v) the device reports.
+func (w *trezorDriver) SignMessage(path accounts.DerivationPath, message []byte) ([]byte, error) {
+	if w.transport == nil {
+		return nil, accounts.ErrWalletClosed
+	}
+	response := new(trezor.EthereumMessageSignature)
+	if _, err := w.trezorExchange(&trezor.EthereumSignMessage{AddressN: path, Message: message}, response); err != nil {
+		return nil, err
+	}
+	sig := response.GetSignature()
+	if len(sig) != 65 {
+		return nil, fmt.Errorf("trezor: unexpected message signature length %d", len(sig))
+	}
+	return sig, nil
+}
+
 // trezorDerive sends a derivation request to the Trezor device and returns the
 // Ethereum address located on that path.
 func (w *trezorDriver) trezorDerive(derivationPath []uint32) (common.Address, error) {

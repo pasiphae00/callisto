@@ -20,6 +20,7 @@ import (
 
 	"codeberg.org/pasiphae/callisto/internal/assets"
 	"codeberg.org/pasiphae/callisto/internal/rpc"
+	"codeberg.org/pasiphae/callisto/internal/safe"
 	"codeberg.org/pasiphae/callisto/internal/wallet"
 )
 
@@ -28,6 +29,26 @@ const appDir = "callisto"
 
 // configFile is the settings document name within appDir.
 const configFile = "config.json"
+
+// The out-of-the-box default RPC. Callisto ships with a working Ethereum Mainnet
+// endpoint — Flashbots Protect (fast) — configured and auto-connecting so it runs
+// on first launch; users can replace it, disable auto-connect, or add their own at
+// any time in Settings. (This supersedes the original no-default-RPC stance; see
+// DESIGN.md.)
+const (
+	DefaultEndpointName = "Ethereum Mainnet (via Flashbots Protect)"
+	DefaultEndpointURL  = "https://rpc.flashbots.net/fast?originId=callisto-system"
+)
+
+// defaultConfig is the first-run configuration: the default endpoint, selected and
+// set to auto-connect on startup.
+func defaultConfig() *Config {
+	e := rpc.Endpoint{Name: DefaultEndpointName, URL: DefaultEndpointURL, AutoConnect: true}
+	return &Config{
+		Endpoints:      []rpc.Endpoint{e},
+		ActiveEndpoint: e.Name,
+	}
+}
 
 // Config is the full persisted settings document.
 type Config struct {
@@ -41,6 +62,11 @@ type Config struct {
 	ActiveWallet string `json:"active_wallet"`
 	// Tokens is the user-added ERC-20 token list (metadata resolved on-chain).
 	Tokens []assets.TokenRef `json:"tokens"`
+	// Safes is the persisted registry of imported Safe multisig accounts
+	// (descriptors only: address, cached owners/threshold/version, no secrets).
+	Safes []safe.Descriptor `json:"safes"`
+	// ActiveSafe is the ID of the currently selected Safe ("" = none).
+	ActiveSafe string `json:"active_safe"`
 }
 
 // Dir returns the Callisto config directory, creating it if needed.
@@ -75,7 +101,10 @@ func Load() (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return &Config{}, nil
+			// Genuine first run (no config file yet): seed the default endpoint so
+			// Callisto works out of the box. Only happens when the file is absent,
+			// so removing all endpoints later is respected (not re-seeded).
+			return defaultConfig(), nil
 		}
 		return nil, fmt.Errorf("read config: %w", err)
 	}
@@ -233,6 +262,54 @@ func (c *Config) RemoveWallet(id string) bool {
 		}
 	}
 	return false
+}
+
+// SafeByID returns the Safe descriptor with the given ID, or false.
+func (c *Config) SafeByID(id string) (safe.Descriptor, bool) {
+	for _, s := range c.Safes {
+		if s.ID == id {
+			return s, true
+		}
+	}
+	return safe.Descriptor{}, false
+}
+
+// UpsertSafe adds or replaces a Safe descriptor by ID.
+func (c *Config) UpsertSafe(s safe.Descriptor) error {
+	if err := s.Validate(); err != nil {
+		return err
+	}
+	for i := range c.Safes {
+		if c.Safes[i].ID == s.ID {
+			c.Safes[i] = s
+			return nil
+		}
+	}
+	c.Safes = append(c.Safes, s)
+	return nil
+}
+
+// RemoveSafe deletes a Safe by ID, clearing the active selection if it pointed at
+// the removed Safe. Reports whether anything was removed.
+func (c *Config) RemoveSafe(id string) bool {
+	for i := range c.Safes {
+		if c.Safes[i].ID == id {
+			c.Safes = append(c.Safes[:i], c.Safes[i+1:]...)
+			if c.ActiveSafe == id {
+				c.ActiveSafe = ""
+			}
+			return true
+		}
+	}
+	return false
+}
+
+// ActiveSafeDescriptor returns the currently selected Safe, or false if none.
+func (c *Config) ActiveSafeDescriptor() (safe.Descriptor, bool) {
+	if c.ActiveSafe == "" {
+		return safe.Descriptor{}, false
+	}
+	return c.SafeByID(c.ActiveSafe)
 }
 
 // TokensForChain returns the user-added token contract addresses for a chain.

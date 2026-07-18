@@ -19,6 +19,7 @@ import (
 	upstreamusb "github.com/ethereum/go-ethereum/accounts/usbwallet"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
 
 	"codeberg.org/pasiphae/callisto/internal/signer"
 	"codeberg.org/pasiphae/callisto/internal/signer/hardware/usbwallet"
@@ -42,8 +43,9 @@ type Signer struct {
 }
 
 var (
-	_ signer.Signer   = (*Signer)(nil)
-	_ signer.Lockable = (*Signer)(nil)
+	_ signer.Signer         = (*Signer)(nil)
+	_ signer.Lockable       = (*Signer)(nil)
+	_ signer.SafeHashSigner = (*Signer)(nil)
 )
 
 // Address returns the derived account address.
@@ -56,6 +58,44 @@ func (s *Signer) Kind() signer.Kind { return s.kind }
 // call blocks until they do (or the device times out).
 func (s *Signer) SignTx(ctx context.Context, tx *types.Transaction, chainID *big.Int) (*types.Transaction, error) {
 	return s.wallet.SignTx(s.account, tx, chainID)
+}
+
+// SignSafeTxHash produces a Safe owner signature over safeTxHash using the
+// device's personal-message (eth_sign) route: the device signs
+// keccak256("\x19Ethereum Signed Message:\n32" || safeTxHash), which every
+// supported device can do, and the Safe contract validates by re-applying that
+// prefix when the signature's v is > 30. The returned v is set to 31/32
+// accordingly (recovery id + 27 + 4). This path is used uniformly for Ledger and
+// Trezor; hot wallets sign the hash directly instead (v 27/28).
+func (s *Signer) SignSafeTxHash(ctx context.Context, safeTxHash common.Hash) ([]byte, error) {
+	raw, err := s.wallet.SignText(s.account, safeTxHash.Bytes())
+	if err != nil {
+		return nil, fmt.Errorf("device message signing: %w", err)
+	}
+	if len(raw) != 65 {
+		return nil, fmt.Errorf("device returned a %d-byte signature, want 65", len(raw))
+	}
+	sig := make([]byte, 65)
+	copy(sig, raw)
+
+	// The device may report v as a recovery id (0/1) or offset (27/28); recover
+	// the actual recovery id by checking which one reproduces the account address
+	// against the personal-message digest, then encode the Safe eth_sign form.
+	digest := accounts.TextHash(safeTxHash.Bytes())
+	var recid byte = 0xff
+	for _, rec := range []byte{0, 1} {
+		sig[64] = rec
+		pub, rerr := crypto.SigToPub(digest, sig)
+		if rerr == nil && crypto.PubkeyToAddress(*pub) == s.account.Address {
+			recid = rec
+			break
+		}
+	}
+	if recid == 0xff {
+		return nil, fmt.Errorf("device signature does not recover to %s", s.account.Address.Hex())
+	}
+	sig[64] = recid + 31 // eth_sign Safe form: recovery id + 27 + 4
+	return sig, nil
 }
 
 // Lock closes the device connection, releasing it for other applications.

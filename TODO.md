@@ -189,6 +189,9 @@
 
 ## medium
 
+### support wallet connect
+- user should be able to paste a walletconnect link and use callisto to sign transactions with their configured wallet on arbitrary web3 dApps
+
 ### enable passphrase unlock of hot-wallets
 - the recovery phrase should only be needed on the first import of a hot wallet
 - we should enforce that the user provides a passphrase at input to encrypt the keystore

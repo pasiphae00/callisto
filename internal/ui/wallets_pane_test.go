@@ -1,11 +1,14 @@
 package ui
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"fyne.io/fyne/v2/test"
 
 	"codeberg.org/pasiphae/callisto/internal/config"
+	"codeberg.org/pasiphae/callisto/internal/keystore"
 	"codeberg.org/pasiphae/callisto/internal/signer/hot"
 	"codeberg.org/pasiphae/callisto/internal/wallet"
 )
@@ -115,5 +118,68 @@ func TestWalletsPaneDetailAddress(t *testing.T) {
 	p.updateButtons()
 	if p.detailAddr.Text != "" {
 		t.Errorf("detail address after deselect = %q, want empty", p.detailAddr.Text)
+	}
+}
+
+// TestKeystoreWipedOnLastReference verifies that deleting an encrypted hot wallet
+// removes its keystore file only once no other account from the same import still
+// references it.
+func TestKeystoreWipedOnLastReference(t *testing.T) {
+	test.NewApp()
+	// Isolate the config/keystore dir (os.UserConfigDir derives from these).
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+
+	ksDir, err := config.KeystoreDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ksID := "shared-keystore-id"
+	ksPath := filepath.Join(ksDir, ksID+".json")
+	ks, err := keystore.Encrypt([]byte("a-seed"), "passphrase-123")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := keystore.Save(ksPath, ks); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := &config.Config{}
+	_ = cfg.UpsertWallet(wallet.Descriptor{ID: "w1", Address: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8", Kind: wallet.KindHot, KeystoreID: ksID})
+	_ = cfg.UpsertWallet(wallet.Descriptor{ID: "w2", Address: "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC", Kind: wallet.KindHot, KeystoreID: ksID})
+	p := newWalletsPane(New(cfg, nil))
+
+	// Remove w1 — w2 still references the keystore, so the file must survive.
+	w1, _ := cfg.WalletByID("w1")
+	cfg.RemoveWallet("w1")
+	p.maybeWipeKeystore(w1)
+	if _, err := os.Stat(ksPath); err != nil {
+		t.Fatalf("keystore wiped while still referenced by w2: %v", err)
+	}
+
+	// Remove w2 — now the last reference, so the file must be wiped.
+	w2, _ := cfg.WalletByID("w2")
+	cfg.RemoveWallet("w2")
+	p.maybeWipeKeystore(w2)
+	if _, err := os.Stat(ksPath); !os.IsNotExist(err) {
+		t.Errorf("keystore should be wiped after the last reference is removed, stat err = %v", err)
+	}
+}
+
+// TestLastKeystoreReference checks the pre-removal predicate used to warn the user.
+func TestLastKeystoreReference(t *testing.T) {
+	cfg := &config.Config{}
+	_ = cfg.UpsertWallet(wallet.Descriptor{ID: "w1", Address: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8", Kind: wallet.KindHot, KeystoreID: "k"})
+	_ = cfg.UpsertWallet(wallet.Descriptor{ID: "w2", Address: "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC", Kind: wallet.KindHot, KeystoreID: "k"})
+	p := newWalletsPane(New(cfg, nil))
+
+	w1, _ := cfg.WalletByID("w1")
+	if p.lastKeystoreReference(w1) {
+		t.Error("w1 is not the last reference (w2 shares the keystore)")
+	}
+	// A legacy wallet (no keystore) is never a keystore reference.
+	if p.lastKeystoreReference(wallet.Descriptor{ID: "legacy", KeystoreID: ""}) {
+		t.Error("a wallet with no keystore should not report a last reference")
 	}
 }

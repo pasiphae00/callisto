@@ -143,7 +143,7 @@ func (p *walletsPane) build() fyne.CanvasObject {
 	p.removeBtn = widget.NewButton("Remove", p.removeSelected)
 
 	header := widget.NewLabelWithStyle("Wallets", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
-	help := widget.NewLabel("Add a hot wallet (its seed is encrypted with your passphrase and stored locally; decrypted in memory only while unlocked, wiped on lock/exit) or a hardware device (keys never leave the device). Double-click a wallet to make it active.")
+	help := widget.NewLabel("Add a hot wallet (its seed is encrypted with your passphrase and stored locally; decrypted in memory only while unlocked, wiped on lock/exit) or a hardware device (keys never leave the device).\n\nDouble-click a wallet to make it active.")
 	help.Wrapping = fyne.TextWrapWord
 	buttons := container.NewHBox(addBtn, p.unlockBtn, p.lockBtn, p.manageBtn, p.removeBtn)
 

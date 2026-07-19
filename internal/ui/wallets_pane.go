@@ -745,11 +745,12 @@ func (p *walletsPane) showManageMenu() {
 	}
 	item("Rename…", p.renameSelected)
 	if isHotKeystore {
+		item("Add accounts…", p.addAccountsSelected)
 		item("Change passphrase…", p.changePassphraseSelected)
 		item("Reveal private key…", p.revealPrivateKeySelected)
 		item("Export encrypted backup…", p.exportBackupSelected)
 	}
-	d.Resize(fyne.NewSize(340, 260))
+	d.Resize(fyne.NewSize(340, 300))
 	d.Show()
 }
 
@@ -854,6 +855,135 @@ func (p *walletsPane) openKeystoreWallet(desc wallet.Descriptor, pass string) (*
 		path = hot.DefaultPath(0)
 	}
 	return hot.OpenFromKeystore(ks, pass, path)
+}
+
+// addAccountsSelected derives more accounts from the selected wallet's existing
+// seed keystore and adds the chosen ones (sharing the same KeystoreID/passphrase).
+func (p *walletsPane) addAccountsSelected() {
+	if p.selected < 0 || p.selected >= len(p.app.cfg.Wallets) {
+		return
+	}
+	desc := p.app.cfg.Wallets[p.selected]
+	if desc.IsHardware() || desc.KeystoreID == "" {
+		dialog.ShowError(fmt.Errorf("only seed-based hot wallets can derive more accounts"), p.app.window)
+		return
+	}
+	pass := widget.NewPasswordEntry()
+	pass.SetPlaceHolder("wallet passphrase")
+	d := dialog.NewForm("Add accounts — "+displayName(desc), "Continue", "Cancel",
+		[]*widget.FormItem{widget.NewFormItem("Passphrase", pass)},
+		func(ok bool) {
+			if ok {
+				p.doDeriveAccounts(desc, pass.Text)
+			}
+		}, p.app.window)
+	d.Resize(fyne.NewSize(460, 180))
+	d.Show()
+}
+
+func (p *walletsPane) doDeriveAccounts(desc wallet.Descriptor, pass string) {
+	progress := dialog.NewCustomWithoutButtons("Deriving…", widget.NewLabel("Deriving accounts…"), p.app.window)
+	progress.Show()
+	go func() {
+		w, err := p.openKeystoreWallet(desc, pass)
+		var accts []hot.Account
+		if err == nil {
+			accts, err = w.DeriveAccounts(0, 20)
+			w.Lock()
+		}
+		fyne.Do(func() {
+			progress.Hide()
+			if err != nil {
+				if errors.Is(err, keystore.ErrBadPassphrase) {
+					dialog.ShowError(fmt.Errorf("wrong passphrase"), p.app.window)
+				} else {
+					dialog.ShowError(err, p.app.window)
+				}
+				return
+			}
+			p.showDeriveAccountsPicker(desc, accts)
+		})
+	}()
+}
+
+// showDeriveAccountsPicker lets the user tick which derived accounts to add;
+// accounts already in the wallet list are shown ticked and disabled.
+func (p *walletsPane) showDeriveAccountsPicker(desc wallet.Descriptor, accts []hot.Account) {
+	existing := map[string]bool{}
+	for _, w := range p.app.cfg.Wallets {
+		if a, err := address.Parse(w.Address); err == nil {
+			existing[a.Hex()] = true
+		}
+	}
+	base := labelBase(desc.Label)
+	var checks []*widget.Check
+	box := container.NewVBox()
+	for _, a := range accts {
+		already := existing[a.Address.Hex()]
+		label := fmt.Sprintf("#%d   %s", a.Index, address.Format(a.Address))
+		if already {
+			label += "   (added)"
+		}
+		chk := widget.NewCheck(label, nil)
+		if already {
+			chk.SetChecked(true)
+			chk.Disable()
+		}
+		checks = append(checks, chk)
+		box.Add(chk)
+	}
+	content := container.NewVScroll(box)
+	content.SetMinSize(fyne.NewSize(460, 320))
+	d := dialog.NewCustomConfirm("Add accounts — "+displayName(desc), "Add", "Cancel", content,
+		func(ok bool) {
+			if !ok {
+				return
+			}
+			added := 0
+			for i, chk := range checks {
+				a := accts[i]
+				if !chk.Checked || existing[a.Address.Hex()] {
+					continue
+				}
+				nd := wallet.Descriptor{
+					ID:             newWalletID(),
+					Label:          fmt.Sprintf("%s #%d", base, a.Index),
+					Address:        address.Format(a.Address),
+					Kind:           wallet.KindHot,
+					DerivationPath: a.Path,
+					KeystoreID:     desc.KeystoreID,
+				}
+				if err := p.app.cfg.UpsertWallet(nd); err == nil {
+					added++
+				}
+			}
+			if added == 0 {
+				return
+			}
+			if err := p.app.cfg.Save(); err != nil {
+				dialog.ShowError(err, p.app.window)
+				return
+			}
+			p.refresh()
+			dialog.ShowInformation("Accounts added", fmt.Sprintf("Added %d account(s).", added), p.app.window)
+		}, p.app.window)
+	d.Resize(fyne.NewSize(500, 420))
+	d.Show()
+}
+
+// labelBase strips a trailing " #<n>" account suffix from a wallet label so derived
+// accounts get a consistent prefix.
+func labelBase(label string) string {
+	i := strings.LastIndex(label, " #")
+	if i > 0 {
+		if _, err := strconv.Atoi(strings.TrimSpace(label[i+2:])); err == nil {
+			return label[:i]
+		}
+	}
+	if label == "" {
+		return "Wallet"
+	}
+	return label
 }
 
 // revealPrivateKeySelected shows the selected hot account's private key after a

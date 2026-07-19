@@ -10,6 +10,7 @@ require (
 	github.com/karalabe/usb v0.0.2
 	github.com/tyler-smith/go-bip39 v1.1.0
 	golang.org/x/crypto v0.48.0
+	golang.org/x/mod v0.37.0
 	google.golang.org/protobuf v1.36.11
 	modernc.org/sqlite v1.54.0
 )

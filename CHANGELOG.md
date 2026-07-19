@@ -9,7 +9,18 @@ changes; `v1.0.0` marks the first stable, documented release.
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-07-18
+
 ### Added
+- **Native app packaging pipeline.** A `Makefile` builds a double-clickable
+  `Callisto.app` (macOS) and a Linux `.tar.gz` via `fyne package`, with
+  reproducible `make release` producing checksummed, signed artifacts for a
+  Codeberg release. See `docs/RELEASING.md`.
+- **In-app updates.** Settings → **Check for updates** pulls new releases from the
+  Codeberg API, shows the changelog, and (on request) downloads, verifies, installs,
+  and relaunches. Updates are authenticated with an embedded **ed25519 maintainer
+  key** (`SHA256SUMS` signature + per-artifact SHA-256) and refused if verification
+  fails — your wallets, RPC config, and history are preserved across updates.
 - Wallets: a **Rename** button changes a wallet's label (address, derivation
   path, and keystore are untouched).
 

@@ -62,7 +62,24 @@ See some screenshots of it in action [here](./EXAMPLES.md).
 
 ## Install & run
 
-Callisto builds from source. You need **Go 1.24+** and a C toolchain (Fyne uses CGo for its desktop driver — see Fyne's [getting-started prerequisites](https://docs.fyne.io/started/) for your OS; on macOS the Xcode command-line tools suffice).
+### Download a release (recommended)
+
+Grab the latest `Callisto.app` (macOS) or `.tar.gz` (Linux) from the
+[Codeberg releases](https://codeberg.org/pasiphae/callisto/releases), unzip, and
+move `Callisto.app` to **/Applications**.
+
+macOS builds are not yet Apple-notarized, so the **first** launch needs one extra
+step: right-click the app → **Open** (once), or run
+`xattr -dr com.apple.quarantine /Applications/Callisto.app`. After that it opens
+normally.
+
+**Updating:** Settings → **Check for updates**. Callisto downloads the new version,
+verifies it against the maintainer signing key, installs it, and restarts — your
+wallets, RPC config, and history are preserved (they live outside the app bundle).
+
+### Build from source
+
+You need **Go 1.24+** and a C toolchain (Fyne uses CGo for its desktop driver — see Fyne's [getting-started prerequisites](https://docs.fyne.io/started/) for your OS; on macOS the Xcode command-line tools suffice).
 
 ```sh
 git clone https://codeberg.org/pasiphae/callisto.git
@@ -70,12 +87,9 @@ cd callisto
 go run ./cmd/callisto
 ```
 
-Or build a binary:
-
-```sh
-go build -o callisto ./cmd/callisto
-./callisto
-```
+Or build a binary (`go build -o callisto ./cmd/callisto`), or a native app bundle
+with `make package-mac` (macOS) / `make package-linux` (Linux) — see
+[docs/RELEASING.md](docs/RELEASING.md).
 
 ## Quick start
 

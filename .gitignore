@@ -375,6 +375,10 @@ myetherwallet/
 !go.mod
 !go.sum
 !**/*.json
+# The release-signing PUBLIC key is embedded into the binary (updater trust root)
+# and is safe/required to commit; the broad `**/*key*` guard would otherwise hide
+# it. The matching PRIVATE key lives outside the repo and is never committed.
+!internal/updater/release_pubkey.ed25519
 # The keystore *source* package is a directory named "keystore", which the
 # broad `keystore/` guard above excludes; git won't apply the *.go negations to
 # files inside an excluded directory, so re-include the source dir explicitly.
@@ -390,5 +394,7 @@ myetherwallet/
 # cmd/callisto/ source directory.
 /callisto
 /dist/
+# Locally-installed fyne packaging CLI (see the Makefile `tools` target).
+/bin/
 # Note: BerkeleyMono font files ARE tracked (bundled/embedded under the project's
 # indie license) — see internal/ui/fonts/.

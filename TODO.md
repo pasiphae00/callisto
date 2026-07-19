@@ -271,16 +271,37 @@
 
 ## medium
 
-### created "packaged" pipeline
-- lets create a makefile (or similar) to deliver a native app "packaged format,"
-  - complete with the app's logo 
-  - the ability to move it into the "applications" directory and run it as a normal, standard, clickable app
-- we should work on a distribution model that allows us to easily ship macos and linux versions of the app
-- i'm not sure if an installer is needed, but if so, lets build that too
-- the goal is eventually that with each tagged version and CHANGELOG update, we can ship an easily downloadable version of the app for users to download
-- we should make sure that to the greatest extent possible updating the app preserves a users wallet config, rpc config, transaction history, etc.
-- ideally, in settings there is an "update app" button. lots of apps these days do this withour requiring a fresh download
-  - im not sure how hard that is to implement. 
+### create "approvals" pane
+- enable the user to quickly see and scroll through all erc20 "approvals" that currently exist
+  - weather or not they were created using callisto
+  - callisto should find, detect, parse, and display every single approval that is outstanding for the selected wallet
+  - it should show the token there is an approval on, the contract that has an approval, and if it is unlimited or for a specific amount (shown by name, e.g. cowswap, uniswap)
+  - there should be a "revoke" button that prepares a transaction to remove the approval for that token/contract pair
+  - once it is revoked and a call to the chain confirms taht, it should disapear from the list (but the revoke tx logged in history)
+- this is an important safety feature, approvals can be dangerous
+- it will be very useful to have "approvals" pane and the functionality for a user to view and manage all outstanding approvals
+
+### created "packaged" pipeline — ✅ shipped in v0.8.0
+- ~~makefile to deliver a native, logo-bearing, clickable app for macOS + Linux;
+  each tagged version downloadable; updating preserves wallet/rpc/history; an
+  "update app" button in settings~~
+  - **Packaging:** `Makefile` (+ `FyneApp.toml`) builds `Callisto.app` (macOS) and a
+    Linux `.tar.gz` via `fyne package` (CLI installed locally to `./bin`, no new
+    module dep). `make release` = package + `SHA256SUMS` + ed25519 signature, ready
+    to upload to a Codeberg release. Version is single-sourced from
+    `internal/buildinfo`. See `docs/RELEASING.md`.
+  - **In-app updates (`internal/updater`):** Settings → Check for updates hits the
+    Forgejo releases API, compares via `x/mod/semver`, shows the changelog, then
+    downloads → **verifies (embedded ed25519 maintainer key over SHA256SUMS +
+    per-artifact SHA-256)** → swaps the bundle in place → relaunches. Refuses any
+    unverified/tampered artifact. User data lives in the OS config dir (outside the
+    bundle), so updates preserve it automatically. Signing key via
+    `make gen-release-key` / `cmd/callisto-release`.
+  - **Deferred follow-ups:** Apple Developer-ID signing + notarization (drops the
+    one-time right-click→Open); Windows packaging; Linux AppImage/`.deb`; a `.dmg`
+    cosmetic installer; delta updates. Full auto-update verified headlessly (unit
+    tests) + local packaging; the live download→install→relaunch is verified on the
+    user's machine once the first signed release is published.
 
 ### enable passphrase unlock of hot-wallets — ✅ done (v0.5.0)
 - ~~the recovery phrase should only be needed on the first import; enforce a passphrase to encrypt the keystore; unlock re-enters only the passphrase; one-time import, not a frequent phrase re-entry~~

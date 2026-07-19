@@ -50,17 +50,65 @@ UI or the Forgejo API.
    - **API (Forgejo):** `POST /api/v1/repos/pasiphae/callisto/releases` with a
      token, `tag_name`, `name`, and `body`. See the Forgejo API docs.
 
-## Release artifacts (from v1.0.0)
+## Release artifacts & the packaging pipeline
 
-Build reproducible binaries per platform before publishing, e.g.:
+Callisto ships as a native, double-clickable app, built by the `Makefile`. The
+in-app updater (Settings → **Check for updates**) pulls new releases from the
+Codeberg releases API and verifies them against a maintainer signing key before
+installing, so **every release must carry a signed `SHA256SUMS`**.
+
+### One-time setup: the release signing key
+
+The updater embeds the maintainer's ed25519 **public** key
+(`internal/updater/release_pubkey.ed25519`) and refuses to install any update whose
+`SHA256SUMS` is not signed by the matching private key. Generate the keypair once:
 
 ```sh
-GOOS=darwin  GOARCH=arm64 go build -o dist/callisto-darwin-arm64  ./cmd/callisto
-GOOS=darwin  GOARCH=amd64 go build -o dist/callisto-darwin-amd64  ./cmd/callisto
-GOOS=linux   GOARCH=amd64 go build -o dist/callisto-linux-amd64   ./cmd/callisto
+make gen-release-key   # writes ~/.callisto/release_ed25519.key (private, 0600)
+                       # and internal/updater/release_pubkey.ed25519 (public)
 ```
 
-Attach the binaries (and their SHA-256 checksums) to the Codeberg release.
+Keep the **private** key offline and backed up — losing it means shipping a new
+public key in a build users already have (breaking auto-update until they manually
+reinstall). Commit the regenerated **public** key. Until this is run, the repo
+carries an all-zero placeholder and the updater reports "updates are not
+configured" rather than installing anything unverifiable.
 
-> Note: Fyne uses CGo for the desktop driver, so cross-compilation needs the
-> target platform's toolchain (or build natively on each OS / in CI).
+### Building & signing artifacts
+
+Fyne uses CGo, so each OS builds **natively** (no plain cross-compile). On the
+release machine for that OS:
+
+```sh
+make release        # package for the current OS + checksums + sign
+```
+
+`make release` runs, for the current OS:
+- `package-mac` → `Callisto.app` + `Callisto-v<ver>-darwin-<arch>.zip`, **or**
+  `package-linux` → `Callisto-v<ver>-linux-<arch>.tar.gz`;
+- `checksums` → `dist/SHA256SUMS`;
+- `sign` → `dist/SHA256SUMS.sig` (ed25519, from `CALLISTO_RELEASE_KEY`).
+
+The version comes from `internal/buildinfo` (single source of truth). For a Linux
+build from macOS, `make package-linux-cross` uses `fyne-cross` (Docker). Run
+`make release` once per target OS and collect the artifacts into one `dist/`.
+
+### Publishing on Codeberg
+
+Create the release for the tag and upload **all** of: each platform archive
+(`*.zip` / `*.tar.gz`), `SHA256SUMS`, and `SHA256SUMS.sig`. The updater matches its
+platform archive by the `-<goos>-<goarch>` fragment in the filename, so keep the
+names produced by the Makefile.
+
+- **Web UI:** repo → Releases → New release → pick the tag → paste the changelog
+  section as the notes → attach the artifacts.
+- **API (Forgejo):** `POST /api/v1/repos/pasiphae/callisto/releases`, then
+  `POST …/releases/{id}/assets` per file. See the Forgejo API docs.
+
+### First-launch note for users (unsigned build)
+
+Callisto is not yet Apple-notarized, so the **first** launch of a browser-downloaded
+build is gated by Gatekeeper. Document for users: right-click the app → **Open**
+(once), or `xattr -dr com.apple.quarantine /Applications/Callisto.app`. In-app
+updates afterward are downloaded by Callisto itself (not a browser), so macOS does
+not quarantine them and they relaunch without a prompt.

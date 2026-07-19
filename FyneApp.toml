@@ -1,0 +1,11 @@
+# Metadata for `fyne package` (see the Makefile). Version/Build are overridden by
+# the Makefile at package time (--appVersion from internal/buildinfo), so the value
+# here is only a fallback for a bare `fyne package` invocation.
+Website = "https://codeberg.org/pasiphae/callisto"
+
+[Details]
+  Icon = "images/CALLISTO-LOGO.png"
+  Name = "Callisto"
+  ID = "io.pasiphae.callisto"
+  Version = "0.8.0"
+  Build = 1

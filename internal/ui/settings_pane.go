@@ -130,7 +130,7 @@ func (p *settingsPane) build() fyne.CanvasObject {
 	help.Wrapping = fyne.TextWrapWord
 
 	top := container.NewVBox(header, help, indentToText(buttons), p.statusLbl, widget.NewSeparator())
-	return container.NewBorder(top, nil, nil, nil, p.list)
+	return container.NewBorder(top, p.buildUpdatesBox(), nil, nil, p.list)
 }
 
 func (p *settingsPane) updateButtons() {

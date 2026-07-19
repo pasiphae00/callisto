@@ -9,8 +9,31 @@ changes; `v1.0.0` marks the first stable, documented release.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-07-18
+
 ### Added
+- **WalletConnect** — connect Callisto to web dApps as a wallet. A new
+  WalletConnect tab: paste the `wc:` link from a dApp (Uniswap, CoW Swap, …),
+  approve a session that exposes your active wallet, then review and sign the
+  dApp's requests here. Supports `eth_sendTransaction` (built, gas-estimated,
+  broadcast, and tracked through the normal pipeline), `eth_signTransaction`,
+  `personal_sign`, and `eth_signTypedData_v4`. Sessions are listed and can be
+  disconnected. Works out of the box (an embedded WalletConnect project id,
+  overridable via `CALLISTO_WC_PROJECT_ID`).
+  - The WalletConnect v2 Sign protocol (relay transport, X25519/HKDF +
+    ChaCha20-Poly1305 envelopes, Ed25519 relay auth, and the pairing/session
+    state machine) is implemented from scratch in `internal/walletconnect` —
+    there is no Go SDK — using only the standard library, already-vendored
+    `x/crypto`, and the existing `gorilla/websocket` dependency (no new deps).
+  - **Verified live on mainnet:** a Uniswap swap and a CoW Swap order signed and
+    submitted through Callisto.
+  - Support: **hot wallets and Ledger** are fully supported. **Trezor** does
+    transactions and `personal_sign`; typed-data (`eth_signTypedData_v4`) needs
+    the device's experimental features enabled for now (native support comes with
+    a planned Trezor overhaul). Sessions are not yet persisted across restarts.
 - Double-click a wallet in the Wallets list to make it the active wallet.
+- Message and typed-data signing (`signer.PersonalSigner` / `TypedDataSigner`) on
+  hot and hardware wallets, backing the WalletConnect signature requests.
 
 ### Changed
 - Wallets pane help text updated to reflect encrypted-keystore storage (the seed
@@ -283,7 +306,8 @@ keys), and shows live balances — the foundation for the v1 transaction flows.
   (already vendored by go-ethereum) rather than pulling in `btcutil`, which drags
   a personal-fork transitive dependency into a signing wallet.
 
-[Unreleased]: https://codeberg.org/pasiphae/callisto/compare/v0.5.0...HEAD
+[Unreleased]: https://codeberg.org/pasiphae/callisto/compare/v0.6.0...HEAD
+[0.6.0]: https://codeberg.org/pasiphae/callisto/compare/v0.5.0...v0.6.0
 [0.5.0]: https://codeberg.org/pasiphae/callisto/compare/v0.4.0...v0.5.0
 [0.4.0]: https://codeberg.org/pasiphae/callisto/compare/v0.3.2...v0.4.0
 [0.3.2]: https://codeberg.org/pasiphae/callisto/compare/v0.3.1...v0.3.2

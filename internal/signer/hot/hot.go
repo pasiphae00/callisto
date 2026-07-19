@@ -6,6 +6,7 @@ import (
 	"math/big"
 	"sync"
 
+	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -49,9 +50,11 @@ type Account struct {
 
 // compile-time interface checks.
 var (
-	_ signer.Signer         = (*Wallet)(nil)
-	_ signer.Lockable       = (*Wallet)(nil)
-	_ signer.SafeHashSigner = (*Wallet)(nil)
+	_ signer.Signer          = (*Wallet)(nil)
+	_ signer.Lockable        = (*Wallet)(nil)
+	_ signer.SafeHashSigner  = (*Wallet)(nil)
+	_ signer.PersonalSigner  = (*Wallet)(nil)
+	_ signer.TypedDataSigner = (*Wallet)(nil)
 )
 
 // Open unlocks a hot wallet from a BIP-39 mnemonic and selects the account at the
@@ -237,6 +240,30 @@ func (w *Wallet) SignTx(ctx context.Context, tx *types.Transaction, chainID *big
 // EIP-712 "contract signature" form the Safe validates by ecrecover on the hash
 // itself (no eth_sign prefix). Returns ErrLocked after the wallet is locked.
 func (w *Wallet) SignSafeTxHash(ctx context.Context, safeTxHash common.Hash) ([]byte, error) {
+	// A Safe owner signature over the safeTxHash is a direct-hash signature with v
+	// in {27,28} — the same encoding as signDigest.
+	return w.signDigest(safeTxHash.Bytes())
+}
+
+// SignPersonalMessage signs an EIP-191 personal message with the selected
+// account (v 27/28), for WalletConnect personal_sign. Returns ErrLocked if locked.
+func (w *Wallet) SignPersonalMessage(ctx context.Context, message []byte) ([]byte, error) {
+	return w.signDigest(accounts.TextHash(message))
+}
+
+// SignTypedData signs EIP-712 typed data with the selected account (v 27/28), for
+// WalletConnect eth_signTypedData_v4.
+func (w *Wallet) SignTypedData(ctx context.Context, typedDataJSON []byte) ([]byte, error) {
+	_, _, digest, err := signer.TypedDataHashes(typedDataJSON)
+	if err != nil {
+		return nil, err
+	}
+	return w.signDigest(digest)
+}
+
+// signDigest signs a 32-byte digest directly and returns a 65-byte signature with
+// v in {27,28}. The seed/private key never leave this package.
+func (w *Wallet) signDigest(digest []byte) ([]byte, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if w.locked || w.key == nil {
@@ -246,11 +273,11 @@ func (w *Wallet) SignSafeTxHash(ctx context.Context, safeTxHash common.Hash) ([]
 	if err != nil {
 		return nil, err
 	}
-	sig, err := crypto.Sign(safeTxHash.Bytes(), priv) // 65 bytes, v in {0,1}
+	sig, err := crypto.Sign(digest, priv)
 	if err != nil {
 		return nil, err
 	}
-	sig[64] += 27 // Safe expects v in {27,28} for a direct-hash owner signature.
+	sig[64] += 27
 	return sig, nil
 }
 

@@ -63,13 +63,16 @@ type Release struct {
 type forgejoRelease struct {
 	TagName string  `json:"tag_name"`
 	Body    string  `json:"body"`
+	Draft   bool    `json:"draft"`
 	Assets  []Asset `json:"assets"`
 }
 
-// Check queries the releases API for the latest release and reports whether it is
-// newer than the running version.
+// Check queries the releases API and reports the highest-semver published release
+// and whether it is newer than the running version. We pick by semver (not the
+// API's "latest", which excludes anything flagged pre-release) so it works for a
+// 0.x project regardless of how a release is flagged; drafts are excluded.
 func (u *Updater) Check(ctx context.Context) (*Release, error) {
-	url := fmt.Sprintf("%s/repos/%s/%s/releases/latest", u.base, repoOwner, repoName)
+	url := fmt.Sprintf("%s/repos/%s/%s/releases?draft=false&limit=20", u.base, repoOwner, repoName)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
@@ -83,11 +86,34 @@ func (u *Updater) Check(ctx context.Context) (*Release, error) {
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("release server returned %s", resp.Status)
 	}
-	var fr forgejoRelease
-	if err := json.NewDecoder(resp.Body).Decode(&fr); err != nil {
-		return nil, fmt.Errorf("decode release: %w", err)
+	var list []forgejoRelease
+	if err := json.NewDecoder(resp.Body).Decode(&list); err != nil {
+		return nil, fmt.Errorf("decode releases: %w", err)
 	}
-	return releaseFrom(fr, u.current)
+	best, ok := highestSemver(list)
+	if !ok {
+		return nil, fmt.Errorf("no published release with a semver tag found")
+	}
+	return releaseFrom(best, u.current)
+}
+
+// highestSemver returns the release with the greatest valid semver tag.
+func highestSemver(list []forgejoRelease) (forgejoRelease, bool) {
+	var best forgejoRelease
+	found := false
+	for _, r := range list {
+		if r.Draft {
+			continue
+		}
+		v := ensureV(r.TagName)
+		if !semver.IsValid(v) {
+			continue
+		}
+		if !found || semver.Compare(v, ensureV(best.TagName)) > 0 {
+			best, found = r, true
+		}
+	}
+	return best, found
 }
 
 // releaseFrom builds a Release from the API payload and the running version.

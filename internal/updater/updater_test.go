@@ -126,11 +126,14 @@ func TestReleasePubkeyPlaceholder(t *testing.T) {
 func TestCheckAgainstFakeServer(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{
-			"tag_name": "v0.9.0",
-			"body": "## Added\n- stuff",
-			"assets": [{"name":"Callisto-v0.9.0-` + platformSuffix() + `.zip","browser_download_url":"http://x/a"}]
-		}`))
+		// A list, deliberately out of order, with an older release and a draft, to
+		// confirm Check picks the highest-semver non-draft.
+		w.Write([]byte(`[
+			{"tag_name":"v0.8.0","body":"old","draft":false,"assets":[]},
+			{"tag_name":"v1.0.0","body":"draft","draft":true,"assets":[]},
+			{"tag_name":"v0.9.0","body":"## Added\n- stuff","draft":false,
+			 "assets":[{"name":"Callisto-v0.9.0-` + platformSuffix() + `.zip","browser_download_url":"http://x/a"}]}
+		]`))
 	}))
 	defer srv.Close()
 

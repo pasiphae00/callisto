@@ -74,9 +74,9 @@ func (p *sendPane) build() fyne.CanvasObject {
 	header := widget.NewLabelWithStyle("Send", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
 	top := container.NewVBox(
 		header,
-		container.NewHBox(refreshBtn),
+		indentToText(container.NewHBox(refreshBtn)),
 		form,
-		container.NewHBox(p.prepareBtn),
+		indentToText(container.NewHBox(p.prepareBtn)),
 		p.status,
 	)
 

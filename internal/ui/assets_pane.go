@@ -57,7 +57,7 @@ func (p *assetsPane) build() fyne.CanvasObject {
 	})
 
 	header := widget.NewLabelWithStyle("Assets", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
-	top := container.NewVBox(header, container.NewHBox(refreshBtn, addTokenBtn), p.status, widget.NewSeparator())
+	top := container.NewVBox(header, indentToText(container.NewHBox(refreshBtn, addTokenBtn)), p.status, widget.NewSeparator())
 
 	p.reload()
 	return container.NewBorder(top, nil, nil, nil, p.list)

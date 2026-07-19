@@ -50,7 +50,7 @@ func (p *historyPane) build() fyne.CanvasObject {
 	// Register for post-send refreshes.
 	p.app.historyReload = func() { fyne.Do(func() { p.reload() }) }
 
-	top := container.NewVBox(header, hint, container.NewHBox(refreshBtn), p.status, widget.NewSeparator())
+	top := container.NewVBox(header, hint, indentToText(container.NewHBox(refreshBtn)), p.status, widget.NewSeparator())
 	p.reload()
 	return container.NewBorder(top, nil, nil, nil, p.list)
 }

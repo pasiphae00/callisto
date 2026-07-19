@@ -9,11 +9,23 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
+	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
 	"codeberg.org/pasiphae/callisto/internal/config"
 )
+
+// indentToText shifts obj right by theme.InnerPadding() so its left edge lines
+// up with the text of the Labels stacked above it. Labels inset their text by
+// InnerPadding, but a bare button (or HBox of buttons) draws its background from
+// x=0, so its box would otherwise protrude that far to the left of the text
+// column. Used for the action-button rows beneath each pane's header/help text.
+func indentToText(obj fyne.CanvasObject) fyne.CanvasObject {
+	spacer := canvas.NewRectangle(color.Transparent)
+	spacer.SetMinSize(fyne.NewSize(theme.DefaultTheme().Size(theme.SizeNameInnerPadding), 0))
+	return container.NewBorder(nil, nil, spacer, nil, obj)
+}
 
 // BerkeleyMono is bundled and embedded under the project's font license so that
 // distributed binaries carry it (no runtime font files needed). A user may still

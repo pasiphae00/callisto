@@ -129,7 +129,7 @@ func (p *settingsPane) build() fyne.CanvasObject {
 	help := widget.NewLabel(rpcHelpText)
 	help.Wrapping = fyne.TextWrapWord
 
-	top := container.NewVBox(header, help, buttons, p.statusLbl, widget.NewSeparator())
+	top := container.NewVBox(header, help, indentToText(buttons), p.statusLbl, widget.NewSeparator())
 	return container.NewBorder(top, nil, nil, nil, p.list)
 }
 

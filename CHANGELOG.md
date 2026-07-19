@@ -9,6 +9,23 @@ changes; `v1.0.0` marks the first stable, documented release.
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-07-18
+
+### Added
+- **Trezor typed-data (EIP-712) signing now works without device experimental
+  features.** Replaced the experimental `EthereumSignTypedHash` message (which
+  newer firmware rejects unless experimental features are enabled) with the full
+  native streaming flow (`EthereumSignTypedData` → struct/value request/ack →
+  `EthereumTypedDataSignature`), so WalletConnect `eth_signTypedData_v4` and
+  Safe-owner typed-data signatures work on a stock Trezor. **Verified live** with a
+  CoW Swap order on a Trezor Safe 5.
+
+### Changed
+- Every pane's content now has a small left/edge margin instead of sitting flush
+  against the navigation divider.
+- The action button beneath each pane's introductory text now lines up with that
+  text instead of sitting slightly to its left.
+
 ## [0.7.0] - 2026-07-18
 
 ### Added

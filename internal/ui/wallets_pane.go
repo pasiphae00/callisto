@@ -147,7 +147,7 @@ func (p *walletsPane) build() fyne.CanvasObject {
 	p.detailBox = p.buildDetailBox()
 	p.updateButtons() // also populates the detail box for the initial (no-selection) state
 
-	top := container.NewVBox(header, help, buttons, widget.NewSeparator())
+	top := container.NewVBox(header, help, indentToText(buttons), widget.NewSeparator())
 	return container.NewBorder(top, p.detailBox, nil, nil, p.list)
 }
 

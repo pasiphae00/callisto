@@ -274,9 +274,11 @@ func (a *App) buildRoot() fyne.CanvasObject {
 	a.statusBarBox = container.NewHBox()
 	a.refreshStatusBar()
 
-	// nav (left, with a divider) + content (fills the rest), over the status bar.
+	// nav (left, with a divider) + padded content (fills the rest), over the
+	// status bar. The padding gives every pane a consistent left/edge margin so
+	// content isn't flush against the nav divider.
 	navCol := container.NewBorder(nil, nil, nil, widget.NewSeparator(), container.NewVScroll(nav))
-	return container.NewBorder(nil, a.statusBarBox, navCol, nil, content)
+	return container.NewBorder(nil, a.statusBarBox, navCol, nil, container.NewPadded(content))
 }
 
 // placeholder is a temporary pane body used until a phase provides the real one.

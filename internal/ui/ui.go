@@ -234,6 +234,7 @@ func (a *App) buildRoot() fyne.CanvasObject {
 	items := []navItem{
 		{"Wallets", newWalletsPane(a).build()},
 		{"Assets", newAssetsPane(a).build()},
+		{"Approvals", newApprovalsPane(a).build()},
 		{"Send", newSendPane(a).build()},
 		{"Safe", newSafePane(a).build()},
 		{"WalletConnect", newWalletConnectPane(a).build()},

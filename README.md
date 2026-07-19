@@ -28,7 +28,7 @@ Currently, in addition to Safe contract wallets, it supports Trezor and Ledger h
 
 See some screenshots of it in action [here](./EXAMPLES.md).
 
-> **Status: pre-1.0 (`v0.8.0`).** Distributed as a native, self-updating desktop app (see [Download](https://codeberg.org/pasiphae/callisto/releases)). The foundation, basic transaction flows, Gnosis Safe multisig (including owner/threshold administration), encrypted hot-wallet keystores, WalletConnect (sign for web dApps), and direct-USB Ledger/Trezor signing (no Trezor Suite/Bridge) are in place and usable. The Claude-assisted complex-transaction pipeline is planned — see [Roadmap](#roadmap).
+> **Status: pre-1.0 (`v0.9.0`).** Distributed as a native, self-updating desktop app (see [Download](https://codeberg.org/pasiphae/callisto/releases)). The foundation, basic transaction flows, Gnosis Safe multisig (including owner/threshold administration), encrypted hot-wallet keystores, WalletConnect (sign for web dApps), direct-USB Ledger/Trezor signing (no Trezor Suite/Bridge), and token-approval management (view/revoke ERC-20 + Permit2) are in place and usable. The Claude-assisted complex-transaction pipeline is planned — see [Roadmap](#roadmap).
 
 ## Features
 
@@ -48,6 +48,8 @@ See some screenshots of it in action [here](./EXAMPLES.md).
   - Addresses are shown as their primary ENS name where one is set (forward-verified), and recipient fields accept ENS names or addresses with live, verified resolution. All addresses are EIP-55 checksum-validated on entry.
 - **Basic transfers.**
   - Send ETH or ERC-20 tokens with a consistent flow and a detailed pre-signature summary — review decoded calldata, nonce, EIP-1559 fees, and maximum total fee — before signing.
+- **Approvals (safety).**
+  - See every outstanding token approval for the active wallet — direct ERC-20 allowances *and* Uniswap Permit2 inner allowances — with the spender named where known and unlimited allowances flagged. **Revoke** any of them with a reviewed, signed, tracked transaction. Discovery scans on-chain logs (needs a full/archive RPC), bounded to the wallet's first tx so it never scans from genesis.
 - **Broadcast & track.** 
   - Transaction monitoring post-broadcast to pre-configured chain and node.
   - Live monitoring for block inclusion and execution status.

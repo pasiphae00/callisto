@@ -34,6 +34,10 @@ func (m *txMock) BalanceAt(context.Context, common.Address, *big.Int) (*big.Int,
 	return big.NewInt(0), nil
 }
 func (m *txMock) NonceAt(context.Context, common.Address, *big.Int) (uint64, error) { return 0, nil }
+func (m *txMock) FilterLogs(context.Context, ethereum.FilterQuery) ([]types.Log, error) {
+	return nil, nil
+}
+
 func (m *txMock) CallContract(context.Context, ethereum.CallMsg, *big.Int) ([]byte, error) {
 	return nil, nil
 }

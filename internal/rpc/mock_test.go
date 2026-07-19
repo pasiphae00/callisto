@@ -77,6 +77,10 @@ func (m *mockClient) PendingNonceAt(ctx context.Context, account common.Address)
 	return m.nonce, nil
 }
 
+func (m *mockClient) FilterLogs(ctx context.Context, q ethereum.FilterQuery) ([]types.Log, error) {
+	return nil, nil
+}
+
 func (m *mockClient) CallContract(ctx context.Context, msg ethereum.CallMsg, blockNumber *big.Int) ([]byte, error) {
 	return m.callRet, m.callErr
 }

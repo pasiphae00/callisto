@@ -50,6 +50,10 @@ type mockRPC struct {
 	handler func(to common.Address, selector [4]byte, node [32]byte) ([]byte, error)
 }
 
+func (m *mockRPC) FilterLogs(ctx context.Context, q ethereum.FilterQuery) ([]types.Log, error) {
+	return nil, nil
+}
+
 func (m *mockRPC) CallContract(ctx context.Context, msg ethereum.CallMsg, block *big.Int) ([]byte, error) {
 	var sel [4]byte
 	copy(sel[:], msg.Data[:4])

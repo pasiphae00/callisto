@@ -27,6 +27,11 @@ type Client interface {
 	PendingNonceAt(ctx context.Context, account common.Address) (uint64, error)
 	CallContract(ctx context.Context, msg ethereum.CallMsg, blockNumber *big.Int) ([]byte, error)
 
+	// Logs. Used by approval discovery to scan Approval events. Not every RPC
+	// serves eth_getLogs (e.g. a tx-submission-only relay) — callers surface a
+	// clear error when it fails.
+	FilterLogs(ctx context.Context, q ethereum.FilterQuery) ([]types.Log, error)
+
 	// Gas.
 	SuggestGasTipCap(ctx context.Context) (*big.Int, error)
 	EstimateGas(ctx context.Context, msg ethereum.CallMsg) (uint64, error)

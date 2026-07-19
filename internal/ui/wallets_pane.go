@@ -12,6 +12,7 @@ import (
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 
 	"codeberg.org/pasiphae/callisto/internal/address"
@@ -399,19 +400,37 @@ func (p *walletsPane) showAddHardwareWallet() {
 	label := widget.NewEntry()
 	label.SetPlaceHolder("e.g. Ledger 1")
 	deviceSel := widget.NewSelect([]string{"Ledger", "Trezor"}, nil)
-	deviceSel.SetSelected("Ledger")
 	index := widget.NewEntry()
 	index.SetText("0")
 	passphrase := widget.NewPasswordEntry()
-	passphrase.SetPlaceHolder("Trezor only: leave blank for your standard wallet")
+	passphrase.SetPlaceHolder("leave blank for your standard wallet")
 
-	items := []*widget.FormItem{
-		widget.NewFormItem("Label", label),
-		widget.NewFormItem("Device", deviceSel),
-		widget.NewFormItem("Account #", index),
-		widget.NewFormItem("Passphrase", passphrase),
+	// Passphrase applies only to Trezor (hidden wallets); show its row only when
+	// Trezor is selected.
+	passLabel := widget.NewLabelWithStyle("Passphrase", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+	setPassphraseVisible := func(sel string) {
+		if sel == "Trezor" {
+			passLabel.Show()
+			passphrase.Show()
+		} else {
+			passLabel.Hide()
+			passphrase.Hide()
+		}
 	}
-	d := dialog.NewForm("Add hardware wallet", "Connect", "Cancel", items, func(ok bool) {
+	deviceSel.OnChanged = setPassphraseVisible
+	deviceSel.SetSelected("Ledger") // triggers OnChanged → hides passphrase
+
+	bold := func(s string) *widget.Label {
+		return widget.NewLabelWithStyle(s, fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+	}
+	grid := container.New(layout.NewFormLayout(),
+		bold("Label"), label,
+		bold("Device"), deviceSel,
+		bold("Account #"), index,
+		passLabel, passphrase,
+	)
+
+	d := dialog.NewCustomConfirm("Add hardware wallet", "Connect", "Cancel", grid, func(ok bool) {
 		if !ok {
 			return
 		}
@@ -594,6 +613,13 @@ func (p *walletsPane) unlockHardware(desc wallet.Descriptor) {
 	path := desc.DerivationPath
 	if path == "" {
 		path = hot.DefaultPath(0)
+	}
+
+	// Only Trezor has hidden-wallet passphrases; Ledger has no such concept, so
+	// skip the prompt entirely and reconnect directly.
+	if kind != signer.KindTrezor {
+		p.connectHardware(desc, kind, path, "")
+		return
 	}
 
 	passphrase := widget.NewPasswordEntry()

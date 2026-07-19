@@ -9,6 +9,21 @@ changes; `v1.0.0` marks the first stable, documented release.
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-07-18
+
+### Changed
+- Transaction hashes in the WalletConnect and Send result dialogs are now
+  clickable monospace links that open the block explorer.
+- The hardware-wallet **Passphrase** field appears only for Trezor (it's a
+  Trezor-only hidden-wallet feature) — hidden when adding a Ledger, and skipped
+  when unlocking one.
+- The bottom status bar now reads `● RPC: <label> | Active wallet: <label>` with
+  the endpoint and wallet labels in the monospace font.
+- Settings RPC list shows each endpoint's URL in monospace, plus a new
+  **Set Default** button to change the auto-connect endpoint.
+- The pre-sign **Review transaction** screen reverse-resolves the To/From
+  addresses to their primary ENS name, shown beneath the address.
+
 ## [0.6.0] - 2026-07-18
 
 ### Added
@@ -306,7 +321,8 @@ keys), and shows live balances — the foundation for the v1 transaction flows.
   (already vendored by go-ethereum) rather than pulling in `btcutil`, which drags
   a personal-fork transitive dependency into a signing wallet.
 
-[Unreleased]: https://codeberg.org/pasiphae/callisto/compare/v0.6.0...HEAD
+[Unreleased]: https://codeberg.org/pasiphae/callisto/compare/v0.6.1...HEAD
+[0.6.1]: https://codeberg.org/pasiphae/callisto/compare/v0.6.0...v0.6.1
 [0.6.0]: https://codeberg.org/pasiphae/callisto/compare/v0.5.0...v0.6.0
 [0.5.0]: https://codeberg.org/pasiphae/callisto/compare/v0.4.0...v0.5.0
 [0.4.0]: https://codeberg.org/pasiphae/callisto/compare/v0.3.2...v0.4.0

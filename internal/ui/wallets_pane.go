@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -745,8 +746,10 @@ func (p *walletsPane) showManageMenu() {
 	item("Rename…", p.renameSelected)
 	if isHotKeystore {
 		item("Change passphrase…", p.changePassphraseSelected)
+		item("Reveal private key…", p.revealPrivateKeySelected)
+		item("Export encrypted backup…", p.exportBackupSelected)
 	}
-	d.Resize(fyne.NewSize(340, 200))
+	d.Resize(fyne.NewSize(340, 260))
 	d.Show()
 }
 
@@ -833,6 +836,137 @@ func (p *walletsPane) doChangePassphrase(desc wallet.Descriptor, cur, next, conf
 				"This wallet's keystore was re-encrypted. Any accounts sharing it now unlock with the new passphrase.", p.app.window)
 		})
 	}()
+}
+
+// openKeystoreWallet opens a throwaway unlocked signer for desc from its keystore
+// (used by reveal / derive). The caller must Lock() it when done.
+func (p *walletsPane) openKeystoreWallet(desc wallet.Descriptor, pass string) (*hot.Wallet, error) {
+	ksDir, err := config.KeystoreDir()
+	if err != nil {
+		return nil, err
+	}
+	ks, err := keystore.Load(filepath.Join(ksDir, desc.KeystoreID+".json"))
+	if err != nil {
+		return nil, fmt.Errorf("keystore not found for this wallet: %w", err)
+	}
+	path := desc.DerivationPath
+	if path == "" {
+		path = hot.DefaultPath(0)
+	}
+	return hot.OpenFromKeystore(ks, pass, path)
+}
+
+// revealPrivateKeySelected shows the selected hot account's private key after a
+// passphrase re-prompt, with a strong warning.
+func (p *walletsPane) revealPrivateKeySelected() {
+	if p.selected < 0 || p.selected >= len(p.app.cfg.Wallets) {
+		return
+	}
+	desc := p.app.cfg.Wallets[p.selected]
+	if desc.IsHardware() || desc.KeystoreID == "" {
+		dialog.ShowError(fmt.Errorf("only hot wallets have an exportable private key"), p.app.window)
+		return
+	}
+	pass := widget.NewPasswordEntry()
+	pass.SetPlaceHolder("wallet passphrase")
+	warn := widget.NewLabel("Anyone with this key controls the account. Only reveal it somewhere private, and never paste it into a website.")
+	warn.Wrapping = fyne.TextWrapWord
+	content := container.NewVBox(warn, widget.NewForm(widget.NewFormItem("Passphrase", pass)))
+	d := dialog.NewCustomConfirm("Reveal private key — "+displayName(desc), "Reveal", "Cancel", content,
+		func(ok bool) {
+			if ok {
+				p.doRevealPrivateKey(desc, pass.Text)
+			}
+		}, p.app.window)
+	d.Resize(fyne.NewSize(480, 260))
+	d.Show()
+}
+
+func (p *walletsPane) doRevealPrivateKey(desc wallet.Descriptor, pass string) {
+	progress := dialog.NewCustomWithoutButtons("Decrypting…", widget.NewLabel("Deriving the key…"), p.app.window)
+	progress.Show()
+	go func() {
+		w, err := p.openKeystoreWallet(desc, pass)
+		var pk string
+		if err == nil {
+			if !addrEqual(w.Address(), desc.Address) {
+				err = fmt.Errorf("the keystore derived a different address than this wallet")
+			} else {
+				pk, err = w.ExportPrivateKey()
+			}
+			w.Lock()
+		}
+		fyne.Do(func() {
+			progress.Hide()
+			if err != nil {
+				if errors.Is(err, keystore.ErrBadPassphrase) {
+					dialog.ShowError(fmt.Errorf("wrong passphrase"), p.app.window)
+				} else {
+					dialog.ShowError(err, p.app.window)
+				}
+				return
+			}
+			p.showPrivateKey(desc, pk)
+		})
+	}()
+}
+
+func (p *walletsPane) showPrivateKey(desc wallet.Descriptor, pk string) {
+	field := widget.NewMultiLineEntry()
+	field.SetText(pk)
+	field.TextStyle = fyne.TextStyle{Monospace: true}
+	field.Wrapping = fyne.TextWrapBreak
+	field.OnChanged = func(s string) { // read-only in effect, still selectable/copyable
+		if s != pk {
+			field.SetText(pk)
+		}
+	}
+	warn := widget.NewLabelWithStyle("Private key for "+displayName(desc)+". Anyone with it controls the funds — never share it.",
+		fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+	warn.Wrapping = fyne.TextWrapWord
+	copyBtn := widget.NewButton("Copy", func() { p.app.fyneApp.Clipboard().SetContent(pk) })
+	body := container.NewVBox(warn, field, copyBtn)
+	d := dialog.NewCustom("Private key", "Close", body, p.app.window)
+	d.Resize(fyne.NewSize(520, 260))
+	d.Show()
+}
+
+// exportBackupSelected saves a copy of the wallet's (already encrypted) keystore
+// file to a user-chosen location.
+func (p *walletsPane) exportBackupSelected() {
+	if p.selected < 0 || p.selected >= len(p.app.cfg.Wallets) {
+		return
+	}
+	desc := p.app.cfg.Wallets[p.selected]
+	if desc.IsHardware() || desc.KeystoreID == "" {
+		dialog.ShowError(fmt.Errorf("only hot wallets have a keystore to back up"), p.app.window)
+		return
+	}
+	ksDir, err := config.KeystoreDir()
+	if err != nil {
+		dialog.ShowError(err, p.app.window)
+		return
+	}
+	src := filepath.Join(ksDir, desc.KeystoreID+".json")
+	save := dialog.NewFileSave(func(wc fyne.URIWriteCloser, err error) {
+		if err != nil || wc == nil {
+			return
+		}
+		defer wc.Close()
+		data, rerr := os.ReadFile(src)
+		if rerr != nil {
+			dialog.ShowError(rerr, p.app.window)
+			return
+		}
+		if _, werr := wc.Write(data); werr != nil {
+			dialog.ShowError(werr, p.app.window)
+			return
+		}
+		dialog.ShowInformation("Backup exported",
+			"Encrypted keystore saved. It still needs this wallet's passphrase to unlock — keep both safe.", p.app.window)
+	}, p.app.window)
+	save.SetFileName("callisto-" + desc.KeystoreID + ".json")
+	save.Show()
 }
 
 // removeSelected deletes a wallet descriptor (locking it first if it is active).

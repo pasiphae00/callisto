@@ -7,6 +7,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
 )
 
 // Well-known BIP-44 (m/44'/60'/0'/0/i) test vectors.
@@ -41,6 +42,30 @@ func TestOpenDerivesKnownAddress(t *testing.T) {
 				t.Errorf("account 0 = %s, want %s", got, c.want)
 			}
 		})
+	}
+}
+
+func TestExportPrivateKey(t *testing.T) {
+	w, err := Open(junkMnemonic, "", DefaultPath(0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pk, err := w.ExportPrivateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 0x + 64 hex chars, and it recovers the account address.
+	if len(pk) != 66 || pk[:2] != "0x" {
+		t.Fatalf("private key format: %q", pk)
+	}
+	priv, err := crypto.HexToECDSA(pk[2:])
+	if err != nil || crypto.PubkeyToAddress(priv.PublicKey) != w.Address() {
+		t.Errorf("exported key doesn't match address (err %v)", err)
+	}
+	// Locked wallet refuses to export.
+	w.Lock()
+	if _, err := w.ExportPrivateKey(); err != ErrLocked {
+		t.Errorf("export after lock = %v, want ErrLocked", err)
 	}
 }
 

@@ -138,6 +138,18 @@ func (w *Wallet) Path() string {
 // Kind reports the backing wallet type.
 func (w *Wallet) Kind() signer.Kind { return signer.KindHot }
 
+// ExportPrivateKey returns the 0x-prefixed hex private key of the selected account.
+// It errors when the wallet is locked. The returned string is HIGHLY sensitive —
+// callers must never persist or log it and should clear it from the UI promptly.
+func (w *Wallet) ExportPrivateKey() (string, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.locked || w.key == nil {
+		return "", ErrLocked
+	}
+	return "0x" + common.Bytes2Hex(w.key), nil
+}
+
 // SelectAccount switches the active account to the standard Ethereum path for
 // the given index (m/44'/60'/0'/0/index).
 func (w *Wallet) SelectAccount(index uint32) error {

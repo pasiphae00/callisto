@@ -18,6 +18,7 @@ import (
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
@@ -126,17 +127,43 @@ func (a *App) openURL(raw string) {
 // autoConnectOnStart connects the endpoint marked as the startup default, if any,
 // and updates the status bar. Failures are silent (the user can connect manually).
 func (a *App) autoConnectOnStart() {
-	e, ok := a.cfg.AutoConnectEndpoint()
-	if !ok {
+	candidates := a.cfg.ConnectCandidates()
+	for _, e := range candidates {
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		_, err := a.rpc.Connect(ctx, e)
+		cancel()
+		if err == nil {
+			a.cfg.ActiveEndpoint = e.Name
+			fyne.Do(a.refreshStatusBar)
+			return
+		}
+	}
+	// Every candidate failed; leave disconnected and let the status bar reflect it.
+	fyne.Do(a.refreshStatusBar)
+}
+
+// failoverToFallback is invoked when the active connection is lost mid-session. It
+// connects to the Flashbots fallback (unless that's already active) so the app stays
+// usable, and refreshes the status bar. It does not auto-return to the primary — a
+// manual reconnect in Settings does that.
+func (a *App) failoverToFallback() {
+	fb, ok := a.cfg.FallbackEndpoint()
+	if !ok || a.cfg.ActiveEndpoint == fb.Name {
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	if _, err := a.rpc.Connect(ctx, e); err != nil {
+	if _, err := a.rpc.Connect(ctx, fb); err != nil {
 		return
 	}
-	a.cfg.ActiveEndpoint = e.Name
-	fyne.Do(a.refreshStatusBar)
+	a.cfg.ActiveEndpoint = fb.Name
+	fyne.Do(func() {
+		a.refreshStatusBar()
+		if a.window != nil {
+			dialog.ShowInformation("Connection failed over",
+				"The primary RPC became unreachable; Callisto reconnected to "+fb.Name+".", a.window)
+		}
+	})
 }
 
 // currentResolver returns an ENS resolver bound to the active connection, or nil
@@ -208,6 +235,8 @@ func (a *App) Run() {
 	a.window.SetContent(a.buildRoot())
 	a.window.Resize(fyne.NewSize(1024, 720))
 	a.window.CenterOnScreen()
+	// Fail over to the fallback endpoint if the active connection drops mid-session.
+	a.rpc.SetOnConnectionLost(a.failoverToFallback)
 	// Auto-connect the default endpoint (if any) once the event loop is running.
 	go a.autoConnectOnStart()
 

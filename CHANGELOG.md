@@ -9,6 +9,24 @@ changes; `v1.0.0` marks the first stable, documented release.
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-07-19
+
+### Added
+- **Default archive RPC with automatic failover.** Callisto now ships with the
+  maintainer's archive node (`wss://ganymede.pasiphae.io`, bearer-authenticated) as
+  the auto-connecting default, so approval scans have full history and live
+  subscriptions work out of the box — with **Flashbots Protect (fast)** kept as a
+  pre-populated secondary. If the primary can't be reached (or drops mid-session),
+  Callisto **fails over to Flashbots** automatically. RPC endpoints can now carry
+  bearer auth (WSS + HTTPS).
+
+### Security
+- The default endpoint's bearer token is compiled into release builds from a
+  gitignored env file and obfuscated (kept out of a `strings` dump). Note this is a
+  **shared, effectively public access key** — a token in a distributed open-source
+  binary can be extracted; it is rate-limited/rotated server-side, not treated as a
+  secret. The config file never stores the token (only a reference name).
+
 ## [0.9.0] - 2026-07-19
 
 ### Added

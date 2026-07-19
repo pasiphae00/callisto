@@ -33,8 +33,8 @@ See some screenshots of it in action [here](./EXAMPLES.md).
 ## Features
 
 - **Bring your own node.**
-  - Configure multiple Ethereum RPC endpoints (`https://` or `wss://`). WebSocket endpoints get live block updates; HTTP endpoints are polled.
-  - If you do not specify a node, [Flashbots Protect](https://protectrpc.flashbots.net/about) (fast) is used by default.
+  - Configure multiple Ethereum RPC endpoints (`https://` or `wss://`, with optional bearer auth). WebSocket endpoints get live block updates; HTTP endpoints are polled.
+  - Out of the box Callisto connects to a maintainer-run **archive** node (so approval history and live subscriptions work immediately), and **falls over to [Flashbots Protect](https://protectrpc.flashbots.net/about) (fast)** if it's unreachable. Replace either, or point Callisto at your own node, in Settings.
 - **Multiple wallets, multiple signers.**
   - *Hot wallets* — import a BIP-39 seed phrase **once**, pick the account(s) to add from a derived index→address list, and set an encryption passphrase. The seed is stored only as a scrypt+AES-GCM-encrypted keystore; afterwards you unlock with just the passphrase (no re-entering the phrase). Keys are held in memory only while unlocked and wiped on lock.
   - *Hardware wallets* — Ledger and Trezor over direct USB, via a common signing interface; keys never leave the device. **No Trezor Suite or Bridge required** — Callisto talks to the Trezor Safe directly over libusb (Trezor Bridge is kept only as an automatic fallback). Trezor hidden wallets (passphrase-protected, including on-device passphrase entry) are supported.
@@ -116,7 +116,7 @@ with `make package-mac` (macOS) / `make package-linux` (Linux) — see
 - **Hot wallets** decrypt the seed into memory only while unlocked (so you can switch derived accounts); the seed and the selected private key are zeroed on lock, disconnect, or exit. HD derivation (BIP-32/44) is implemented in-house on the secp256k1 primitives go-ethereum already vendors, deliberately avoiding extra dependencies in the signing path.
 - **Your recovery phrase is your backup.** The passphrase protects the on-disk keystore; it is not recoverable and does not replace your seed phrase. Best-effort file wiping is not a guaranteed secure-erase on modern SSDs — keep your phrase safe offline.
 - **Hardware wallets** keep keys on the device; Callisto only requests signatures you confirm on the device.
-- Callisto makes **no outbound connections except to the RPC endpoint and services you use.** It ships with a default Flashbots Protect mainnet endpoint for convenience (auto-connecting on first launch); you can replace it, disable auto-connect, or point Callisto at your own node at any time in Settings.
+- Callisto makes **no outbound connections except to the RPC endpoint and services you use.** It ships with a maintainer-run archive endpoint as the auto-connecting default (with a Flashbots Protect fallback); you can replace either, disable auto-connect, or point Callisto at your own node at any time in Settings. The default endpoint authenticates with a bearer token baked into release builds — this is a **shared access key** (rate-limited server-side), not a per-user secret, and a token in a distributed binary can be extracted; the config file never stores it.
 
 Treat this as pre-1.0 software: review transactions on-device, and prefer test networks and throwaway keys while the project matures.
 

@@ -8,12 +8,18 @@ package main
 import (
 	"log"
 
+	"codeberg.org/pasiphae/callisto/internal/buildsecrets"
 	"codeberg.org/pasiphae/callisto/internal/config"
+	"codeberg.org/pasiphae/callisto/internal/rpc"
 	"codeberg.org/pasiphae/callisto/internal/store"
 	"codeberg.org/pasiphae/callisto/internal/ui"
 )
 
 func main() {
+	// Resolve build-embedded RPC bearer tokens (e.g. the Ganymede default) at dial
+	// time. Kept here (the composition root) so the rpc package stays secret-free.
+	rpc.ResolveAuthToken = buildsecrets.Token
+
 	cfg, err := config.Load()
 	if err != nil {
 		log.Fatalf("callisto: load config: %v", err)

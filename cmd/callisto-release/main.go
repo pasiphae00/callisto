@@ -16,6 +16,8 @@ import (
 	"fmt"
 	"os"
 	"strings"
+
+	"codeberg.org/pasiphae/callisto/internal/buildsecrets"
 )
 
 func main() {
@@ -30,6 +32,8 @@ func main() {
 		err = sign(os.Args[2:])
 	case "verify":
 		err = verify(os.Args[2:])
+	case "obf-token":
+		err = obfToken(os.Args[2:])
 	default:
 		usage()
 	}
@@ -43,8 +47,16 @@ func usage() {
 	fmt.Fprintln(os.Stderr, `usage:
   callisto-release genkey --out <private-key-path> --pub <public-key-path>
   callisto-release sign   --key <private-key-path> --in <file> --out <sig-path>
-  callisto-release verify --pub <public-key-path>  --in <file> --sig <sig-path>`)
+  callisto-release verify --pub <public-key-path>  --in <file> --sig <sig-path>
+  callisto-release obf-token   (reads GANYMEDE_RPC_TOKEN from the env, prints the obfuscated form)`)
 	os.Exit(2)
+}
+
+// obfToken prints the build-time obfuscated form of $GANYMEDE_RPC_TOKEN, for the
+// Makefile to inject via ldflags. Empty env → empty output (dev/no-token build).
+func obfToken([]string) error {
+	fmt.Print(buildsecrets.Obfuscate(os.Getenv("GANYMEDE_RPC_TOKEN")))
+	return nil
 }
 
 // flags is a tiny --key value parser (avoids the flag package's per-subcommand

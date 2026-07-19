@@ -34,6 +34,10 @@ type Endpoint struct {
 	// AutoConnect marks this endpoint to be connected automatically at startup.
 	// At most one endpoint is the auto-connect default (see Config.SetAutoConnect).
 	AutoConnect bool `json:"auto_connect,omitempty"`
+	// AuthRef names a build-embedded bearer token used to authenticate this
+	// endpoint (e.g. "ganymede"), resolved at dial time via ResolveAuthToken. It is
+	// only the token's *name* — the token value is never stored in config.
+	AuthRef string `json:"auth_ref,omitempty"`
 }
 
 // SchemeOf reports whether a URL is an HTTP(S) or WS(S) endpoint, validating that

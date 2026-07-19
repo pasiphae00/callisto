@@ -215,6 +215,21 @@ func (c *Client) RespondError(ctx context.Context, req Request, code int, messag
 	return c.publishError(ctx, req.SessionTopic, sym, req.ID, code, message, tagSessionRequestRes, ttlResponse)
 }
 
+// DisconnectAll notifies every connected dApp with wc_sessionDelete and clears the
+// sessions. Best-effort (errors are ignored) — used at shutdown, before Close, so
+// dApps see a clean disconnect instead of a dropped socket.
+func (c *Client) DisconnectAll(ctx context.Context) {
+	c.mu.Lock()
+	topics := make([]string, 0, len(c.sessions))
+	for t := range c.sessions {
+		topics = append(topics, t)
+	}
+	c.mu.Unlock()
+	for _, t := range topics {
+		_ = c.Disconnect(ctx, t)
+	}
+}
+
 // Disconnect deletes a session (notifying the dApp).
 func (c *Client) Disconnect(ctx context.Context, sessionTopic string) error {
 	sym := c.symFor(sessionTopic)

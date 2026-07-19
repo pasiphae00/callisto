@@ -9,6 +9,13 @@ changes; `v1.0.0` marks the first stable, documented release.
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-07-18
+
+### Added
+- On exit, Callisto now cleanly disconnects every active WalletConnect session
+  (`wc_sessionDelete`) before closing the relay, so connected dApps see a proper
+  disconnect instead of a dropped connection. Bounded so it never hangs shutdown.
+
 ## [0.6.1] - 2026-07-18
 
 ### Changed
@@ -322,7 +329,8 @@ keys), and shows live balances — the foundation for the v1 transaction flows.
   (already vendored by go-ethereum) rather than pulling in `btcutil`, which drags
   a personal-fork transitive dependency into a signing wallet.
 
-[Unreleased]: https://codeberg.org/pasiphae/callisto/compare/v0.6.1...HEAD
+[Unreleased]: https://codeberg.org/pasiphae/callisto/compare/v0.6.2...HEAD
+[0.6.2]: https://codeberg.org/pasiphae/callisto/compare/v0.6.1...v0.6.2
 [0.6.1]: https://codeberg.org/pasiphae/callisto/compare/v0.6.0...v0.6.1
 [0.6.0]: https://codeberg.org/pasiphae/callisto/compare/v0.5.0...v0.6.0
 [0.5.0]: https://codeberg.org/pasiphae/callisto/compare/v0.4.0...v0.5.0

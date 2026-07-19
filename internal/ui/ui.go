@@ -67,15 +67,21 @@ func (a *App) setWalletConnect(c *walletconnect.Client) {
 	a.wcMu.Unlock()
 }
 
-// closeWalletConnect tears down the WalletConnect relay connection, if any.
+// closeWalletConnect cleanly shuts down WalletConnect at exit: it notifies every
+// connected dApp (wc_sessionDelete) before dropping the relay connection, so dApps
+// see a proper disconnect rather than a dead socket. Bounded so it can't hang exit.
 func (a *App) closeWalletConnect() {
 	a.wcMu.Lock()
 	c := a.wc
 	a.wc = nil
 	a.wcMu.Unlock()
-	if c != nil {
-		c.Close()
+	if c == nil {
+		return
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	c.DisconnectAll(ctx)
+	c.Close()
 }
 
 // New constructs the App wiring. It does not create any windows or a driver, so

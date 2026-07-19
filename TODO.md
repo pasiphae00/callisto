@@ -1,5 +1,31 @@
 # To-do items for `callisto`
 
+## v0.10 — hot-wallet key management (next major, user-approved 2026-07-19)
+
+All four areas approved. Key material is the #1 correctness/security concern
+(PRINCIPLES), so plan carefully and keep the passphrase-encrypted keystore the
+portable source of truth throughout. Suggested build order (pure-Go first, the
+platform/CGo Keychain last):
+
+1. **Passphrase lifecycle** — `keystore.Rekey(old,new)` (decrypt seed → re-encrypt
+   under a new passphrase → atomic replace); "Change passphrase" UI; strength hint
+   at import; clarify shared-keystore-passphrase semantics (accounts from one import
+   share a keystore today).
+2. **Backup / reveal / import** — reveal recovery phrase behind an auth gate (+ big
+   warning, decrypt→show→wipe); export an encrypted keystore backup; derive more
+   accounts from an existing seed; import geth/MetaMask JSON keystore, raw private
+   key, and watch-only addresses.
+3. **Auto-lock & re-auth** — a session/lock manager: inactivity timer (reset on
+   activity), lock-on-sleep, configurable timeout; optional "confirm each signature"
+   requiring re-auth (passphrase or Touch ID) before `SignTx`. Wires into the signer
+   session / `App.clearSigner`.
+4. **Keychain + Touch ID unlock** (headline; macOS-first, CGo) — a `SecretStore`
+   interface in `internal/keystore` with a macOS backend (Security framework;
+   Touch ID via LocalAuthentication/LAContext) that holds the keystore's *wrapping
+   key* (never the seed); passphrase file stays the fallback. Enroll/remove UI;
+   graceful degrade off macOS. Supersedes the "OS keychain-backed keystore" item
+   below. Needs live-device verification. Then wire Touch ID into #3's re-auth.
+
 ## bugs
 
 - ~~trezor eth transfer: "Sign: transaction type not supported"~~

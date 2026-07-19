@@ -703,6 +703,52 @@ func (w *wallet) SignText(account accounts.Account, text []byte) ([]byte, error)
 	return w.driver.SignMessage(path, text)
 }
 
+// typedDataStreamer is implemented by drivers supporting the native streaming
+// EIP-712 flow (Trezor's EthereumSignTypedData).
+type typedDataStreamer interface {
+	signTypedDataStreaming(path accounts.DerivationPath, typedDataJSON []byte) ([]byte, error)
+}
+
+// TypedDataStreamer is implemented by wallets whose driver supports native
+// streaming EIP-712 signing (Trezor). hardware.Signer type-asserts this to prefer
+// streaming — which works on stock firmware and shows the decoded data on-device —
+// over the experimental EthereumSignTypedHash hashed path.
+type TypedDataStreamer interface {
+	SignTypedDataStreaming(account accounts.Account, typedDataJSON []byte) ([]byte, error)
+}
+
+// SignTypedDataStreaming signs EIP-712 typed data via the driver's native
+// streaming flow (Trezor). Locking mirrors SignData/SignText.
+func (w *wallet) SignTypedDataStreaming(account accounts.Account, typedDataJSON []byte) ([]byte, error) {
+	ds, ok := w.driver.(typedDataStreamer)
+	if !ok {
+		return nil, accounts.ErrNotSupported
+	}
+	w.stateLock.RLock()
+	defer w.stateLock.RUnlock()
+
+	if w.device == nil {
+		return nil, accounts.ErrWalletClosed
+	}
+	path, ok := w.paths[account.Address]
+	if !ok {
+		return nil, accounts.ErrUnknownAccount
+	}
+	<-w.commsLock
+	defer func() { w.commsLock <- struct{}{} }()
+
+	w.hub.commsLock.Lock()
+	w.hub.commsPend++
+	w.hub.commsLock.Unlock()
+	defer func() {
+		w.hub.commsLock.Lock()
+		w.hub.commsPend--
+		w.hub.commsLock.Unlock()
+	}()
+
+	return ds.signTypedDataStreaming(path, typedDataJSON)
+}
+
 // SignTx implements accounts.Wallet. It sends the transaction over to the Ledger
 // wallet to request a confirmation from the user. It returns either the signed
 // transaction or a failure if the user denied the transaction.

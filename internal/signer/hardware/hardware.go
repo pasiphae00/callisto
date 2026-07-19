@@ -92,12 +92,29 @@ func (s *Signer) SignPersonalMessage(ctx context.Context, message []byte) ([]byt
 // WalletConnect eth_signTypedData_v4. Works on Ledger via upstream; Trezor
 // typed-data support is added in the usbwallet fork.
 func (s *Signer) SignTypedData(ctx context.Context, typedDataJSON []byte) ([]byte, error) {
-	domainHash, messageHash, digest, err := signer.TypedDataHashes(typedDataJSON)
+	_, _, digest, err := signer.TypedDataHashes(typedDataJSON)
 	if err != nil {
 		return nil, err
 	}
-	// The wallet's SignData routes MimetypeTypedData + (0x1901||domainHash||
-	// messageHash) to the device's EIP-712 hashed-message signing.
+
+	// Trezor: native streaming EthereumSignTypedData — works on stock firmware and
+	// shows the decoded data on-device (unlike the experimental hashed path).
+	if s.kind == signer.KindTrezor {
+		if ts, ok := s.wallet.(usbwallet.TypedDataStreamer); ok {
+			raw, serr := ts.SignTypedDataStreaming(s.account, typedDataJSON)
+			if serr != nil {
+				return nil, fmt.Errorf("device typed-data signing: %w", serr)
+			}
+			return finalizeDeviceSig(raw, digest, s.account.Address, 27)
+		}
+	}
+
+	// Ledger (and fallback): the EIP-712 hashed-message path (SignData routes
+	// MimetypeTypedData + 0x1901||domainHash||messageHash to the device).
+	domainHash, messageHash, _, err := signer.TypedDataHashes(typedDataJSON)
+	if err != nil {
+		return nil, err
+	}
 	data := append([]byte{0x19, 0x01}, domainHash...)
 	data = append(data, messageHash...)
 	raw, err := s.wallet.SignData(s.account, accounts.MimetypeTypedData, data)

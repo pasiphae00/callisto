@@ -1,11 +1,13 @@
 # Metadata for `fyne package` (see the Makefile). Version/Build are overridden by
-# the Makefile at package time (--appVersion from internal/buildinfo), so the value
-# here is only a fallback for a bare `fyne package` invocation.
-Website = "https://codeberg.org/pasiphae/callisto"
+# the Makefile at package time (--appVersion from internal/buildinfo, --appBuild),
+# so the values here are only a fallback for a bare `fyne package` invocation.
+# Note: `fyne package` rewrites this file (bumps Build, drops comments) on each run;
+# that churn doesn't need to be committed.
+Website = "https://callisto.pasiphae.io"
 
 [Details]
   Icon = "images/CALLISTO-LOGO.png"
   Name = "Callisto"
   ID = "io.pasiphae.callisto"
-  Version = "0.8.0"
+  Version = "0.8.1"
   Build = 1

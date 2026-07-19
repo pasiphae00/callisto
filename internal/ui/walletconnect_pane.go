@@ -21,6 +21,7 @@ import (
 	"codeberg.org/pasiphae/callisto/internal/assets"
 	"codeberg.org/pasiphae/callisto/internal/chain"
 	"codeberg.org/pasiphae/callisto/internal/history"
+	"codeberg.org/pasiphae/callisto/internal/rpc"
 	"codeberg.org/pasiphae/callisto/internal/signer"
 	"codeberg.org/pasiphae/callisto/internal/tx"
 	"codeberg.org/pasiphae/callisto/internal/walletconnect"
@@ -351,12 +352,43 @@ func (p *walletConnectPane) dispatchSendTx(ctx context.Context, req walletconnec
 		p.failRequest(req, "broadcast: "+err.Error())
 		return
 	}
-	p.recordHistory(conn.ChainID.Uint64(), s.Address(), *tp.To, tp.Value, hash.Hex(), req)
+	recID := p.recordHistory(conn.ChainID.Uint64(), s.Address(), *tp.To, tp.Value, hash.Hex(), req)
 	p.respondResult(req, hash.Hex())
 	info := conn.ChainInfo
 	fyne.Do(func() {
 		p.status.SetText("Transaction submitted to " + info.Name)
 		p.showTxResult(hash.Hex(), info)
+		if p.app.historyReload != nil {
+			p.app.historyReload()
+		}
+	})
+	// Track inclusion in the background so the history row advances from
+	// "submitted" to "included" (with block/status), mirroring the Send flow.
+	go p.trackInclusion(recID, conn.Client, hash, info)
+}
+
+// trackInclusion waits for the receipt of a WalletConnect-broadcast transaction and
+// updates its history record to included/failed. It uses its own context so it
+// outlives the request handler.
+func (p *walletConnectPane) trackInclusion(recID int64, client rpc.Client, hash common.Hash, info chain.Info) {
+	if p.app.history == nil || recID == 0 {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+
+	receipt, err := tx.WaitForReceipt(ctx, client, hash)
+	if err != nil {
+		return // leave it "submitted"; a later manual refresh can still resolve it
+	}
+	success := tx.Succeeded(receipt)
+	blockNum := receipt.BlockNumber.Int64()
+	var blockTime int64
+	if head, herr := client.HeaderByNumber(ctx, receipt.BlockNumber); herr == nil && head != nil {
+		blockTime = int64(head.Time)
+	}
+	_ = p.app.history.MarkIncluded(recID, blockNum, blockTime, success)
+	fyne.Do(func() {
 		if p.app.historyReload != nil {
 			p.app.historyReload()
 		}
@@ -501,9 +533,12 @@ func (p *walletConnectPane) failRequest(req walletconnect.Request, msg string) {
 	})
 }
 
-func (p *walletConnectPane) recordHistory(chainID uint64, from, to common.Address, value *big.Int, hash string, req walletconnect.Request) {
+// recordHistory inserts a submitted WalletConnect transaction and returns its
+// record id (0 if there is no store / on error), so the caller can track it to
+// inclusion.
+func (p *walletConnectPane) recordHistory(chainID uint64, from, to common.Address, value *big.Int, hash string, req walletconnect.Request) int64 {
 	if p.app.history == nil {
-		return
+		return 0
 	}
 	rec := history.Record{
 		ChainID:       chainID,
@@ -515,9 +550,12 @@ func (p *walletConnectPane) recordHistory(chainID uint64, from, to common.Addres
 		TxHash:        hash,
 		Status:        history.StatusSubmitted,
 	}
-	if id, err := p.app.history.Insert(rec); err == nil {
-		_ = p.app.history.MarkSubmitted(id, hash)
+	id, err := p.app.history.Insert(rec)
+	if err != nil {
+		return 0
 	}
+	_ = p.app.history.MarkSubmitted(id, hash)
+	return id
 }
 
 // --- small helpers ----------------------------------------------------------

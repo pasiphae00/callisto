@@ -6,9 +6,15 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/ethclient"
+	gethrpc "github.com/ethereum/go-ethereum/rpc"
 
 	"codeberg.org/pasiphae/callisto/internal/chain"
 )
+
+// ResolveAuthToken maps an Endpoint.AuthRef to its bearer token, or "" if none.
+// It is set at startup (by main, from internal/buildsecrets) so this package stays
+// free of embedded secrets; nil/"" means the endpoint dials without auth.
+var ResolveAuthToken func(ref string) string
 
 // Connection is a live, dialed link to one endpoint. It bundles the low-level
 // Client with the verified chain ID and the resolved chain metadata so the UI
@@ -22,8 +28,17 @@ type Connection struct {
 	Known bool
 }
 
-// dialFunc is the dialer used to establish connections; overridable in tests.
-var dialFunc = func(ctx context.Context, rawURL string) (Client, error) {
+// dialFunc is the dialer used to establish connections; overridable in tests. When
+// authToken is non-empty an Authorization: Bearer header is sent — on the request
+// for HTTP, or on the upgrade handshake for WS.
+var dialFunc = func(ctx context.Context, rawURL, authToken string) (Client, error) {
+	if authToken != "" {
+		rc, err := gethrpc.DialOptions(ctx, rawURL, gethrpc.WithHeader("Authorization", "Bearer "+authToken))
+		if err != nil {
+			return nil, err
+		}
+		return ethclient.NewClient(rc), nil
+	}
 	// ethclient.DialContext handles http(s) and ws(s) transparently and returns
 	// a *Client that satisfies our Client interface.
 	c, err := ethclient.DialContext(ctx, rawURL)
@@ -33,6 +48,14 @@ var dialFunc = func(ctx context.Context, rawURL string) (Client, error) {
 	return c, nil
 }
 
+// authTokenFor resolves an endpoint's bearer token (empty if none / unconfigured).
+func authTokenFor(e Endpoint) string {
+	if e.AuthRef == "" || ResolveAuthToken == nil {
+		return ""
+	}
+	return ResolveAuthToken(e.AuthRef)
+}
+
 // Dial connects to an endpoint and verifies it by fetching the chain ID. A
 // successful Dial means the node is reachable and responsive; the caller owns the
 // returned Connection and must Close it.
@@ -40,7 +63,7 @@ func Dial(ctx context.Context, e Endpoint) (*Connection, error) {
 	if err := e.Validate(); err != nil {
 		return nil, err
 	}
-	client, err := dialFunc(ctx, e.URL)
+	client, err := dialFunc(ctx, e.URL, authTokenFor(e))
 	if err != nil {
 		return nil, fmt.Errorf("dial %s: %w", e.Name, err)
 	}

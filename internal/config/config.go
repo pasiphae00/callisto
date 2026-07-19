@@ -19,6 +19,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 
 	"codeberg.org/pasiphae/callisto/internal/assets"
+	"codeberg.org/pasiphae/callisto/internal/buildsecrets"
 	"codeberg.org/pasiphae/callisto/internal/rpc"
 	"codeberg.org/pasiphae/callisto/internal/safe"
 	"codeberg.org/pasiphae/callisto/internal/wallet"
@@ -30,23 +31,47 @@ const appDir = "callisto"
 // configFile is the settings document name within appDir.
 const configFile = "config.json"
 
-// The out-of-the-box default RPC. Callisto ships with a working Ethereum Mainnet
-// endpoint — Flashbots Protect (fast) — configured and auto-connecting so it runs
-// on first launch; users can replace it, disable auto-connect, or add their own at
-// any time in Settings. (This supersedes the original no-default-RPC stance; see
-// DESIGN.md.)
+// The out-of-the-box default RPCs. Callisto ships with two working Ethereum
+// Mainnet endpoints, seeded on first launch (users can replace, remove, or re-order
+// them in Settings). This supersedes the original no-default-RPC stance; see
+// DESIGN.md.
+//
+//   - Ganymede: the maintainer's archive node (WSS, bearer auth via a build-embedded
+//     token) — the auto-connect default in release builds, so approval scans have
+//     full history and live subscriptions work out of the box.
+//   - Flashbots Protect (fast): the secondary/fallback (HTTPS, no auth). If Ganymede
+//     can't be reached (no embedded token, or it's down), Callisto uses this.
 const (
 	DefaultEndpointName = "Ethereum Mainnet (via Flashbots Protect)"
 	DefaultEndpointURL  = "https://rpc.flashbots.net/fast?originId=callisto-system"
+
+	GanymedeEndpointName = "Ethereum Mainnet (Ganymede archive)"
+	GanymedeEndpointURL  = "wss://ganymede.pasiphae.io"
+	GanymedeAuthRef      = "ganymede"
 )
 
-// defaultConfig is the first-run configuration: the default endpoint, selected and
-// set to auto-connect on startup.
+// FallbackEndpointName is the endpoint Callisto fails over to when the auto-connect
+// endpoint can't be reached.
+const FallbackEndpointName = DefaultEndpointName
+
+// defaultConfig is the first-run configuration: Ganymede (primary) + Flashbots
+// (fallback). Ganymede auto-connects only when a bearer token is embedded in this
+// build; otherwise Flashbots is the auto-connect default so token-less dev builds
+// behave sanely.
 func defaultConfig() *Config {
-	e := rpc.Endpoint{Name: DefaultEndpointName, URL: DefaultEndpointURL, AutoConnect: true}
+	ganymede := rpc.Endpoint{Name: GanymedeEndpointName, URL: GanymedeEndpointURL, AuthRef: GanymedeAuthRef}
+	flashbots := rpc.Endpoint{Name: DefaultEndpointName, URL: DefaultEndpointURL}
+
+	active := flashbots.Name
+	if buildsecrets.Token(GanymedeAuthRef) != "" {
+		ganymede.AutoConnect = true
+		active = ganymede.Name
+	} else {
+		flashbots.AutoConnect = true
+	}
 	return &Config{
-		Endpoints:      []rpc.Endpoint{e},
-		ActiveEndpoint: e.Name,
+		Endpoints:      []rpc.Endpoint{ganymede, flashbots},
+		ActiveEndpoint: active,
 	}
 }
 
@@ -239,6 +264,29 @@ func (c *Config) AutoConnectEndpoint() (rpc.Endpoint, bool) {
 		}
 	}
 	return rpc.Endpoint{}, false
+}
+
+// ConnectCandidates returns the endpoints to try at startup, in order: the
+// auto-connect endpoint first, then the named fallback (Flashbots) if present and
+// distinct. Used so a failed primary (e.g. Ganymede down) falls over cleanly.
+func (c *Config) ConnectCandidates() []rpc.Endpoint {
+	var out []rpc.Endpoint
+	seen := map[string]bool{}
+	add := func(e rpc.Endpoint, ok bool) {
+		if ok && !seen[e.Name] {
+			seen[e.Name] = true
+			out = append(out, e)
+		}
+	}
+	add(c.AutoConnectEndpoint())
+	add(c.EndpointByName(FallbackEndpointName))
+	return out
+}
+
+// FallbackEndpoint returns the endpoint Callisto fails over to (Flashbots), if it
+// is configured.
+func (c *Config) FallbackEndpoint() (rpc.Endpoint, bool) {
+	return c.EndpointByName(FallbackEndpointName)
 }
 
 // WalletByID returns the wallet descriptor with the given ID, or false.

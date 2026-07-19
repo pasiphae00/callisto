@@ -28,6 +28,27 @@ type Manager struct {
 	listenerMu sync.Mutex
 	listeners  map[int]func(*types.Header)
 	nextID     int
+
+	lostMu sync.Mutex
+	onLost func() // invoked when the active connection is lost mid-session
+}
+
+// SetOnConnectionLost registers a callback fired when the active connection stops
+// responding (sustained head-poll failures), so the app can fail over. The
+// callback runs on its own goroutine.
+func (m *Manager) SetOnConnectionLost(fn func()) {
+	m.lostMu.Lock()
+	m.onLost = fn
+	m.lostMu.Unlock()
+}
+
+func (m *Manager) fireConnectionLost() {
+	m.lostMu.Lock()
+	fn := m.onLost
+	m.lostMu.Unlock()
+	if fn != nil {
+		go fn()
+	}
 }
 
 // NewManager returns an unconnected manager.
@@ -176,32 +197,46 @@ func (m *Manager) subscribeHeads(ctx context.Context, conn *Connection) bool {
 	}
 }
 
+// maxPollFailures is how many consecutive head-poll failures mark the connection
+// as lost (≈ maxPollFailures × pollInterval of unresponsiveness), triggering the
+// connection-lost hook so the app can fail over.
+const maxPollFailures = 5
+
 // pollHeads polls the latest header on a fixed interval until ctx is cancelled,
-// emitting only when the head advances.
+// emitting only when the head advances. After maxPollFailures consecutive failures
+// it fires the connection-lost hook and stops (the app reconnects/fails over).
 func (m *Manager) pollHeads(ctx context.Context, conn *Connection) {
 	ticker := time.NewTicker(pollInterval)
 	defer ticker.Stop()
 	var lastNum uint64
-	poll := func() {
+	poll := func() bool {
 		reqCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
 		defer cancel()
 		h, err := conn.Client.HeaderByNumber(reqCtx, nil)
 		if err != nil || h == nil {
-			return
+			return false
 		}
-		n := h.Number.Uint64()
-		if n > lastNum {
+		if n := h.Number.Uint64(); n > lastNum {
 			lastNum = n
 			m.emit(h)
 		}
+		return true
 	}
 	poll() // emit an initial head promptly
+	failures := 0
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			poll()
+			if poll() {
+				failures = 0
+				continue
+			}
+			if failures++; failures >= maxPollFailures {
+				m.fireConnectionLost()
+				return
+			}
 		}
 	}
 }

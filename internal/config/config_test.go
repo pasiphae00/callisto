@@ -73,29 +73,63 @@ func isolate(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, ".config"))
 }
 
+func TestConnectCandidatesOrder(t *testing.T) {
+	// Ganymede auto-connect primary + Flashbots fallback: candidates are primary
+	// first, then the fallback.
+	c := &Config{
+		Endpoints: []rpc.Endpoint{
+			{Name: GanymedeEndpointName, URL: GanymedeEndpointURL, AuthRef: GanymedeAuthRef, AutoConnect: true},
+			{Name: DefaultEndpointName, URL: DefaultEndpointURL},
+		},
+	}
+	cands := c.ConnectCandidates()
+	if len(cands) != 2 || cands[0].Name != GanymedeEndpointName || cands[1].Name != DefaultEndpointName {
+		t.Fatalf("candidates = %+v", cands)
+	}
+	if fb, ok := c.FallbackEndpoint(); !ok || fb.Name != DefaultEndpointName {
+		t.Errorf("fallback = %+v (ok %v)", fb, ok)
+	}
+
+	// When Flashbots is itself the auto-connect endpoint, it appears once (no dup).
+	c2 := &Config{Endpoints: []rpc.Endpoint{{Name: DefaultEndpointName, URL: DefaultEndpointURL, AutoConnect: true}}}
+	if cands := c2.ConnectCandidates(); len(cands) != 1 || cands[0].Name != DefaultEndpointName {
+		t.Errorf("single-endpoint candidates = %+v", cands)
+	}
+}
+
 func TestLoadMissingSeedsDefaultEndpoint(t *testing.T) {
 	isolate(t)
 	c, err := Load()
 	if err != nil {
 		t.Fatalf("Load on fresh home: %v", err)
 	}
-	// First run ships a working default RPC (Flashbots Protect), selected and
-	// auto-connecting, so Callisto is usable out of the box.
-	if len(c.Endpoints) != 1 {
-		t.Fatalf("fresh config should seed one endpoint, got %+v", c.Endpoints)
+	// First run seeds two working default RPCs: Ganymede (archive, primary) and
+	// Flashbots Protect (fallback). In a token-less test build Ganymede can't
+	// authenticate, so Flashbots is the auto-connect default.
+	if len(c.Endpoints) != 2 {
+		t.Fatalf("fresh config should seed two endpoints, got %+v", c.Endpoints)
 	}
-	e := c.Endpoints[0]
-	if e.Name != DefaultEndpointName || e.URL != DefaultEndpointURL || !e.AutoConnect {
-		t.Errorf("seeded endpoint = %+v", e)
+	names := map[string]rpc.Endpoint{}
+	for _, e := range c.Endpoints {
+		names[e.Name] = e
+		if err := e.Validate(); err != nil {
+			t.Errorf("seeded endpoint %q invalid: %v", e.Name, err)
+		}
 	}
+	gany, ok := names[GanymedeEndpointName]
+	if !ok || gany.URL != GanymedeEndpointURL || gany.AuthRef != GanymedeAuthRef {
+		t.Errorf("Ganymede endpoint = %+v", gany)
+	}
+	fb, ok := names[DefaultEndpointName]
+	if !ok || fb.URL != DefaultEndpointURL {
+		t.Errorf("Flashbots endpoint = %+v", fb)
+	}
+	// Without an embedded token, Flashbots is the auto-connect default.
 	if c.ActiveEndpoint != DefaultEndpointName {
-		t.Errorf("default endpoint should be active, got %q", c.ActiveEndpoint)
+		t.Errorf("token-less build should default-active Flashbots, got %q", c.ActiveEndpoint)
 	}
 	if got, ok := c.AutoConnectEndpoint(); !ok || got.Name != DefaultEndpointName {
-		t.Error("default endpoint should be the auto-connect endpoint")
-	}
-	if err := e.Validate(); err != nil {
-		t.Errorf("seeded endpoint should be valid: %v", err)
+		t.Error("Flashbots should be the auto-connect endpoint in a token-less build")
 	}
 	if len(c.Wallets) != 0 {
 		t.Errorf("fresh config should have no wallets, got %+v", c.Wallets)

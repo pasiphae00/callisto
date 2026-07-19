@@ -37,6 +37,14 @@ FYNE_VER   := v2.8.0
 CALLISTO_RELEASE_KEY ?= $(HOME)/.callisto/release_ed25519.key
 PUBKEY     := internal/updater/release_pubkey.ed25519
 
+# Ganymede default-RPC bearer token, injected (obfuscated) into builds from the
+# gitignored GANYMEDE_RPC_TOKEN.env. Absent file → empty → dev builds ship no token
+# and fall back to Flashbots. OBF_CMD emits the obfuscated token (or nothing); it's
+# evaluated inside recipes so a plain `make` doesn't run it.
+ENV_FILE   := GANYMEDE_RPC_TOKEN.env
+OBF_VAR    := codeberg.org/pasiphae/callisto/internal/buildsecrets.ganymedeObf
+OBF_CMD    := [ -f $(ENV_FILE) ] && ( set -a; . ./$(ENV_FILE); set +a; go run ./cmd/callisto-release obf-token ) || true
+
 .PHONY: all build test vet package-mac package-mac-arm package-mac-intel mac-arch \
         package-linux package-linux-cross checksums sign release gen-release-key \
         tools clean
@@ -47,7 +55,7 @@ all: build
 
 build:
 	@mkdir -p $(DIST)
-	go build -o $(DIST)/callisto $(MAIN)
+	OBF=$$( $(OBF_CMD) ); go build -ldflags "-X $(OBF_VAR)=$$OBF" -o $(DIST)/callisto $(MAIN)
 
 test:
 	go test ./...
@@ -79,7 +87,8 @@ package-mac-intel: ; @$(MAKE) mac-arch ARCH=amd64
 # `fyne package --exe` wraps it with the icon/plist without rebuilding.
 mac-arch: tools
 	@mkdir -p $(DIST)/.build-$(ARCH)
-	GOOS=darwin GOARCH=$(ARCH) CGO_ENABLED=1 go build -o $(DIST)/.build-$(ARCH)/callisto $(MAIN)
+	OBF=$$( $(OBF_CMD) ); GOOS=darwin GOARCH=$(ARCH) CGO_ENABLED=1 \
+		go build -ldflags "-X $(OBF_VAR)=$$OBF" -o $(DIST)/.build-$(ARCH)/callisto $(MAIN)
 	rm -rf $(APP).app $(DIST)/$(APP).app
 	$(FYNE) package --exe $(DIST)/.build-$(ARCH)/callisto --icon $(ICON) --name $(APP) \
 		--appID $(APP_ID) --appVersion $(VERSION) --appBuild 1 --release

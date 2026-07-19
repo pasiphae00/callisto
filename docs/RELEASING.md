@@ -103,6 +103,22 @@ reinstall). Commit the regenerated **public** key. Until this is run, the repo
 carries an all-zero placeholder and the updater reports "updates are not
 configured" rather than installing anything unverifiable.
 
+### Default-RPC bearer token (release builds)
+
+The default endpoint (Ganymede archive) authenticates with a bearer token baked into
+release builds. Put it in a gitignored **`GANYMEDE_RPC_TOKEN.env`** at the repo root:
+
+```
+GANYMEDE_RPC_TOKEN=<token>
+```
+
+The Makefile obfuscates it and injects it via `-ldflags` for `make build` /
+`package-*` / `release`. **Without the file** the token is empty: Ganymede ships
+unauthenticated and the app auto-connects Flashbots instead (fine for dev builds).
+This is a shared, effectively public key (see the security note in the CHANGELOG) —
+rotate it server-side, don't treat it as a secret. Verify a release build didn't leak
+the plaintext: `strings dist/callisto | grep <token>` must be empty.
+
 ### Building & signing artifacts
 
 ```sh

@@ -14,13 +14,50 @@ import (
 func withDial(t *testing.T, c Client, dialErr error) {
 	t.Helper()
 	orig := dialFunc
-	dialFunc = func(ctx context.Context, rawURL string) (Client, error) {
+	dialFunc = func(ctx context.Context, rawURL, authToken string) (Client, error) {
 		if dialErr != nil {
 			return nil, dialErr
 		}
 		return c, nil
 	}
 	t.Cleanup(func() { dialFunc = orig })
+}
+
+func TestDialSendsBearerAuthForAuthRef(t *testing.T) {
+	origResolve := ResolveAuthToken
+	ResolveAuthToken = func(ref string) string {
+		if ref == "ganymede" {
+			return "secret-tok"
+		}
+		return ""
+	}
+	t.Cleanup(func() { ResolveAuthToken = origResolve })
+
+	mc := newMockClient(1)
+	var gotToken string
+	orig := dialFunc
+	dialFunc = func(ctx context.Context, rawURL, authToken string) (Client, error) {
+		gotToken = authToken
+		return mc, nil
+	}
+	t.Cleanup(func() { dialFunc = orig })
+
+	// AuthRef set → token forwarded to the dialer.
+	if _, err := Dial(context.Background(), Endpoint{Name: "g", URL: "wss://x", AuthRef: "ganymede"}); err != nil {
+		t.Fatal(err)
+	}
+	if gotToken != "secret-tok" {
+		t.Errorf("authed dial token = %q, want secret-tok", gotToken)
+	}
+
+	// No AuthRef → no token.
+	gotToken = "sentinel"
+	if _, err := Dial(context.Background(), Endpoint{Name: "f", URL: "https://y"}); err != nil {
+		t.Fatal(err)
+	}
+	if gotToken != "" {
+		t.Errorf("unauthed dial token = %q, want empty", gotToken)
+	}
 }
 
 func TestDialVerifiesChainID(t *testing.T) {
@@ -120,7 +157,7 @@ func TestManagerConnectReplacesAndClosesOld(t *testing.T) {
 
 	// Swap the dialer to a fresh client and reconnect.
 	fresh := newMockClient(1)
-	dialFunc = func(ctx context.Context, rawURL string) (Client, error) { return fresh, nil }
+	dialFunc = func(ctx context.Context, rawURL, authToken string) (Client, error) { return fresh, nil }
 	if _, err := mgr.Connect(context.Background(), Endpoint{Name: "b", URL: "wss://b/ws"}); err != nil {
 		t.Fatal(err)
 	}

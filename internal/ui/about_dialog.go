@@ -41,25 +41,32 @@ func showAbout(a *App) {
 
 	title := grayMonoText("Callisto "+buildinfo.Version, 20, true)
 	commit := grayMonoText("commit "+buildinfo.ShortCommit(), 13, false)
-	tagline := grayMonoText("Open-source Ethereum transaction and wallet management utility", 13, false)
-	link := grayMonoText("callisto.pasiphae.io", 13, false)
+	tagline := grayMonoText("Open-source Ethereum wallet manager.", 13, false)
+	//link := grayMonoText("callisto.pasiphae.io", 13, false)
 	copyright := grayMonoText("©2026", 13, false)
+	copyright.TextStyle = fyne.TextStyle{Monospace: true, Italic: true}
+	copyright.TextSize = 12
+	//copyright.Alignment = fyne.TextAlignCenter
 
-	disclaimer := canvas.NewText("trust but verify; use at your own risk", aboutDim)
+	disclaimer := canvas.NewText("trust but verify", aboutDim)
 	disclaimer.TextStyle = fyne.TextStyle{Monospace: true, Italic: true}
-	disclaimer.TextSize = 11
-	disclaimer.Alignment = fyne.TextAlignCenter
+	disclaimer.TextSize = 12
+	//disclaimer.Alignment = fyne.TextAlignCenter
 
+	link := monoHyperlink("callisto.pasiphae.io", "https://callisto.pasiphae.io")
 	content := container.NewVBox(
 		container.NewCenter(logo),
 		container.NewCenter(title),
 		container.NewCenter(commit),
 		widget.NewSeparator(),
 		container.NewCenter(tagline),
+		layout.NewSpacer(),
 		container.NewCenter(link),
-		container.NewCenter(copyright),
+		//container.NewCenter(link),
+		layout.NewSpacer(),
 		layout.NewSpacer(),
 		container.NewCenter(disclaimer),
+		container.NewCenter(copyright),
 	)
 	padded := container.NewPadded(content)
 

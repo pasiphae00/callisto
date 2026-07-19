@@ -13,9 +13,9 @@
 Screenshots from Callisto (up to `v0.9.1`) in action.
 
 ## Multi-wallet management
-_At its core, Callisto is a system designed for those managing multiple wallets and multiple types of signers. Callisto makes using and keeping track of them all easy.__
+_At its core, Callisto is a system designed for those managing multiple wallets and multiple types of signers. Callisto makes using and keeping track of them all easy._
 
-_Callisto can handle manage hot wallets, hardware signers, and multi-signature wallets._ 
+_Callisto can manage hot wallets, hardware signers, and multi-signature wallets._ 
 
 ![multi-wallet management](./images/UX-2.png)
 

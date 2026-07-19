@@ -55,6 +55,7 @@ func (p *walletsPane) showImportPrivateKey() {
 	ksPass.OnChanged = func(s string) { hint.SetText(passphraseStrength(s)) }
 
 	form := container.NewVBox(
+		cautionBox("Only import a private key you already trust and control — whoever holds it controls the account. Callisto will encrypt it with the passphrase you set below."),
 		widget.NewLabelWithStyle("Label", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}), label,
 		widget.NewLabelWithStyle("Private key", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}), pk,
 		widget.NewLabelWithStyle("Encryption passphrase", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}), ksPass, ksPass2, hint,
@@ -144,6 +145,7 @@ func (p *walletsPane) promptKeystoreFilePassword(data []byte) {
 	ksPass.OnChanged = func(s string) { hint.SetText(passphraseStrength(s)) }
 
 	form := container.NewVBox(
+		cautionBox("Import a keystore file only from a source you trust. Callisto decrypts it with the file password, then re-encrypts the key under your new Callisto passphrase."),
 		widget.NewLabelWithStyle("Label", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}), label,
 		widget.NewLabelWithStyle("Keystore file password", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}), filePass,
 		widget.NewLabelWithStyle("New Callisto passphrase (used to unlock in Callisto)", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}), ksPass, ksPass2, hint,

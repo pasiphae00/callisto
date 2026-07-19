@@ -1000,9 +1000,10 @@ func (p *walletsPane) revealPrivateKeySelected() {
 	}
 	pass := widget.NewPasswordEntry()
 	pass.SetPlaceHolder("wallet passphrase")
-	warn := widget.NewLabel("Anyone with this key controls the account. Only reveal it somewhere private, and never paste it into a website.")
-	warn.Wrapping = fyne.TextWrapWord
-	content := container.NewVBox(warn, widget.NewForm(widget.NewFormItem("Passphrase", pass)))
+	content := container.NewVBox(
+		dangerBox("You're about to reveal this account's private key. Anyone who sees it can take the funds. Make sure no one is watching your screen, and never paste it into a website or share it."),
+		widget.NewForm(widget.NewFormItem("Passphrase", pass)),
+	)
 	d := dialog.NewCustomConfirm("Reveal private key — "+displayName(desc), "Reveal", "Cancel", content,
 		func(ok bool) {
 			if ok {
@@ -1052,11 +1053,11 @@ func (p *walletsPane) showPrivateKey(desc wallet.Descriptor, pk string) {
 			field.SetText(pk)
 		}
 	}
-	warn := widget.NewLabelWithStyle("Private key for "+displayName(desc)+". Anyone with it controls the funds — never share it.",
-		fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
-	warn.Wrapping = fyne.TextWrapWord
 	copyBtn := widget.NewButton("Copy", func() { p.app.fyneApp.Clipboard().SetContent(pk) })
-	body := container.NewVBox(warn, field, copyBtn)
+	body := container.NewVBox(
+		dangerBox("Private key for "+displayName(desc)+". Anyone with it controls the funds — never share it, screenshot it, or paste it into a website. Close this window as soon as you're done."),
+		field, copyBtn,
+	)
 	d := dialog.NewCustom("Private key", "Close", body, p.app.window)
 	d.Resize(fyne.NewSize(520, 260))
 	d.Show()

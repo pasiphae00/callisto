@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math/big"
 	"strconv"
@@ -214,8 +215,11 @@ func (p *walletConnectPane) showRequest(req walletconnect.Request) {
 		return
 	}
 
-	content := container.NewVBox(
+	// Border (not VBox) so the body — and its scrollable text box — expands to
+	// fill the dialog instead of being pinned to its minimum height.
+	content := container.NewBorder(
 		widget.NewLabelWithStyle("From "+firstNonEmpty(sess.Peer.Name, "dApp"), fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
+		nil, nil, nil,
 		body,
 	)
 	d := dialog.NewCustomConfirm(title, "Sign", "Reject", content, func(sign bool) {
@@ -269,10 +273,11 @@ func (p *walletConnectPane) describeRequest(req walletconnect.Request) (title st
 			return "", nil, false
 		}
 		grid := formGrid([][2]string{{"Method", req.Method}, {"Account", address.Format(addr)}, {"Chain", req.ChainID}})
+		pretty := prettyJSON(td)
 		tdBox := widget.NewMultiLineEntry()
-		tdBox.SetText(string(td))
+		tdBox.SetText(pretty)
 		tdBox.Wrapping = fyne.TextWrapWord
-		tdBox.OnChanged = func(string) { tdBox.SetText(string(td)) } // read-only
+		tdBox.OnChanged = func(string) { tdBox.SetText(pretty) } // read-only
 		return "Typed-data signature request", container.NewBorder(grid, nil, nil, nil, tdBox), true
 
 	default:
@@ -598,6 +603,20 @@ func shortHex(b []byte) string {
 		return h[:42] + "…"
 	}
 	return h
+}
+
+// prettyJSON re-indents a JSON document for readable display, falling back to the
+// original bytes if it isn't valid JSON.
+func prettyJSON(raw []byte) string {
+	var obj interface{}
+	if err := json.Unmarshal(raw, &obj); err != nil {
+		return string(raw)
+	}
+	out, err := json.MarshalIndent(obj, "", "  ")
+	if err != nil {
+		return string(raw)
+	}
+	return string(out)
 }
 
 // personalMessageText renders a personal-sign message as UTF-8 if printable, else

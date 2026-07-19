@@ -31,6 +31,7 @@ import (
 	"io"
 	"math"
 	"math/big"
+	"strings"
 
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/accounts/usbwallet/trezor"
@@ -274,6 +275,12 @@ func (w *trezorDriver) SignTypedMessage(path accounts.DerivationPath, domainHash
 	req := encodeEthereumSignTypedHash(path, domainHash, messageHash)
 	kind, reply, err := w.rawExchange(msgTypeEthereumSignTypedHash, req)
 	if err != nil {
+		// EthereumSignTypedHash is an experimental firmware message; when the
+		// device's experimental features are disabled it rejects it as an
+		// "Unexpected message". Make that actionable.
+		if strings.Contains(err.Error(), "Unexpected message") {
+			return nil, fmt.Errorf("Trezor rejected EIP-712 hash signing — enable Experimental features in Trezor settings, or use a hot/Ledger wallet for typed-data (native Trezor typed-data is planned): %w", err)
+		}
 		return nil, err
 	}
 	if kind != msgTypeEthereumTypedDataSignature {

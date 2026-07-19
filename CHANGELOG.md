@@ -9,7 +9,7 @@ changes; `v1.0.0` marks the first stable, documented release.
 
 ## [Unreleased]
 
-## [0.8.0] - 2026-07-18
+## [0.8.0] - 2026-07-19
 
 ### Added
 - **Native app packaging pipeline.** A `Makefile` builds a double-clickable

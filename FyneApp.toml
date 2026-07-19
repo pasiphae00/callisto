@@ -9,5 +9,5 @@ Website = "https://callisto.pasiphae.io"
   Icon = "images/CALLISTO-LOGO.png"
   Name = "Callisto"
   ID = "io.pasiphae.callisto"
-  Version = "0.9.1"
+  Version = "0.10.0"
   Build = 1

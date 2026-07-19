@@ -297,6 +297,13 @@ platform/CGo Keychain last):
 
 ## medium
 
+### improve balances system — ✅ shipped v0.10.0 (automatic balances)
+- ~~during testing, callisto did not auto-populate balances of new tokens (purchased several random coins)~~
+- ~~detect transfer logs for the active wallet (live and historical) and show all non-0 non-dust balances~~ → `assets.DiscoverTokens` scans `Transfer(→account)` logs (full history on connect, then incremental from a watermark on every new head = live), feeding the token set into `Service.Load`.
+- ~~detect transfer logs, then call `name()`/`symbol()`/`decimals()` to parse+populate~~ → discovered contracts go through the existing metadata/balance load (which already drops non-ERC-20s and dust); 4-topic ERC-721 Transfers are filtered out so NFTs don't pollute the list.
+- ~~no more "refresh tokens"/"refresh balances" clicks~~ → both Refresh buttons removed; balances auto-refresh per block and a metadata-caching `assetService` avoids re-fetching immutable metadata each block.
+- ~~persist the discovered token set so a full Transfer scan isn't re-run every launch~~ → `discovered_tokens` + `token_scan` tables (store migrations 8/9), `tokenCache` in `internal/ui`; the set is hydrated on launch and re-discovery only scans blocks since the persisted watermark.
+
 ### create "approvals" pane — ✅ shipped v0.9.0, enhanced v0.9.1, verified live
 - ~~see/scroll all outstanding ERC-20 approvals for the selected wallet (however
   created); show token, spender (by name — cowswap/uniswap/…), and unlimited vs a

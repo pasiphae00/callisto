@@ -60,8 +60,8 @@ func (p *sendPane) build() fyne.CanvasObject {
 	p.prepareBtn = widget.NewButton("Prepare transfer", p.prepare)
 	p.prepareBtn.Importance = widget.HighImportance
 
-	refreshBtn := widget.NewButton("Refresh assets", func() { p.app.refreshAssets() })
-	// Reload when balances are refreshed from anywhere (this pane or Assets).
+	// Reload when balances are refreshed from anywhere (this pane or Assets). The
+	// asset list updates automatically on each new block, so there is no Refresh.
 	p.app.registerAssetsReloader(p.reload)
 
 	amountRow := container.NewBorder(nil, nil, nil, p.maxBtn, p.amount)
@@ -74,7 +74,6 @@ func (p *sendPane) build() fyne.CanvasObject {
 	header := widget.NewLabelWithStyle("Send", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
 	top := container.NewVBox(
 		header,
-		indentToText(container.NewHBox(refreshBtn)),
 		form,
 		indentToText(container.NewHBox(p.prepareBtn)),
 		p.status,
@@ -105,17 +104,25 @@ func (p *sendPane) reload() {
 	p.status.SetText("Loading assets…")
 	client := conn.Client
 	chainID := conn.ChainID.Uint64()
-	userTokens := p.app.cfg.TokensForChain(chainID)
+	tokens := p.app.knownTokens(chainID, addr)
+
+	// Kick off / advance token discovery so held tokens populate automatically.
+	p.app.disc.ensure(chainID, addr, client)
 
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()
-		got, loadErr := assets.NewService(client, chainID).Load(ctx, addr, userTokens)
+		got, loadErr := p.app.assetService(chainID, client).Load(ctx, addr, tokens)
 		fyne.Do(func() {
 			if loadErr != nil {
 				p.setUnavailable("Could not load assets: " + loadErr.Error())
 				return
 			}
+			// Drop user-hidden tokens and sort into a stable order, then keep only
+			// assets with a spendable balance (native is always kept so ETH is
+			// always sendable).
+			got = p.app.displayAssets(chainID, addr, got)
+			got, _ = visibleAssets(got)
 			p.items = got
 			opts := make([]string, len(got))
 			for i, a := range got {

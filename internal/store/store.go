@@ -172,6 +172,41 @@ var migrations = []string{
 		updated_at INTEGER NOT NULL,
 		PRIMARY KEY (chain_id, owner)
 	)`,
+
+	// 8: auto-discovered tokens per (chain, account) — the set an account has ever
+	// received (from Transfer-log scans), so balances populate on launch without a
+	// fresh full scan. Balances themselves are always read live; only the token set
+	// is cached. The PK is a (chain_id, account) prefix for cheap per-account listing.
+	`CREATE TABLE IF NOT EXISTS discovered_tokens (
+		chain_id    INTEGER NOT NULL,
+		account     TEXT    NOT NULL,            -- EIP-55 account address
+		token       TEXT    NOT NULL,            -- token contract (EIP-55)
+		found_block INTEGER NOT NULL DEFAULT 0,  -- block the token was first seen at
+		updated_at  INTEGER NOT NULL,
+		PRIMARY KEY (chain_id, account, token)
+	)`,
+
+	// 9: per-(chain, account) token-scan high-watermark, so re-discovery only covers
+	// blocks since the last scan (across launches). Separate from discovered_tokens
+	// because a watermark exists even for an account that has received nothing.
+	`CREATE TABLE IF NOT EXISTS token_scan (
+		chain_id   INTEGER NOT NULL,
+		account    TEXT    NOT NULL,
+		last_block INTEGER NOT NULL,
+		updated_at INTEGER NOT NULL,
+		PRIMARY KEY (chain_id, account)
+	)`,
+
+	// 10: user-hidden ("spam") tokens per (chain, account). A hidden token is kept
+	// in discovered_tokens (so unhiding needs no re-scan) but filtered out of the
+	// balance view and the Send picker, and its balance isn't fetched each block.
+	`CREATE TABLE IF NOT EXISTS hidden_tokens (
+		chain_id   INTEGER NOT NULL,
+		account    TEXT    NOT NULL,
+		token      TEXT    NOT NULL,            -- token contract (EIP-55)
+		updated_at INTEGER NOT NULL,
+		PRIMARY KEY (chain_id, account, token)
+	)`,
 }
 
 // migrate applies any not-yet-applied migrations inside a transaction.

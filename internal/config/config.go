@@ -72,6 +72,9 @@ func defaultConfig() *Config {
 	return &Config{
 		Endpoints:      []rpc.Endpoint{ganymede, flashbots},
 		ActiveEndpoint: active,
+		// Gentle defaults for fresh installs: lock after 15 idle minutes and on
+		// wake-from-sleep. (Existing configs load with 0 = never, unchanged.)
+		Security: SecuritySettings{AutoLockMinutes: 15, LockOnSleep: true},
 	}
 }
 
@@ -95,6 +98,24 @@ type Config struct {
 	// AutoDetectApprovals enables live approval detection over a WSS endpoint in
 	// the Approvals pane (opt-in; off by default to stay resource-mindful).
 	AutoDetectApprovals bool `json:"auto_detect_approvals"`
+	// Security holds wallet auto-lock preferences.
+	Security SecuritySettings `json:"security"`
+	// TouchIDKeystores lists the KeystoreIDs enrolled for Touch ID unlock (the
+	// derived key is held in the OS keychain, never here). Per keystore, so all
+	// accounts sharing it are covered.
+	TouchIDKeystores []string `json:"touch_id_keystores,omitempty"`
+}
+
+// SecuritySettings controls when an unlocked hot wallet is automatically locked.
+// The defaults are deliberately gentle (see defaultConfig) so they protect an
+// unattended machine without interrupting active use.
+type SecuritySettings struct {
+	// AutoLockMinutes locks any unlocked wallet after this many minutes of
+	// inactivity. 0 = never. Existing configs load as 0 (unchanged behavior); new
+	// installs get a gentle default.
+	AutoLockMinutes int `json:"auto_lock_minutes"`
+	// LockOnSleep locks when the computer wakes from sleep.
+	LockOnSleep bool `json:"lock_on_sleep"`
 }
 
 // Dir returns the Callisto config directory, creating it if needed.
@@ -287,6 +308,33 @@ func (c *Config) ConnectCandidates() []rpc.Endpoint {
 // is configured.
 func (c *Config) FallbackEndpoint() (rpc.Endpoint, bool) {
 	return c.EndpointByName(FallbackEndpointName)
+}
+
+// IsTouchIDEnrolled reports whether a keystore is enrolled for Touch ID unlock.
+func (c *Config) IsTouchIDEnrolled(keystoreID string) bool {
+	for _, k := range c.TouchIDKeystores {
+		if k == keystoreID {
+			return true
+		}
+	}
+	return false
+}
+
+// SetTouchIDEnrolled adds or removes a keystore from the Touch ID enrollment list.
+func (c *Config) SetTouchIDEnrolled(keystoreID string, on bool) {
+	if keystoreID == "" {
+		return
+	}
+	out := c.TouchIDKeystores[:0]
+	for _, k := range c.TouchIDKeystores {
+		if k != keystoreID {
+			out = append(out, k)
+		}
+	}
+	if on {
+		out = append(out, keystoreID)
+	}
+	c.TouchIDKeystores = out
 }
 
 // WalletByID returns the wallet descriptor with the given ID, or false.

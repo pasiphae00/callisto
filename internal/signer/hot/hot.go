@@ -2,8 +2,11 @@ package hot
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
+	"fmt"
 	"math/big"
+	"strings"
 	"sync"
 
 	"github.com/ethereum/go-ethereum/accounts"
@@ -96,16 +99,84 @@ func NewKeystore(mnemonic, bip39Passphrase, keystorePassphrase string) (*keystor
 	return keystore.Encrypt(seed, keystorePassphrase)
 }
 
-// OpenFromKeystore decrypts an encrypted seed keystore with keystorePassphrase and
-// returns an unlocked wallet with the account at path selected. It returns
-// keystore.ErrBadPassphrase if the passphrase is wrong or the keystore is corrupt.
+// OpenFromKeystore decrypts an encrypted keystore with keystorePassphrase and
+// returns an unlocked wallet. For a seed keystore it selects the account at path;
+// for a single imported private key (ks.Secret == "private-key") it ignores path
+// and uses the key directly. Returns keystore.ErrBadPassphrase on a wrong
+// passphrase / corrupt keystore.
 func OpenFromKeystore(ks *keystore.Keystore, keystorePassphrase, path string) (*Wallet, error) {
-	seed, err := ks.Decrypt(keystorePassphrase)
+	secret, err := ks.Decrypt(keystorePassphrase)
 	if err != nil {
 		return nil, err
 	}
-	defer zero(seed)
-	return newFromSeed(seed, path)
+	defer zero(secret)
+	if ks.Secret == secretPrivateKey {
+		return newFromPrivateKey(secret)
+	}
+	return newFromSeed(secret, path)
+}
+
+// OpenFromKeystoreWithKey opens a keystore using a pre-derived AES key (from
+// keystore.DeriveKey, cached in the OS keychain for Touch ID unlock) instead of a
+// passphrase. Same account semantics as OpenFromKeystore.
+func OpenFromKeystoreWithKey(ks *keystore.Keystore, key []byte, path string) (*Wallet, error) {
+	secret, err := ks.DecryptWithKey(key)
+	if err != nil {
+		return nil, err
+	}
+	defer zero(secret)
+	if ks.Secret == secretPrivateKey {
+		return newFromPrivateKey(secret)
+	}
+	return newFromSeed(secret, path)
+}
+
+// secretPrivateKey marks a keystore whose sealed bytes are a raw 32-byte account
+// private key (a single-account import) rather than a BIP-39 seed.
+const secretPrivateKey = "private-key"
+
+// NewPrivateKeyKeystore validates a hex private key and returns an encrypted
+// keystore of the 32-byte key (single-account, non-HD) plus its address.
+func NewPrivateKeyKeystore(privHex, keystorePassphrase string) (*keystore.Keystore, common.Address, error) {
+	key, err := parsePrivKey(privHex)
+	if err != nil {
+		return nil, common.Address{}, err
+	}
+	defer zero(key)
+	priv, err := crypto.ToECDSA(key)
+	if err != nil {
+		return nil, common.Address{}, fmt.Errorf("hot: invalid private key: %w", err)
+	}
+	addr := crypto.PubkeyToAddress(priv.PublicKey)
+	ks, err := keystore.Encrypt(key, keystorePassphrase)
+	if err != nil {
+		return nil, common.Address{}, err
+	}
+	ks.Secret = secretPrivateKey
+	return ks, addr, nil
+}
+
+// parsePrivKey decodes a 0x-optional 64-hex-char private key into 32 bytes.
+func parsePrivKey(privHex string) ([]byte, error) {
+	s := strings.TrimSpace(privHex)
+	s = strings.TrimPrefix(s, "0x")
+	key, err := hex.DecodeString(s)
+	if err != nil || len(key) != 32 {
+		return nil, errors.New("hot: private key must be 64 hex characters (32 bytes)")
+	}
+	return key, nil
+}
+
+// newFromPrivateKey builds an unlocked single-account wallet from a 32-byte key.
+func newFromPrivateKey(key []byte) (*Wallet, error) {
+	priv, err := crypto.ToECDSA(key)
+	if err != nil {
+		return nil, fmt.Errorf("hot: invalid private key: %w", err)
+	}
+	return &Wallet{
+		key:  append([]byte(nil), key...),
+		addr: crypto.PubkeyToAddress(priv.PublicKey),
+	}, nil
 }
 
 // PreviewAccounts derives count accounts starting at start from a mnemonic without
@@ -137,6 +208,18 @@ func (w *Wallet) Path() string {
 
 // Kind reports the backing wallet type.
 func (w *Wallet) Kind() signer.Kind { return signer.KindHot }
+
+// ExportPrivateKey returns the 0x-prefixed hex private key of the selected account.
+// It errors when the wallet is locked. The returned string is HIGHLY sensitive —
+// callers must never persist or log it and should clear it from the UI promptly.
+func (w *Wallet) ExportPrivateKey() (string, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.locked || w.key == nil {
+		return "", ErrLocked
+	}
+	return "0x" + common.Bytes2Hex(w.key), nil
+}
 
 // SelectAccount switches the active account to the standard Ethereum path for
 // the given index (m/44'/60'/0'/0/index).

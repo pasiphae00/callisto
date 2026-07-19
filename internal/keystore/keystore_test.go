@@ -35,6 +35,54 @@ func TestEncryptDecryptRoundTrip(t *testing.T) {
 	}
 }
 
+func TestRekey(t *testing.T) {
+	ks, err := Encrypt(sampleSecret, "old-pass")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rk, err := Rekey(ks, "old-pass", "new-pass")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// New passphrase recovers the same secret.
+	got, err := rk.Decrypt("new-pass")
+	if err != nil || !bytes.Equal(got, sampleSecret) {
+		t.Fatalf("rekeyed decrypt = %q (err %v)", got, err)
+	}
+	// Old passphrase no longer works on the rekeyed store.
+	if _, err := rk.Decrypt("old-pass"); err != ErrBadPassphrase {
+		t.Errorf("old passphrase should fail on rekeyed store, got %v", err)
+	}
+	// Fresh salt/nonce (not a copy of the original ciphertext).
+	if rk.Ciphertext == ks.Ciphertext || rk.KDFParams.Salt == ks.KDFParams.Salt {
+		t.Error("rekey should produce fresh salt + ciphertext")
+	}
+	// Wrong old passphrase → ErrBadPassphrase, no new store.
+	if _, err := Rekey(ks, "wrong", "whatever"); err != ErrBadPassphrase {
+		t.Errorf("Rekey with wrong old pass = %v", err)
+	}
+}
+
+func TestDeriveKeyAndDecryptWithKey(t *testing.T) {
+	ks, err := Encrypt(sampleSecret, "pw")
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, err := ks.DeriveKey("pw")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := ks.DecryptWithKey(key)
+	if err != nil || !bytes.Equal(got, sampleSecret) {
+		t.Fatalf("DecryptWithKey = %q (err %v)", got, err)
+	}
+	// A wrong key fails the same way as a wrong passphrase.
+	bad := make([]byte, len(key))
+	if _, err := ks.DecryptWithKey(bad); err != ErrBadPassphrase {
+		t.Errorf("DecryptWithKey(bad key) = %v", err)
+	}
+}
+
 func TestDecryptWrongPassphrase(t *testing.T) {
 	ks, err := Encrypt(sampleSecret, "right")
 	if err != nil {

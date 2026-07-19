@@ -9,6 +9,65 @@ changes; `v1.0.0` marks the first stable, documented release.
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-07-19
+
+### Added
+- **Hot-wallet key management.** A substantial hardening of how hot-wallet keys are
+  handled, all built on the seed-only model (the recovery phrase is never persisted):
+  - **Change passphrase** — re-encrypt a wallet's keystore under a new passphrase in
+    place (scrypt + AES-GCM re-key), with a strength hint at import and change.
+  - **Reveal private key** — view the selected account's private key behind a
+    passphrase re-prompt and a prominent danger warning (reveal exposes a key, not
+    the mnemonic, since the phrase is never stored).
+  - **Export encrypted backup** — save the wallet's encrypted keystore JSON to a
+    chosen path via a native macOS save panel.
+  - **Derive more accounts** — add further BIP-44 accounts from an existing seed
+    without re-importing the phrase.
+  - **Import** — a raw private key, a MetaMask/geth V3 keystore JSON (decrypted with
+    its own password, re-sealed under a Callisto passphrase), or a **watch-only**
+    address (viewable, not signable — signing paths are guarded).
+  - **Auto-lock** — the unlocked signer is wiped after an idle period and on
+    wake-from-sleep; configurable (Never / 5 / 15 / 30 / 60 min, plus lock-on-sleep)
+    under **Settings › Security**. Tuned to be gentle rather than aggressive.
+  - **Touch ID / Keychain unlock (macOS)** — enroll a wallet to unlock with Touch ID;
+    the scrypt-derived key is held in the Secure-Enclave-backed Keychain, gated by
+    user presence, and the passphrase always remains a fallback. Hidden until the app
+    is Developer-ID-signed (an unsigned build can't create a biometric Keychain item).
+  - Color-coded **danger/caution warnings** on every flow that exposes key material.
+- **Automatic balances.** Callisto detects the tokens a wallet holds on its own by
+  scanning `Transfer(→ wallet)` logs — the full history on connect, then an
+  incremental scan from a persisted watermark on every new block, so a token received
+  live appears within a block. No curated list or Refresh button needed; 4-topic
+  ERC-721 transfers are filtered out so NFTs don't pollute the fungible list. The
+  discovered token set is persisted (SQLite) and hydrated on launch, so there is no
+  full re-scan each start.
+- **Hide spam tokens.** Select a token and **Hide (spam)** to keep it out of the
+  balance list and the Send picker; a **Hidden…** manager lists what you've hidden
+  (with best-effort symbols) and unhides it. The decision persists, and hidden tokens
+  are not balance-fetched each block — which matters for spam-heavy wallets.
+- **Transaction details dialog.** Selecting a History row now opens a full-detail
+  popup: wallet, type, the parsed summary, network, status, block, the timeline
+  (prepared / submitted / mined), **live gas info** (gas used, effective price, and
+  fee, read from the receipt), any error, and the block-explorer link.
+
+### Changed
+- **No more manual balance refresh.** The "Refresh" / "Refresh assets" buttons are
+  gone; balances update automatically each block.
+- Assets display in a stable order (native first, then by symbol) instead of
+  reshuffling between reloads, and the columns (ticker / balance / name) align in the
+  mono font. The Send asset picker hides zero-balance tokens.
+- The selected asset row is preserved across per-block refreshes (tracked by token
+  identity, not row index), hiding a token removes it instantly (optimistic update)
+  without waiting for a network reload, and steady-state refreshes no longer flicker
+  the status line.
+
+### Security
+- Hot-wallet key material is decrypted into memory only while unlocked and actively
+  wiped on lock, auto-lock, disconnect, and exit. The recovery phrase is never
+  persisted; backup and reveal expose an encrypted keystore or a private key, never
+  the mnemonic. Every key-exposing action is passphrase-gated and carries an explicit
+  warning.
+
 ## [0.9.1] - 2026-07-19
 
 ### Added

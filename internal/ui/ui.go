@@ -22,6 +22,7 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
+	"codeberg.org/pasiphae/callisto/internal/assets"
 	"codeberg.org/pasiphae/callisto/internal/config"
 	"codeberg.org/pasiphae/callisto/internal/ens"
 	"codeberg.org/pasiphae/callisto/internal/history"
@@ -54,6 +55,16 @@ type App struct {
 	// refreshing balances on one pane refreshes the other too.
 	assetsReloaders []func()
 
+	// disc auto-discovers the tokens each wallet holds (Transfer-log scan) so
+	// balances populate without a curated list or a Refresh button.
+	disc *tokenDiscovery
+
+	// svc caches an assets.Service (token-metadata cache) per (chain, client) so
+	// per-head balance reloads don't re-fetch immutable metadata each block.
+	svcMu  sync.Mutex
+	svc    *assets.Service
+	svcKey string
+
 	// Live signer session for the currently unlocked wallet, if any. Held in
 	// memory only; wiped on lock/disconnect/close. Never persisted.
 	signerMu     sync.Mutex
@@ -64,6 +75,11 @@ type App struct {
 	// first connect and torn down on app close.
 	wcMu sync.Mutex
 	wc   *walletconnect.Client
+
+	// Auto-lock: last user-activity time; the background watcher (autolock.go)
+	// locks the signer after the configured idle period or on wake-from-sleep.
+	secMu      sync.Mutex
+	lastActive time.Time
 }
 
 // setWalletConnect stores the WalletConnect client for teardown at app close.
@@ -94,6 +110,7 @@ func (a *App) closeWalletConnect() {
 // it is safe to call in tests; call Run to actually launch the GUI.
 func New(cfg *config.Config, st *store.Store) *App {
 	a := &App{cfg: cfg, store: st, rpc: rpc.NewManager()}
+	a.disc = newTokenDiscovery(a)
 	if st != nil {
 		a.history = history.New(st)
 		a.safeProposals = safe.NewProposalRepo(st.DB())
@@ -185,6 +202,7 @@ func (a *App) setSigner(walletID string, s signer.Signer) {
 	a.signerWallet = walletID
 	a.signerMu.Unlock()
 	lockSigner(old)
+	a.touchActivity() // unlocking counts as activity (resets the idle timer)
 }
 
 // clearSigner locks and drops the active signer session (if any).
@@ -237,6 +255,9 @@ func (a *App) Run() {
 	a.window.CenterOnScreen()
 	// Fail over to the fallback endpoint if the active connection drops mid-session.
 	a.rpc.SetOnConnectionLost(a.failoverToFallback)
+	// Keyboard activity resets the auto-lock idle timer; start the lock watcher.
+	a.window.Canvas().SetOnTypedKey(func(*fyne.KeyEvent) { a.touchActivity() })
+	a.startAutoLock()
 	// Auto-connect the default endpoint (if any) once the event loop is running.
 	go a.autoConnectOnStart()
 
@@ -276,6 +297,7 @@ func (a *App) buildRoot() fyne.CanvasObject {
 	content := container.NewStack()
 	buttons := make([]*widget.Button, len(items))
 	selectItem := func(i int) {
+		a.touchActivity() // switching panes counts as activity
 		content.Objects = []fyne.CanvasObject{items[i].content}
 		content.Refresh()
 		if items[i].onShow != nil {

@@ -18,16 +18,17 @@ import (
 type SignerKind string
 
 const (
-	KindHot     SignerKind = "hot"     // in-memory seed-derived key
+	KindHot     SignerKind = "hot"     // in-memory seed-derived key (may be a single imported key)
 	KindLedger  SignerKind = "ledger"  // hardware
 	KindTrezor  SignerKind = "trezor"  // hardware
 	KindLattice SignerKind = "lattice" // hardware (GridPlus), best-effort
+	KindWatch   SignerKind = "watch"   // watch-only: an address with no signer (cannot sign)
 )
 
 // Valid reports whether k is a known signer kind.
 func (k SignerKind) Valid() bool {
 	switch k {
-	case KindHot, KindLedger, KindTrezor, KindLattice:
+	case KindHot, KindLedger, KindTrezor, KindLattice, KindWatch:
 		return true
 	default:
 		return false
@@ -73,4 +74,9 @@ func (d Descriptor) Validate() error {
 // IsHardware reports whether this wallet is backed by a hardware signer.
 func (d Descriptor) IsHardware() bool {
 	return d.Kind == KindLedger || d.Kind == KindTrezor || d.Kind == KindLattice
+}
+
+// IsWatchOnly reports whether this wallet has no signer (view-only).
+func (d Descriptor) IsWatchOnly() bool {
+	return d.Kind == KindWatch
 }

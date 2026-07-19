@@ -58,6 +58,32 @@ func monoHyperlink(text, rawURL string) fyne.CanvasObject {
 	return h
 }
 
+// Warning tints for banners around risky, key-material-exposing flows. They are
+// translucent so they read as a light red / light amber wash over either the light
+// or dark theme background.
+var (
+	dangerTint  = color.NRGBA{R: 0xc6, G: 0x28, B: 0x28, A: 0x2e} // dark-red wash (key exposed)
+	cautionTint = color.NRGBA{R: 0xef, G: 0x6c, B: 0x00, A: 0x2e} // amber wash (handle with care)
+)
+
+// warningBox returns a tinted, rounded banner with a ⚠ symbol and bold wrapped
+// text — used to flag dangerous actions (see dangerBox / cautionBox).
+func warningBox(text string, tint color.Color) fyne.CanvasObject {
+	bg := canvas.NewRectangle(tint)
+	bg.CornerRadius = 6
+	l := widget.NewLabel("⚠  " + text)
+	l.Wrapping = fyne.TextWrapWord
+	l.TextStyle = fyne.TextStyle{Bold: true}
+	return container.NewStack(bg, container.NewPadded(l))
+}
+
+// dangerBox flags the most dangerous flows (private key / seed exposed).
+func dangerBox(text string) fyne.CanvasObject { return warningBox(text, dangerTint) }
+
+// cautionBox flags flows that handle sensitive material but don't expose a raw
+// secret in the clear (importing a key, exporting an encrypted backup).
+func cautionBox(text string) fyne.CanvasObject { return warningBox(text, cautionTint) }
+
 // ensAnnotation returns a small, de-emphasized colored label for an ENS name shown
 // alongside an address (reverse-resolved or as typed).
 func ensAnnotation(name string) *canvas.Text {

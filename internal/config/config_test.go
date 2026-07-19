@@ -73,6 +73,13 @@ func isolate(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, ".config"))
 }
 
+func TestDefaultSecuritySettings(t *testing.T) {
+	c := defaultConfig()
+	if c.Security.AutoLockMinutes != 15 || !c.Security.LockOnSleep {
+		t.Errorf("fresh installs should get gentle auto-lock defaults, got %+v", c.Security)
+	}
+}
+
 func TestConnectCandidatesOrder(t *testing.T) {
 	// Ganymede auto-connect primary + Flashbots fallback: candidates are primary
 	// first, then the fallback.

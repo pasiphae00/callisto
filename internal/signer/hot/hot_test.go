@@ -7,6 +7,9 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
+
+	"codeberg.org/pasiphae/callisto/internal/keystore"
 )
 
 // Well-known BIP-44 (m/44'/60'/0'/0/i) test vectors.
@@ -41,6 +44,65 @@ func TestOpenDerivesKnownAddress(t *testing.T) {
 				t.Errorf("account 0 = %s, want %s", got, c.want)
 			}
 		})
+	}
+}
+
+func TestPrivateKeyKeystoreRoundTrip(t *testing.T) {
+	privHex := "0x4c0883a69102937d6231471b5dbb6204fe5129617082792ae468d01a3f362318"
+	ks, addr, err := NewPrivateKeyKeystore(privHex, "pw-passphrase")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ks.Secret != secretPrivateKey {
+		t.Errorf("keystore.Secret = %q, want %q", ks.Secret, secretPrivateKey)
+	}
+	// Opening ignores the derivation path and uses the key directly.
+	w, err := OpenFromKeystore(ks, "pw-passphrase", DefaultPath(9))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Lock()
+	if w.Address() != addr {
+		t.Errorf("address = %s, want %s", w.Address().Hex(), addr.Hex())
+	}
+	if pk, _ := w.ExportPrivateKey(); pk != privHex {
+		t.Errorf("exported key = %s, want %s", pk, privHex)
+	}
+	// A single-key wallet has no HD accounts to derive.
+	if _, err := w.DeriveAccounts(0, 1); err == nil {
+		t.Error("single-key wallet should not derive HD accounts")
+	}
+	// Wrong passphrase is rejected.
+	if _, err := OpenFromKeystore(ks, "nope", ""); err != keystore.ErrBadPassphrase {
+		t.Errorf("wrong passphrase = %v", err)
+	}
+	// Bad key material is rejected up front.
+	if _, _, err := NewPrivateKeyKeystore("0x1234", "pw"); err == nil {
+		t.Error("short private key should be rejected")
+	}
+}
+
+func TestExportPrivateKey(t *testing.T) {
+	w, err := Open(junkMnemonic, "", DefaultPath(0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pk, err := w.ExportPrivateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 0x + 64 hex chars, and it recovers the account address.
+	if len(pk) != 66 || pk[:2] != "0x" {
+		t.Fatalf("private key format: %q", pk)
+	}
+	priv, err := crypto.HexToECDSA(pk[2:])
+	if err != nil || crypto.PubkeyToAddress(priv.PublicKey) != w.Address() {
+		t.Errorf("exported key doesn't match address (err %v)", err)
+	}
+	// Locked wallet refuses to export.
+	w.Lock()
+	if _, err := w.ExportPrivateKey(); err != ErrLocked {
+		t.Errorf("export after lock = %v, want ErrLocked", err)
 	}
 }
 

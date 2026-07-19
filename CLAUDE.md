@@ -28,7 +28,7 @@ On macOS the linker prints a benign `ignoring duplicate libraries: '-lobjc'` war
 
 ## Dependencies (deliberately minimal — see PRINCIPLES.md)
 
-`fyne.io/fyne/v2` (GUI), `github.com/ethereum/go-ethereum` (RPC/ABI/crypto/EIP-55, and `accounts/usbwallet` for Ledger+Trezor), `modernc.org/sqlite` (pure-Go, no CGo — history + address book), `github.com/tyler-smith/go-bip39` (mnemonic↔seed). **Do not add `btcutil`/`hdkeychain`**: it drags a personal-fork transitive dep (`kcalvinalvin/anet`) into a signing wallet. Implement BIP32/BIP44 derivation directly on `github.com/decred/dcrd/dcrec/secp256k1/v4`, which go-ethereum already vendors (zero new dependency).
+`fyne.io/fyne/v2` (GUI), `github.com/ethereum/go-ethereum` (RPC/ABI/crypto/EIP-55; Ledger+Trezor drivers are a local LGPL fork under `internal/signer/hardware/usbwallet`), `github.com/karalabe/usb` (bundled libusb+hidapi — the USB backend for hardware wallets; **replaced `github.com/ethereum/hid`** in v0.7.0 so Trezor works over raw libusb with no Trezor Suite/Bridge), `modernc.org/sqlite` (pure-Go, no CGo — history + address book), `github.com/tyler-smith/go-bip39` (mnemonic↔seed). **Do not add `btcutil`/`hdkeychain`**: it drags a personal-fork transitive dep (`kcalvinalvin/anet`) into a signing wallet. Implement BIP32/BIP44 derivation directly on `github.com/decred/dcrd/dcrec/secp256k1/v4`, which go-ethereum already vendors (zero new dependency).
 
 ## Workflow & releases
 

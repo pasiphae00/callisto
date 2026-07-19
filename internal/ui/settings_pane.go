@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"fyne.io/fyne/v2"
@@ -13,6 +14,39 @@ import (
 
 	"codeberg.org/pasiphae/callisto/internal/rpc"
 )
+
+// endpointRow is a settings-list row that reports double-taps so an endpoint can
+// be edited by double-clicking it. Single taps still select via the List.
+type endpointRow struct {
+	widget.BaseWidget
+	dot         *canvas.Text
+	name        *widget.Label
+	url         *widget.Label
+	def         *widget.Label
+	onDoubleTap func()
+}
+
+func newEndpointRow() *endpointRow {
+	r := &endpointRow{
+		dot:  canvas.NewText("●", statusGray),
+		name: widget.NewLabel("name"),
+		url:  monoLabel("url"),
+		def:  widget.NewLabel(""),
+	}
+	r.ExtendBaseWidget(r)
+	return r
+}
+
+func (r *endpointRow) CreateRenderer() fyne.WidgetRenderer {
+	return widget.NewSimpleRenderer(container.NewHBox(r.dot, r.name, r.url, r.def))
+}
+
+// DoubleTapped opens the edit dialog for this endpoint.
+func (r *endpointRow) DoubleTapped(*fyne.PointEvent) {
+	if r.onDoubleTap != nil {
+		r.onDoubleTap()
+	}
+}
 
 const rpcHelpText = `Callisto uses a "Flashbots Protect" Ethereum Mainnet RPC by default. Replace or add your own here (http/s or ws/s). To customize Flashbots Protect behaviour, generate a new endpoint at "protect.flashbots.net" (e.g. to set a MEV refund address, configure block builders, etc.).
 
@@ -44,32 +78,26 @@ func (p *settingsPane) build() fyne.CanvasObject {
 
 	p.list = widget.NewList(
 		func() int { return len(p.app.cfg.Endpoints) },
-		func() fyne.CanvasObject {
-			// dot (active) · name · URL (mono) · default marker.
-			dot := canvas.NewText("●", statusGray)
-			return container.NewHBox(dot, widget.NewLabel("name"), monoLabel("url"), widget.NewLabel(""))
-		},
+		func() fyne.CanvasObject { return newEndpointRow() },
 		func(i widget.ListItemID, o fyne.CanvasObject) {
 			e := p.app.cfg.Endpoints[i]
-			row := o.(*fyne.Container)
-			dot := row.Objects[0].(*canvas.Text)
-			name := row.Objects[1].(*widget.Label)
-			urlLbl := row.Objects[2].(*widget.Label)
-			def := row.Objects[3].(*widget.Label)
+			row := o.(*endpointRow)
 
 			if p.app.cfg.ActiveEndpoint == e.Name {
-				dot.Color = statusGreen
+				row.dot.Color = statusGreen
 			} else {
-				dot.Color = colorTransparent
+				row.dot.Color = colorTransparent
 			}
-			dot.Refresh()
-			name.SetText(e.Name + "  —")
-			urlLbl.SetText(e.URL)
+			row.dot.Refresh()
+			row.name.SetText(e.Name + "  —")
+			row.url.SetText(e.URL)
 			if e.AutoConnect {
-				def.SetText("  ⭐ default")
+				row.def.SetText("  ⭐ default")
 			} else {
-				def.SetText("")
+				row.def.SetText("")
 			}
+			// Double-click a row to edit that endpoint.
+			row.onDoubleTap = func() { p.showEditDialog(i) }
 		},
 	)
 	p.list.OnSelected = func(id widget.ListItemID) {
@@ -123,6 +151,91 @@ func (p *settingsPane) setDefaultSelected() {
 		return
 	}
 	p.list.Refresh()
+}
+
+// showEditDialog opens an editor for the endpoint at idx: change its label and
+// URL, plus Set Default / Remove shortcuts (Remove in a danger-red shade).
+func (p *settingsPane) showEditDialog(idx int) {
+	if idx < 0 || idx >= len(p.app.cfg.Endpoints) {
+		return
+	}
+	e := p.app.cfg.Endpoints[idx]
+	oldName := e.Name
+
+	label := widget.NewEntry()
+	label.SetText(e.Name)
+	urlEntry := widget.NewEntry()
+	urlEntry.SetText(e.URL)
+
+	var d dialog.Dialog
+	setDefaultBtn := widget.NewButton("Set Default", func() {
+		p.app.cfg.SetAutoConnect(oldName)
+		if err := p.app.cfg.Save(); err != nil {
+			dialog.ShowError(err, p.app.window)
+			return
+		}
+		p.list.Refresh()
+		d.Hide()
+	})
+	removeBtn := widget.NewButton("Remove", func() {
+		p.app.cfg.RemoveEndpoint(oldName)
+		if err := p.app.cfg.Save(); err != nil {
+			dialog.ShowError(err, p.app.window)
+		}
+		p.selected = -1
+		p.list.UnselectAll()
+		p.updateButtons()
+		p.list.Refresh()
+		p.app.refreshStatusBar()
+		d.Hide()
+	})
+	removeBtn.Importance = widget.DangerImportance
+
+	form := widget.NewForm(
+		widget.NewFormItem("Label", label),
+		widget.NewFormItem("URL", urlEntry),
+	)
+	content := container.NewVBox(form, widget.NewSeparator(), container.NewHBox(setDefaultBtn, removeBtn))
+
+	d = dialog.NewCustomConfirm("Edit endpoint", "Save", "Cancel", content, func(save bool) {
+		if save {
+			p.saveEdit(oldName, label.Text, urlEntry.Text, e.AutoConnect)
+		}
+	}, p.app.window)
+	d.Resize(fyne.NewSize(600, 320))
+	d.Show()
+}
+
+// saveEdit applies label/URL changes to an endpoint. Endpoints are keyed by label
+// (Name), so a label change is a rename (remove old + add new), preserving the
+// active selection and default flag.
+func (p *settingsPane) saveEdit(oldName, newLabel, newURL string, wasDefault bool) {
+	newLabel = strings.TrimSpace(newLabel)
+	e := rpc.Endpoint{Name: newLabel, URL: strings.TrimSpace(newURL), AutoConnect: wasDefault}
+	if err := e.Validate(); err != nil {
+		dialog.ShowError(err, p.app.window)
+		return
+	}
+	if newLabel != oldName {
+		wasActive := p.app.cfg.ActiveEndpoint == oldName
+		p.app.cfg.RemoveEndpoint(oldName)
+		if wasActive {
+			p.app.cfg.ActiveEndpoint = newLabel
+		}
+	}
+	if err := p.app.cfg.UpsertEndpoint(e); err != nil {
+		dialog.ShowError(err, p.app.window)
+		return
+	}
+	if wasDefault {
+		p.app.cfg.SetAutoConnect(newLabel)
+	}
+	if err := p.app.cfg.Save(); err != nil {
+		dialog.ShowError(err, p.app.window)
+		return
+	}
+	p.list.Refresh()
+	p.app.refreshStatusBar()
 }
 
 func (p *settingsPane) refreshStatus() {

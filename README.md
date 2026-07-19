@@ -36,7 +36,7 @@ See some screenshots of it in action [here](./EXAMPLES.md).
   - If you do not specify a node, [Flashbots Protect](https://protectrpc.flashbots.net/about) (fast) is used by default.
 - **Multiple wallets, multiple signers.**
   - *Hot wallets* — import a BIP-39 seed phrase **once**, pick the account(s) to add from a derived index→address list, and set an encryption passphrase. The seed is stored only as a scrypt+AES-GCM-encrypted keystore; afterwards you unlock with just the passphrase (no re-entering the phrase). Keys are held in memory only while unlocked and wiped on lock.
-  - *Hardware wallets* — Ledger (direct USB) and Trezor (Trezor Bridge, with a direct-USB fallback for older devices) via a common signing interface; keys never leave the device. Trezor hidden wallets (passphrase-protected, including on-device passphrase entry) are supported.
+  - *Hardware wallets* — Ledger and Trezor over direct USB, via a common signing interface; keys never leave the device. **No Trezor Suite or Bridge required** — Callisto talks to the Trezor Safe directly over libusb (Trezor Bridge is kept only as an automatic fallback). Trezor hidden wallets (passphrase-protected, including on-device passphrase entry) are supported.
 - **Chain-aware.**
   - The native asset and block explorer adapt to the connected chain (Ethereum, Sepolia, Holesky, OP, Base, Arbitrum, Polygon, Gnosis, etc.) with a safe fallback for unknown chains.
 - **WalletConnect.**
@@ -80,7 +80,7 @@ go build -o callisto ./cmd/callisto
 ## Quick start
 
 1. **Connect.** Callisto auto-connects to its default mainnet endpoint on first launch (the status dot turns green). In **Settings** you can replace it, disable auto-connect, or add your own `https://…` / `wss://…` endpoints (e.g. a testnet).
-2. **Wallets** → **Add hot wallet…** (use a *throwaway/test* seed for experimentation): enter the phrase once, pick the account(s), and set an encryption passphrase — you'll unlock with just that passphrase afterwards. Or **Add hardware…** for a Ledger/Trezor. Trezor requires [Trezor Bridge](https://trezor.io/learn/a/what-is-trezor-bridge) or Trezor Suite running in the background (Callisto talks to it over its local API, which correctly handles USB access across platforms/devices); Ledger works over direct USB with no extra software.
+2. **Wallets** → **Add hot wallet…** (use a *throwaway/test* seed for experimentation): enter the phrase once, pick the account(s), and set an encryption passphrase — you'll unlock with just that passphrase afterwards. Or **Add hardware…** for a Ledger/Trezor — both work over direct USB with no extra software (no Trezor Suite/Bridge needed); just plug in, unlock the device, and confirm on-device.
 3. **Assets** → view balances for the selected wallet; they refresh on each block.
 4. **Send** → choose an asset, enter a recipient (address or ENS) and amount, **Prepare transfer**, review, then **Sign & send**.
 5. **Safe** (optional) → **Import Safe…** by address, propose a transfer or an owner/threshold change, collect owner signatures (unlock each owner in **Wallets** and click **Sign**), then **Execute** once the threshold is met.

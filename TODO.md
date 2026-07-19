@@ -23,13 +23,18 @@
 
 ## researched / planned
 
-### ⭐ NEXT MAJOR ITEM — Trezor overhaul: drop Suite/Bridge (direct libusb, like Frame) + native streaming typed-data
+### Trezor overhaul: drop Suite/Bridge (direct libusb, like Frame) + native streaming typed-data
 - **Priority (user, 2026-07-18):** the Trezor integration is too clunky. Frame
   works with a Trezor with no Trezor Suite/Bridge running; Callisto shouldn't
-  need it either. Make this the next major effort **after the initial
-  WalletConnect release (v0.6.0)**. Two parts:
-  1. **Drop the Bridge dependency** — direct libusb transport (details below).
-  2. **Native streaming EIP-712** — implement the full `EthereumSignTypedData`
+  need it either. Two parts:
+  1. **Drop the Bridge dependency** — direct libusb transport. ✅ **DONE in v0.7.0,
+     verified live** (Trezor Safe 5, ETH send signed with Trezor Suite closed):
+     migrated the USB backend from `ethereum/hid` to `github.com/karalabe/usb`
+     (bundled libusb+hidapi, self-contained), forked the Ledger driver in so
+     upstream go-ethereum usbwallet is no longer imported, Trezor Safe uses raw
+     libusb (its WebUSB interface, `Hub.raw`), Bridge kept as an auto-fallback.
+     `hwscan` shows `[raw] VID=0x1209 PID=0x53c1 iface=0`.
+  2. **⭐ NEXT (v0.7.1) — Native streaming EIP-712** — implement the full `EthereumSignTypedData`
      (464) request/struct/value flow so Trezor typed-data works *without* the
      device's experimental features. v0.6.0 shipped `EthereumSignTypedHash` (470),
      but that's an **experimental** firmware message — disabled by default, so the

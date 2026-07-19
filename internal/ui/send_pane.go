@@ -60,7 +60,9 @@ func (p *sendPane) build() fyne.CanvasObject {
 	p.prepareBtn = widget.NewButton("Prepare transfer", p.prepare)
 	p.prepareBtn.Importance = widget.HighImportance
 
-	refreshBtn := widget.NewButton("Refresh assets", func() { p.reload() })
+	refreshBtn := widget.NewButton("Refresh assets", func() { p.app.refreshAssets() })
+	// Reload when balances are refreshed from anywhere (this pane or Assets).
+	p.app.registerAssetsReloader(p.reload)
 
 	amountRow := container.NewBorder(nil, nil, nil, p.maxBtn, p.amount)
 	form := widget.NewForm(

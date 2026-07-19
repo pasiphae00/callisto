@@ -45,8 +45,11 @@ func (p *assetsPane) build() fyne.CanvasObject {
 		},
 	)
 
-	refreshBtn := widget.NewButton("Refresh", func() { p.reload() })
+	refreshBtn := widget.NewButton("Refresh", func() { p.app.refreshAssets() })
 	addTokenBtn := widget.NewButton("Add token…", p.showAddToken)
+
+	// Reload when balances are refreshed from anywhere (this pane or Send).
+	p.app.registerAssetsReloader(p.reload)
 
 	// Auto-refresh on each new head (fires only while connected).
 	p.app.rpc.OnNewHead(func(*types.Header) {

@@ -19,7 +19,11 @@ import (
 // Codeberg releases API and cryptographically verified before install (see
 // internal/updater).
 func (p *settingsPane) buildUpdatesBox() fyne.CanvasObject {
-	version := monoLabel("Callisto v" + buildinfo.Version)
+	label := "Callisto v" + buildinfo.Version
+	if c := buildinfo.ShortCommit(); c != "unknown" {
+		label += " (" + c + ")"
+	}
+	version := monoLabel(label)
 	checkBtn := widget.NewButton("Check for updates", p.checkForUpdates)
 	row := container.NewHBox(version, checkBtn)
 	return container.NewVBox(widget.NewSeparator(), indentToText(row))

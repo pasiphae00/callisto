@@ -10,17 +10,33 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 )
 
-// mockClient implements rpc.Client; only BalanceAt and CallContract are used.
+// mockClient implements rpc.Client; only BalanceAt and CallContract are used by
+// most tests. head/logs let the discovery tests drive BlockNumber and FilterLogs.
 type mockClient struct {
 	native  *big.Int
 	handler func(to common.Address, sel [4]byte) ([]byte, error)
+	head    uint64
+	logs    []types.Log
 }
 
 func (m *mockClient) BalanceAt(ctx context.Context, account common.Address, block *big.Int) (*big.Int, error) {
 	return m.native, nil
 }
 func (m *mockClient) FilterLogs(ctx context.Context, q ethereum.FilterQuery) ([]types.Log, error) {
-	return nil, nil
+	// Return the configured logs whose block falls within the queried window; the
+	// topic pre-filtering is the node's job, and DiscoverTokens does the ERC-20 vs
+	// ERC-721 and dedup filtering in Go (what these tests exercise).
+	var out []types.Log
+	for _, lg := range m.logs {
+		if q.FromBlock != nil && lg.BlockNumber < q.FromBlock.Uint64() {
+			continue
+		}
+		if q.ToBlock != nil && lg.BlockNumber > q.ToBlock.Uint64() {
+			continue
+		}
+		out = append(out, lg)
+	}
+	return out, nil
 }
 
 func (m *mockClient) CallContract(ctx context.Context, msg ethereum.CallMsg, block *big.Int) ([]byte, error) {
@@ -31,7 +47,7 @@ func (m *mockClient) CallContract(ctx context.Context, msg ethereum.CallMsg, blo
 
 // unused interface methods
 func (m *mockClient) ChainID(context.Context) (*big.Int, error)   { return big.NewInt(1), nil }
-func (m *mockClient) BlockNumber(context.Context) (uint64, error) { return 0, nil }
+func (m *mockClient) BlockNumber(context.Context) (uint64, error) { return m.head, nil }
 func (m *mockClient) HeaderByNumber(context.Context, *big.Int) (*types.Header, error) {
 	return nil, nil
 }

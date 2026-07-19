@@ -22,6 +22,7 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
+	"codeberg.org/pasiphae/callisto/internal/assets"
 	"codeberg.org/pasiphae/callisto/internal/config"
 	"codeberg.org/pasiphae/callisto/internal/ens"
 	"codeberg.org/pasiphae/callisto/internal/history"
@@ -53,6 +54,16 @@ type App struct {
 	// assetsReloaders are pane reload callbacks (Assets, Send) invoked together so
 	// refreshing balances on one pane refreshes the other too.
 	assetsReloaders []func()
+
+	// disc auto-discovers the tokens each wallet holds (Transfer-log scan) so
+	// balances populate without a curated list or a Refresh button.
+	disc *tokenDiscovery
+
+	// svc caches an assets.Service (token-metadata cache) per (chain, client) so
+	// per-head balance reloads don't re-fetch immutable metadata each block.
+	svcMu  sync.Mutex
+	svc    *assets.Service
+	svcKey string
 
 	// Live signer session for the currently unlocked wallet, if any. Held in
 	// memory only; wiped on lock/disconnect/close. Never persisted.
@@ -99,6 +110,7 @@ func (a *App) closeWalletConnect() {
 // it is safe to call in tests; call Run to actually launch the GUI.
 func New(cfg *config.Config, st *store.Store) *App {
 	a := &App{cfg: cfg, store: st, rpc: rpc.NewManager()}
+	a.disc = newTokenDiscovery(a)
 	if st != nil {
 		a.history = history.New(st)
 		a.safeProposals = safe.NewProposalRepo(st.DB())

@@ -50,6 +50,10 @@ type mockRPC struct {
 	handler func(to common.Address, selector [4]byte, node [32]byte) ([]byte, error)
 }
 
+func (m *mockRPC) FilterLogs(ctx context.Context, q ethereum.FilterQuery) ([]types.Log, error) {
+	return nil, nil
+}
+
 func (m *mockRPC) CallContract(ctx context.Context, msg ethereum.CallMsg, block *big.Int) ([]byte, error) {
 	var sel [4]byte
 	copy(sel[:], msg.Data[:4])
@@ -72,6 +76,9 @@ func (m *mockRPC) SuggestGasTipCap(context.Context) (*big.Int, error)           
 func (m *mockRPC) EstimateGas(context.Context, ethereum.CallMsg) (uint64, error)     { return 0, nil }
 func (m *mockRPC) SendTransaction(context.Context, *types.Transaction) error         { return nil }
 func (m *mockRPC) TransactionReceipt(context.Context, common.Hash) (*types.Receipt, error) {
+	return nil, nil
+}
+func (m *mockRPC) SubscribeFilterLogs(context.Context, ethereum.FilterQuery, chan<- types.Log) (ethereum.Subscription, error) {
 	return nil, nil
 }
 func (m *mockRPC) SubscribeNewHead(context.Context, chan<- *types.Header) (ethereum.Subscription, error) {

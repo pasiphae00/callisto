@@ -271,15 +271,27 @@
 
 ## medium
 
-### create "approvals" pane
-- enable the user to quickly see and scroll through all erc20 "approvals" that currently exist
-  - weather or not they were created using callisto
-  - callisto should find, detect, parse, and display every single approval that is outstanding for the selected wallet
-  - it should show the token there is an approval on, the contract that has an approval, and if it is unlimited or for a specific amount (shown by name, e.g. cowswap, uniswap)
-  - there should be a "revoke" button that prepares a transaction to remove the approval for that token/contract pair
-  - once it is revoked and a call to the chain confirms taht, it should disapear from the list (but the revoke tx logged in history)
-- this is an important safety feature, approvals can be dangerous
-- it will be very useful to have "approvals" pane and the functionality for a user to view and manage all outstanding approvals
+### create "approvals" pane — ✅ built for v0.9.0 (pending live verification)
+- ~~see/scroll all outstanding ERC-20 approvals for the selected wallet (however
+  created); show token, spender (by name — cowswap/uniswap/…), and unlimited vs a
+  specific amount; a Revoke button; revoked entries disappear once confirmed on
+  chain (revoke tx logged in history)~~
+  - **`internal/approvals`** scans `Approval` logs on the active RPC, bounded below
+    by the wallet's first tx (a `NonceAt` binary search — no genesis scan), then
+    reads live `allowance()` to keep only outstanding ones. **Full Permit2 coverage**
+    (user chose it): the Permit2 contract's own `Approval`/`Permit` logs + `allowance`
+    give the inner per-dApp grants (with expiry). Spender names via a bundled
+    per-chain `knownSpenders` map (`labels.go`). Unlimited = ≥ 2^255 (ERC-20) /
+    MaxUint160 (Permit2). Revoke = `approve(spender,0)` or Permit2 `lockdown`.
+  - **UI** `internal/ui/approvals_pane.go` (nav "Approvals"): Scan → list rows
+    (token → spender, UNLIMITED/amount, Permit2 badge+expiry) with a red Revoke that
+    runs the review→sign→broadcast→track pipeline, logs to History (Kind `revoke`),
+    and drops the row on confirmation. `rpc.Client` gained `FilterLogs`.
+  - **Discovery needs a full/archive RPC** (the default Flashbots relay can't serve
+    `eth_getLogs`); the pane shows a clear message when the active RPC can't scan.
+  - **Follow-ups:** NFT `setApprovalForAll` (ERC-721/1155); an optional external-API
+    or node-proxy accelerator behind a Settings toggle; allowance *editing* (only
+    full revoke today). Live-verify on the user's full node before tagging v0.9.0.
 
 ### created "packaged" pipeline — ✅ shipped in v0.8.0
 - ~~makefile to deliver a native, logo-bearing, clickable app for macOS + Linux;

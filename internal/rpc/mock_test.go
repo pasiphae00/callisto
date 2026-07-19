@@ -77,6 +77,10 @@ func (m *mockClient) PendingNonceAt(ctx context.Context, account common.Address)
 	return m.nonce, nil
 }
 
+func (m *mockClient) FilterLogs(ctx context.Context, q ethereum.FilterQuery) ([]types.Log, error) {
+	return nil, nil
+}
+
 func (m *mockClient) CallContract(ctx context.Context, msg ethereum.CallMsg, blockNumber *big.Int) ([]byte, error) {
 	return m.callRet, m.callErr
 }
@@ -110,6 +114,10 @@ type mockSubscription struct {
 
 func (s *mockSubscription) Unsubscribe()      {}
 func (s *mockSubscription) Err() <-chan error { return s.errCh }
+
+func (m *mockClient) SubscribeFilterLogs(context.Context, ethereum.FilterQuery, chan<- types.Log) (ethereum.Subscription, error) {
+	return &mockSubscription{errCh: m.subErrCh}, nil
+}
 
 func (m *mockClient) SubscribeNewHead(ctx context.Context, ch chan<- *types.Header) (ethereum.Subscription, error) {
 	if m.failSub {

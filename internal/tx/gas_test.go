@@ -34,11 +34,18 @@ func (m *txMock) BalanceAt(context.Context, common.Address, *big.Int) (*big.Int,
 	return big.NewInt(0), nil
 }
 func (m *txMock) NonceAt(context.Context, common.Address, *big.Int) (uint64, error) { return 0, nil }
+func (m *txMock) FilterLogs(context.Context, ethereum.FilterQuery) ([]types.Log, error) {
+	return nil, nil
+}
+
 func (m *txMock) CallContract(context.Context, ethereum.CallMsg, *big.Int) ([]byte, error) {
 	return nil, nil
 }
 func (m *txMock) SendTransaction(context.Context, *types.Transaction) error { return nil }
 func (m *txMock) TransactionReceipt(context.Context, common.Hash) (*types.Receipt, error) {
+	return nil, nil
+}
+func (m *txMock) SubscribeFilterLogs(context.Context, ethereum.FilterQuery, chan<- types.Log) (ethereum.Subscription, error) {
 	return nil, nil
 }
 func (m *txMock) SubscribeNewHead(context.Context, chan<- *types.Header) (ethereum.Subscription, error) {

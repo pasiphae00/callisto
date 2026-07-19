@@ -67,6 +67,9 @@ type Config struct {
 	Safes []safe.Descriptor `json:"safes"`
 	// ActiveSafe is the ID of the currently selected Safe ("" = none).
 	ActiveSafe string `json:"active_safe"`
+	// AutoDetectApprovals enables live approval detection over a WSS endpoint in
+	// the Approvals pane (opt-in; off by default to stay resource-mindful).
+	AutoDetectApprovals bool `json:"auto_detect_approvals"`
 }
 
 // Dir returns the Callisto config directory, creating it if needed.

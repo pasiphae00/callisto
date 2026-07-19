@@ -27,6 +27,11 @@ type Client interface {
 	PendingNonceAt(ctx context.Context, account common.Address) (uint64, error)
 	CallContract(ctx context.Context, msg ethereum.CallMsg, blockNumber *big.Int) ([]byte, error)
 
+	// Logs. Used by approval discovery to scan Approval events. Not every RPC
+	// serves eth_getLogs (e.g. a tx-submission-only relay) — callers surface a
+	// clear error when it fails.
+	FilterLogs(ctx context.Context, q ethereum.FilterQuery) ([]types.Log, error)
+
 	// Gas.
 	SuggestGasTipCap(ctx context.Context) (*big.Int, error)
 	EstimateGas(ctx context.Context, msg ethereum.CallMsg) (uint64, error)
@@ -37,6 +42,9 @@ type Client interface {
 
 	// Live subscriptions (WebSocket transports only; see Endpoint.Scheme).
 	SubscribeNewHead(ctx context.Context, ch chan<- *types.Header) (ethereum.Subscription, error)
+	// SubscribeFilterLogs streams logs matching q (used for live approval
+	// detection over a WSS endpoint).
+	SubscribeFilterLogs(ctx context.Context, q ethereum.FilterQuery, ch chan<- types.Log) (ethereum.Subscription, error)
 
 	// Close releases the underlying connection.
 	Close()

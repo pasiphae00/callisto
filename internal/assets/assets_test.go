@@ -19,6 +19,10 @@ type mockClient struct {
 func (m *mockClient) BalanceAt(ctx context.Context, account common.Address, block *big.Int) (*big.Int, error) {
 	return m.native, nil
 }
+func (m *mockClient) FilterLogs(ctx context.Context, q ethereum.FilterQuery) ([]types.Log, error) {
+	return nil, nil
+}
+
 func (m *mockClient) CallContract(ctx context.Context, msg ethereum.CallMsg, block *big.Int) ([]byte, error) {
 	var sel [4]byte
 	copy(sel[:], msg.Data[:4])
@@ -39,6 +43,9 @@ func (m *mockClient) SuggestGasTipCap(context.Context) (*big.Int, error)        
 func (m *mockClient) EstimateGas(context.Context, ethereum.CallMsg) (uint64, error)  { return 0, nil }
 func (m *mockClient) SendTransaction(context.Context, *types.Transaction) error      { return nil }
 func (m *mockClient) TransactionReceipt(context.Context, common.Hash) (*types.Receipt, error) {
+	return nil, nil
+}
+func (m *mockClient) SubscribeFilterLogs(context.Context, ethereum.FilterQuery, chan<- types.Log) (ethereum.Subscription, error) {
 	return nil, nil
 }
 func (m *mockClient) SubscribeNewHead(context.Context, chan<- *types.Header) (ethereum.Subscription, error) {

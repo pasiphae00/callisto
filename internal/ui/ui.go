@@ -230,15 +230,18 @@ func (a *App) buildRoot() fyne.CanvasObject {
 	type navItem struct {
 		name    string
 		content fyne.CanvasObject
+		onShow  func() // optional: called each time the pane is selected
 	}
+	approvals := newApprovalsPane(a)
 	items := []navItem{
-		{"Wallets", newWalletsPane(a).build()},
-		{"Assets", newAssetsPane(a).build()},
-		{"Send", newSendPane(a).build()},
-		{"Safe", newSafePane(a).build()},
-		{"WalletConnect", newWalletConnectPane(a).build()},
-		{"History", newHistoryPane(a).build()},
-		{"Settings", newSettingsPane(a).build()},
+		{name: "Wallets", content: newWalletsPane(a).build()},
+		{name: "Assets", content: newAssetsPane(a).build()},
+		{name: "Approvals", content: approvals.build(), onShow: approvals.onShow},
+		{name: "Send", content: newSendPane(a).build()},
+		{name: "Safe", content: newSafePane(a).build()},
+		{name: "WalletConnect", content: newWalletConnectPane(a).build()},
+		{name: "History", content: newHistoryPane(a).build()},
+		{name: "Settings", content: newSettingsPane(a).build()},
 	}
 
 	content := container.NewStack()
@@ -246,6 +249,9 @@ func (a *App) buildRoot() fyne.CanvasObject {
 	selectItem := func(i int) {
 		content.Objects = []fyne.CanvasObject{items[i].content}
 		content.Refresh()
+		if items[i].onShow != nil {
+			items[i].onShow()
+		}
 		for j, b := range buttons {
 			if j == i {
 				b.Importance = widget.HighImportance

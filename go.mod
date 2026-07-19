@@ -6,8 +6,10 @@ require (
 	fyne.io/fyne/v2 v2.8.0
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.0.1
 	github.com/ethereum/go-ethereum v1.17.4
-	github.com/ethereum/hid v1.0.1-0.20260421154323-c2ab8d9bf68a
+	github.com/gorilla/websocket v1.4.2
+	github.com/karalabe/usb v0.0.2
 	github.com/tyler-smith/go-bip39 v1.1.0
+	golang.org/x/crypto v0.48.0
 	google.golang.org/protobuf v1.36.11
 	modernc.org/sqlite v1.54.0
 )
@@ -45,7 +47,6 @@ require (
 	github.com/go-text/typesetting v0.3.4 // indirect
 	github.com/godbus/dbus/v5 v5.2.2 // indirect
 	github.com/google/uuid v1.6.0 // indirect
-	github.com/gorilla/websocket v1.4.2 // indirect
 	github.com/hack-pad/go-indexeddb v0.3.2 // indirect
 	github.com/hack-pad/safejs v0.1.0 // indirect
 	github.com/holiman/uint256 v1.3.2 // indirect
@@ -71,7 +72,6 @@ require (
 	go.opentelemetry.io/otel v1.41.0 // indirect
 	go.opentelemetry.io/otel/metric v1.41.0 // indirect
 	go.opentelemetry.io/otel/trace v1.41.0 // indirect
-	golang.org/x/crypto v0.48.0 // indirect
 	golang.org/x/image v0.24.0 // indirect
 	golang.org/x/net v0.50.0 // indirect
 	golang.org/x/sync v0.21.0 // indirect

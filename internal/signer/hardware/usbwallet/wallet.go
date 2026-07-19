@@ -36,7 +36,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/hid"
+	"github.com/karalabe/usb"
 )
 
 // Maximum time between wallet health checks to detect USB unplugs.
@@ -81,37 +81,49 @@ type driver interface {
 	SignMessage(path accounts.DerivationPath, message []byte) ([]byte, error)
 }
 
-// deviceReadTimeoutMs bounds every read from the device (see readTimeoutWriter).
+// deviceReadTimeout bounds every read from the device (see readTimeoutWriter).
 // Generous enough for a human to notice and confirm a prompt on-device, but
 // finite so a non-responding device (wrong interface, unsupported protocol
 // variant) fails with a clear error instead of hanging the caller forever.
-const deviceReadTimeoutMs = 60_000
+const deviceReadTimeout = 60 * time.Second
 
 // errDeviceReadTimeout means the device did not send a full reply within
-// deviceReadTimeoutMs (see readTimeoutWriter).
+// deviceReadTimeout (see readTimeoutWriter).
 var errDeviceReadTimeout = errors.New("usbwallet: device did not respond within the read timeout (wrong USB interface, or an unsupported protocol/firmware variant)")
 
-// readTimeoutWriter adapts a hid.Device (whose Read may block indefinitely) to
-// io.ReadWriter using hid.Device's ReadTimeout — the driver interface only
-// accepts io.ReadWriter, so without this wrapper the timeout capability is
-// unreachable. Callisto-local addition; see hub.go's doc comment.
+// readTimeoutWriter adapts a usb.Device (whose Read may block indefinitely) to a
+// bounded io.ReadWriter — the driver interface only accepts io.ReadWriter, so a
+// non-responding device (accepts writes, never returns reads) would otherwise
+// hang Open forever. Callisto-local addition; see hub.go's doc comment.
 //
-// hid.Device.ReadTimeout returns (0, nil) — not an error — when the timeout
-// elapses with no data. io.ReadFull does not treat repeated (0, nil) reads as
-// an error, so left as-is this would busy-loop through repeated timeouts
-// forever instead of failing cleanly; Read converts that case into an
-// explicit error.
+// karalabe/usb has no ReadTimeout (unlike the previous hid backend), so each Read
+// runs in a goroutine with a timer. The goroutine reads into its own buffer (so a
+// late-returning read never races the caller's slice) and copies into b only on
+// success; on timeout it is left to unblock when the device is Closed (which the
+// caller does on a failed Open).
 type readTimeoutWriter struct {
-	device    hid.Device
-	timeoutMs int
+	device  usb.Device
+	timeout time.Duration
 }
 
 func (r readTimeoutWriter) Read(b []byte) (int, error) {
-	n, err := r.device.ReadTimeout(b, r.timeoutMs)
-	if err == nil && n == 0 {
+	type result struct {
+		n   int
+		err error
+	}
+	buf := make([]byte, len(b))
+	ch := make(chan result, 1)
+	go func() {
+		n, err := r.device.Read(buf)
+		ch <- result{n, err}
+	}()
+	select {
+	case res := <-ch:
+		copy(b, buf[:res.n])
+		return res.n, res.err
+	case <-time.After(r.timeout):
 		return 0, errDeviceReadTimeout
 	}
-	return n, err
 }
 
 func (r readTimeoutWriter) Write(b []byte) (int, error) {
@@ -126,13 +138,13 @@ type wallet struct {
 	driver driver        // Hardware implementation of the low level device operations
 	url    *accounts.URL // Textual URL uniquely identifying this wallet
 
-	info   hid.DeviceInfo // Known USB device infos about the wallet
-	device hid.Device     // USB device advertising itself as a hardware wallet
+	info   usb.DeviceInfo // Known USB device infos about the wallet
+	device usb.Device     // USB device advertising itself as a hardware wallet
 
 	// bridge is non-nil for a Trezor-Bridge-backed wallet (see trezor_bridge.go,
 	// NewBridgeWallet): Callisto-local addition, direct USB access bypassed
 	// entirely. When set, Open acquires a Bridge session instead of calling
-	// info.Open(), and device holds a bridgeDeviceStub (not a real hid.Device) so
+	// info.Open(), and device holds a bridgeDeviceStub (not a real usb.Device) so
 	// the existing device!=nil lifecycle checks below keep working unchanged.
 	bridge *bridgeSession
 
@@ -238,7 +250,7 @@ func (w *wallet) Open(passphrase string) error {
 		// ReadTimeout — without this, a device that accepts writes but never
 		// replies (e.g. because we matched the wrong USB interface — see hub.go's
 		// anyEndpoint) hangs Open() forever with no error and no way to cancel.
-		if err := w.driver.Open(readTimeoutWriter{device: w.device, timeoutMs: deviceReadTimeoutMs}, passphrase); err != nil {
+		if err := w.driver.Open(readTimeoutWriter{device: w.device, timeout: deviceReadTimeout}, passphrase); err != nil {
 			return err
 		}
 	}

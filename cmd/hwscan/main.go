@@ -29,7 +29,7 @@ var knownVendors = []string{
 func main() {
 	fmt.Println("Callisto hardware-wallet USB scan")
 	fmt.Println("==================================")
-	fmt.Printf("USB HID supported on this build: %v\n\n", hardware.Supported())
+	fmt.Printf("USB supported on this build: %v\n\n", hardware.Supported())
 
 	devices, err := hardware.Scan()
 	if err != nil {
@@ -38,8 +38,8 @@ func main() {
 	}
 
 	if len(devices) == 0 {
-		fmt.Println("No USB HID devices found at all.")
-		fmt.Println("This means the OS isn't exposing ANY HID device to this process —")
+		fmt.Println("No USB devices found at all (raw or HID).")
+		fmt.Println("This means the OS isn't exposing ANY matching device to this process —")
 		fmt.Println("check the device is connected/unlocked, and that no other app")
 		fmt.Println("(Trezor Suite, Trezor Bridge, Ledger Live) is holding it exclusively.")
 		return

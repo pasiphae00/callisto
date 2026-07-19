@@ -29,15 +29,21 @@
 // carry this narrow local patch until that lands and we can drop this package.
 //
 // Changes from upstream:
-//   - NewLedgerHub and its Ledger-specific device table were removed: Callisto
-//     uses upstream go-ethereum's own usbwallet.NewLedgerHub for Ledger,
-//     unaffected by this fork. Only the Trezor matching path is patched.
-//   - The Trezor hub constructors now match on USB vendor+product ID alone
-//     (endpointID/usageID checks skipped for Trezor), because a Trezor's
-//     product ID already uniquely identifies its wire-protocol endpoint —
-//     unlike Ledger's PID, which encodes model+interface bits and therefore
-//     needs the interface check to disambiguate multiple HID interfaces
-//     sharing one PID. See refreshWallets below for the exact condition.
+//   - The USB backend is github.com/karalabe/usb (bundled libusb + hidapi, no
+//     system deps) instead of github.com/ethereum/hid. This is what lets Callisto
+//     reach the Trezor Safe's vendor/WebUSB interface via raw libusb (interrupt
+//     transfers) — hidapi cannot claim it — so Trezor works with no Trezor Suite/
+//     Bridge running. Mirrors go-ethereum's own migration (PR #32752).
+//   - Ledger is forked in here too (ledger.go + NewLedgerHub, HID) so Callisto no
+//     longer imports upstream go-ethereum usbwallet at all, which is what drops
+//     the ethereum/hid dependency and avoids a duplicate-hidapi link clash.
+//   - Hub.raw selects raw/libusb enumeration for Trezor Safe (WebUSB); Ledger and
+//     Trezor One stay on HID.
+//   - The Trezor hub constructors match on USB vendor+product ID alone
+//     (endpointID/usageID checks skipped for Trezor via anyEndpoint), because a
+//     Trezor's product ID already uniquely identifies its wire-protocol endpoint —
+//     unlike Ledger's PID, which encodes model+interface bits and needs the
+//     interface check. See refreshWallets below for the exact condition.
 package usbwallet
 
 import (
@@ -50,11 +56,21 @@ import (
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/event"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/hid"
+	"github.com/karalabe/usb"
 )
 
 // TrezorScheme is the protocol scheme prefixing account and wallet URLs.
 const TrezorScheme = "trezor"
+
+// LedgerScheme is the protocol scheme prefixing Ledger account and wallet URLs.
+const LedgerScheme = "ledger"
+
+// Ledger HID matching values (from go-ethereum): usage page 0xffa0 on Windows/
+// macOS, interface 0 on Linux.
+const (
+	deviceUsagePage = 0xffa0
+	deviceInterface = 0
+)
 
 // refreshCycle is the maximum time between wallet refreshes (if USB hotplug
 // notifications don't work).
@@ -76,6 +92,7 @@ type Hub struct {
 	productIDs []uint16                // USB product identifiers used for device discovery
 	usageID    uint16                  // USB usage page identifier used for macOS device discovery
 	endpointID int                     // USB endpoint identifier used for non-macOS device discovery
+	raw        bool                    // Enumerate raw USB (libusb) interfaces instead of HID
 	makeDriver func(log.Logger) driver // Factory method to construct a vendor specific driver
 
 	refreshed   time.Time               // Time instance when the list of wallets was last refreshed
@@ -100,7 +117,31 @@ type Hub struct {
 // original interface/usage-page filter, to support devices whose USB descriptor
 // doesn't fit go-ethereum's original assumptions.
 func NewTrezorHubWithHID() (*Hub, error) {
-	return newHub(TrezorScheme, 0x534c, []uint16{0x0001 /* Trezor HID */}, 0, anyEndpoint, newTrezorDriver)
+	return newHub(TrezorScheme, 0x534c, []uint16{0x0001 /* Trezor HID */}, 0, anyEndpoint, false, newTrezorDriver)
+}
+
+// NewLedgerHub creates a hardware wallet manager for Ledger devices over HID
+// (forked from go-ethereum so Callisto no longer imports upstream usbwallet — see
+// the package doc comment and ledger.go). Ledger is a HID-class device, so HID
+// enumeration is used (unlike Trezor Safe's raw/libusb WebUSB interface).
+func NewLedgerHub() (*Hub, error) {
+	return newHub(LedgerScheme, 0x2c97, []uint16{
+		// Device definitions from
+		// https://github.com/LedgerHQ/ledger-live (libs/ledgerjs/packages/devices).
+		0x0000, /* Ledger Blue */
+		0x0001, /* Ledger Nano S */
+		0x0004, /* Ledger Nano X */
+		0x0005, /* Ledger Nano S Plus */
+		0x0006, /* Ledger Nano FTS */
+		0x0007, /* Ledger Flex */
+		0x0008, /* Ledger Nano Gen5 */
+		0x1000, /* WebUSB Ledger Nano S */
+		0x4000, /* WebUSB Ledger Nano X */
+		0x5000, /* WebUSB Ledger Nano S Plus */
+		0x6000, /* WebUSB Ledger Nano FTS */
+		0x7000, /* WebUSB Ledger Flex */
+		0x8000, /* WebUSB Ledger Nano Gen5 */
+	}, deviceUsagePage, deviceInterface, false, newLedgerDriver)
 }
 
 // NewTrezorHubWithWebUSB creates a new hardware wallet manager for Trezor devices
@@ -110,12 +151,16 @@ func NewTrezorHubWithHID() (*Hub, error) {
 // UsagePage==0xffff or Interface==0, which excludes the Trezor Safe family —
 // confirmed reporting Interface=1 / UsagePage=0xf1d0 — hence this local patch.
 func NewTrezorHubWithWebUSB() (*Hub, error) {
-	return newHub(TrezorScheme, 0x1209, []uint16{0x53c1 /* Trezor WebUSB */}, 0, anyEndpoint, newTrezorDriver)
+	// raw=true: the Trezor Safe's wallet-protocol interface is a vendor/WebUSB
+	// interface that hidapi cannot claim — libusb (raw) can, which is what lets
+	// Callisto talk to it with no Trezor Suite/Bridge running.
+	return newHub(TrezorScheme, 0x1209, []uint16{0x53c1 /* Trezor WebUSB */}, 0, anyEndpoint, true, newTrezorDriver)
 }
 
-// newHub creates a new hardware wallet manager for generic USB devices.
-func newHub(scheme string, vendorID uint16, productIDs []uint16, usageID uint16, endpointID int, makeDriver func(log.Logger) driver) (*Hub, error) {
-	if !hid.Supported() {
+// newHub creates a new hardware wallet manager for generic USB devices. raw
+// selects libusb (raw interrupt-transfer) enumeration/access instead of HID.
+func newHub(scheme string, vendorID uint16, productIDs []uint16, usageID uint16, endpointID int, raw bool, makeDriver func(log.Logger) driver) (*Hub, error) {
+	if !usb.Supported() {
 		return nil, errors.New("unsupported platform")
 	}
 	hub := &Hub{
@@ -124,6 +169,7 @@ func newHub(scheme string, vendorID uint16, productIDs []uint16, usageID uint16,
 		productIDs: productIDs,
 		usageID:    usageID,
 		endpointID: endpointID,
+		raw:        raw,
 		makeDriver: makeDriver,
 		quit:       make(chan chan error),
 	}
@@ -161,7 +207,7 @@ func (hub *Hub) refreshWallets() {
 		return
 	}
 	// Retrieve the current list of USB wallet devices
-	var devices []hid.DeviceInfo
+	var devices []usb.DeviceInfo
 
 	if runtime.GOOS == "linux" {
 		// hidapi on Linux opens the device during enumeration to retrieve some infos,
@@ -176,7 +222,13 @@ func (hub *Hub) refreshWallets() {
 			return
 		}
 	}
-	infos, err := hid.Enumerate(hub.vendorID, 0)
+	// Trezor Safe/WebUSB uses raw libusb enumeration (to reach the vendor
+	// interface hidapi can't); Ledger and Trezor One use HID.
+	enumerate := usb.EnumerateHid
+	if hub.raw {
+		enumerate = usb.EnumerateRaw
+	}
+	infos, err := enumerate(hub.vendorID, 0)
 	if err != nil {
 		failcount := hub.enumFails.Add(1)
 		if runtime.GOOS == "linux" {

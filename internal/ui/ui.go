@@ -16,8 +16,8 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
-	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
 	"codeberg.org/pasiphae/callisto/internal/config"
@@ -243,41 +243,63 @@ func (a *App) refreshStatusBar() {
 	if a.statusBarBox == nil {
 		return
 	}
-	// Connection: colored dot + "RPC: <label>" with the endpoint label in mono.
-	dotColor := statusGray
+	// The whole footer is a single monospace RichText line so every piece shares
+	// one baseline (mixing fonts/sizes across separate labels looked uneven). The
+	// "RPC:"/"Active wallet:" labels are smaller and muted; the values are normal.
+	dotColor := theme.ColorNameDisabled
 	rpcLabel := "none"
 	rpcSuffix := ""
 	if conn, ok := a.rpc.Active(); ok {
-		dotColor = statusGreen
+		dotColor = theme.ColorNameSuccess
 		rpcLabel = conn.Endpoint.Name
 		rpcSuffix = " · " + conn.ChainInfo.Name
 	} else if e, ok := a.cfg.ActiveEndpointConfig(); ok {
-		dotColor = statusAmber
+		dotColor = theme.ColorNameWarning
 		rpcLabel = e.Name
 		rpcSuffix = " (not connected)"
 	}
 
-	objs := []fyne.CanvasObject{
-		canvas.NewText("●", dotColor),
-		widget.NewLabel("RPC:"),
-		monoLabel(rpcLabel),
+	segs := []widget.RichTextSegment{
+		statusSeg("● ", theme.SizeNameText, dotColor),
+		statusSeg("RPC: ", theme.SizeNameCaptionText, theme.ColorNamePlaceHolder),
+		statusSeg(rpcLabel, theme.SizeNameText, theme.ColorNameForeground),
 	}
 	if rpcSuffix != "" {
-		objs = append(objs, widget.NewLabel(rpcSuffix))
+		segs = append(segs, statusSeg(rpcSuffix, theme.SizeNameCaptionText, theme.ColorNamePlaceHolder))
 	}
-	objs = append(objs, widget.NewLabel("|"), widget.NewLabel("Active wallet:"))
-
-	// Wallet: label in mono + lock state.
+	segs = append(segs,
+		statusSeg("   |   ", theme.SizeNameText, theme.ColorNamePlaceHolder),
+		statusSeg("Active wallet: ", theme.SizeNameCaptionText, theme.ColorNamePlaceHolder),
+	)
 	if w, ok := a.cfg.WalletByID(a.cfg.ActiveWallet); ok && w.Label != "" {
 		state := "locked"
 		if _, id, unlocked := a.currentSigner(); unlocked && id == w.ID {
 			state = "unlocked"
 		}
-		objs = append(objs, monoLabel(w.Label), widget.NewLabel("("+state+")"))
+		segs = append(segs,
+			statusSeg(w.Label, theme.SizeNameText, theme.ColorNameForeground),
+			statusSeg("  ("+state+")", theme.SizeNameCaptionText, theme.ColorNamePlaceHolder),
+		)
 	} else {
-		objs = append(objs, widget.NewLabel("none"))
+		segs = append(segs, statusSeg("none", theme.SizeNameText, theme.ColorNameForeground))
 	}
 
-	a.statusBarBox.Objects = objs
+	rt := widget.NewRichText(segs...)
+	rt.Wrapping = fyne.TextWrapOff
+	a.statusBarBox.Objects = []fyne.CanvasObject{rt}
 	a.statusBarBox.Refresh()
+}
+
+// statusSeg builds a monospace RichText segment for the footer with a theme size
+// and color.
+func statusSeg(text string, size fyne.ThemeSizeName, color fyne.ThemeColorName) *widget.TextSegment {
+	return &widget.TextSegment{
+		Text: text,
+		Style: widget.RichTextStyle{
+			Inline:    true,
+			TextStyle: fyne.TextStyle{Monospace: true},
+			SizeName:  size,
+			ColorName: color,
+		},
+	}
 }

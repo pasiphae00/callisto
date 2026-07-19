@@ -17,8 +17,9 @@ changes; `v1.0.0` marks the first stable, documented release.
 - The hardware-wallet **Passphrase** field appears only for Trezor (it's a
   Trezor-only hidden-wallet feature) — hidden when adding a Ledger, and skipped
   when unlocking one.
-- The bottom status bar now reads `● RPC: <label> | Active wallet: <label>` with
-  the endpoint and wallet labels in the monospace font.
+- The bottom status bar now reads `● RPC: <label> | Active wallet: <label>` as a
+  single baseline-aligned monospace line, with the "RPC:"/"Active wallet:" labels
+  in a smaller, muted font and a green/amber/gray connection dot.
 - Settings RPC list shows each endpoint's URL in monospace, plus a new
   **Set Default** button to change the auto-connect endpoint.
 - The pre-sign **Review transaction** screen reverse-resolves the To/From

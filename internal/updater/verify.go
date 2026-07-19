@@ -27,7 +27,13 @@ var ErrUpdatesNotConfigured = errors.New("updates are not configured: no maintai
 // releasePubkey returns the embedded maintainer public key, or
 // ErrUpdatesNotConfigured if it is the all-zero placeholder.
 func releasePubkey() (ed25519.PublicKey, error) {
-	raw, err := hex.DecodeString(strings.TrimSpace(releasePubkeyHex))
+	return parsePubkeyHex(releasePubkeyHex)
+}
+
+// parsePubkeyHex decodes a hex-encoded ed25519 public key, rejecting the all-zero
+// placeholder with ErrUpdatesNotConfigured.
+func parsePubkeyHex(s string) (ed25519.PublicKey, error) {
+	raw, err := hex.DecodeString(strings.TrimSpace(s))
 	if err != nil {
 		return nil, fmt.Errorf("embedded public key is not valid hex: %w", err)
 	}

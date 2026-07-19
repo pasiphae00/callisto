@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -116,10 +117,27 @@ func TestVerifySums(t *testing.T) {
 	}
 }
 
-func TestReleasePubkeyPlaceholder(t *testing.T) {
-	// The committed key is the all-zero placeholder until `make gen-release-key`.
-	if _, err := releasePubkey(); !errors.Is(err, ErrUpdatesNotConfigured) {
+func TestParsePubkeyPlaceholder(t *testing.T) {
+	// The all-zero placeholder (pre `make gen-release-key`) is rejected.
+	zeros := strings.Repeat("0", ed25519.PublicKeySize*2)
+	if _, err := parsePubkeyHex(zeros); !errors.Is(err, ErrUpdatesNotConfigured) {
 		t.Errorf("placeholder key should yield ErrUpdatesNotConfigured, got %v", err)
+	}
+	// A malformed key is a plain error.
+	if _, err := parsePubkeyHex("not-hex"); err == nil {
+		t.Error("expected error for non-hex key")
+	}
+}
+
+func TestEmbeddedReleaseKeyConfigured(t *testing.T) {
+	// Guards release builds: the committed key must be a real (non-placeholder)
+	// ed25519 public key, so shipped binaries can actually verify updates.
+	pub, err := releasePubkey()
+	if err != nil {
+		t.Fatalf("embedded release key is not usable: %v (run `make gen-release-key`)", err)
+	}
+	if len(pub) != ed25519.PublicKeySize {
+		t.Errorf("embedded key is %d bytes, want %d", len(pub), ed25519.PublicKeySize)
 	}
 }
 

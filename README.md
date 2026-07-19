@@ -5,7 +5,7 @@
 <h1 align="left">Callisto</h1>
 
 <p align="left">
-  <em>A lightweight, powerful, locally-run Ethereum wallet management and signing utility.</em>
+  <em>A lightweight, powerful, desktop Ethereum wallet management and signing utility.</em>
 </p>
 
 <p align="left">
@@ -21,9 +21,13 @@ Callisto is a Go + [Fyne](https://fyne.io) native desktop application for prepar
 
 It runs entirely on your machine, talks to an Ethereum node you choose, and keeps signing keys under your control — hot-wallet key material lives in memory only while unlocked and is wiped on lock, and hardware-wallet keys never leave the device. It features full support for managing and using Safe multi-signature wallets.
 
-Currently, in addition to Safe wallets, it supports Trezor and Ledger hardware wallets, with richer support for additional signers on the roadmap.
+Callisto can act as wallet middleware for any web3 application that supports [WalletConnect](https://walletconnect.network/), enabling you to easily switch between several different wallets and wallet types from one simple interface for use as a self-custody backend in the web3 ecosystem.
 
-> **Status: pre-1.0 (`v0.5.0`).** The foundation, basic transaction flows, Gnosis Safe multisig (including owner/threshold administration), and encrypted hot-wallet keystores are in place and usable. The Claude-assisted complex-transaction pipeline is planned — see [Roadmap](#roadmap).
+Currently, in addition to Safe contract wallets, it supports Trezor and Ledger hardware wallets, with richer support for additional signer types on the roadmap.
+
+See some screenshots of it in action [here](./SCREENSHOTS.md).
+
+> **Status: pre-1.0 (`v0.6.0`).** The foundation, basic transaction flows, Gnosis Safe multisig (including owner/threshold administration), encrypted hot-wallet keystores, and WalletConnect (sign for web dApps) are in place and usable. The Claude-assisted complex-transaction pipeline is planned — see [Roadmap](#roadmap).
 
 ## Features
 
@@ -35,6 +39,8 @@ Currently, in addition to Safe wallets, it supports Trezor and Ledger hardware w
   - *Hardware wallets* — Ledger (direct USB) and Trezor (Trezor Bridge, with a direct-USB fallback for older devices) via a common signing interface; keys never leave the device. Trezor hidden wallets (passphrase-protected, including on-device passphrase entry) are supported.
 - **Chain-aware.**
   - The native asset and block explorer adapt to the connected chain (Ethereum, Sepolia, Holesky, OP, Base, Arbitrum, Polygon, Gnosis, etc.) with a safe fallback for unknown chains.
+- **WalletConnect.**
+  - Paste a WalletConnect (WC) URI from any web3 application that supports WC into Callisto and use it to review, sign, and broadcast transactions from applications across the web3/L2 ecosystem. 
 - **Balances.** 
   - Ether and ERC-20 tokens auto-populate with on-chain metadata (name/symbol/decimals, including legacy `bytes32` tokens), and add-your-own tokens by address.
 - **ENS everywhere.** 
@@ -48,6 +54,9 @@ Currently, in addition to Safe wallets, it supports Trezor and Ledger hardware w
   - Import an existing [Safe](https://safe.global) by address and work with it from a dedicated tab: propose ETH/ERC-20 transfers or owner and threshold changes, collect owner signatures locally by switching unlocked wallets (hot, Ledger, or Trezor) until the threshold is met, then execute — or reject a proposal with a same-nonce cancellation.
   - No external Safe service; everything is pre-configured locally until on-chain broadcast.
   - Pattern is primarily designed for personal Safe setups. Org support a roadmap item.
+- **WalletConnect.**
+  - Connect Callisto to web dApps (Uniswap, CoW Swap, …) as a wallet: paste the WalletConnect link, approve a session exposing your active wallet, then review and sign the dApp's transaction and signature requests (`eth_sendTransaction`, `personal_sign`, `eth_signTypedData_v4`) here. Works out of the box with no signup.
+  - The WalletConnect v2 protocol is implemented from scratch (no Go SDK) with no new dependencies. Hot wallets and Ledger are fully supported; Trezor does transactions and message signing today (native typed-data lands with a planned Trezor overhaul).
 - **History.**
   - A local record of every transaction Callisto prepared, with status and explorer links, kept in an embedded SQLite database.
 
@@ -125,6 +134,7 @@ The GUI (`internal/ui`) is a thin layer over independent domain packages; the do
 | `internal/assets` | ETH + ERC-20 detection, metadata, unit conversion |
 | `internal/tx` | Build, gas estimation, assembly, broadcast, inclusion |
 | `internal/safe` | Safe multisig: reads, safeTxHash, exec/admin encoding, proposals |
+| `internal/walletconnect` | WalletConnect v2 Sign (relay, envelope crypto, session engine) |
 | `internal/history` | Transaction lifecycle records |
 | `internal/config`, `internal/store` | JSON settings; SQLite store |
 

@@ -23,7 +23,21 @@
 
 ## researched / planned
 
-### drop the Trezor Suite/Bridge dependency (use direct libusb, like Frame)
+### ⭐ NEXT MAJOR ITEM — Trezor overhaul: drop Suite/Bridge (direct libusb, like Frame) + native streaming typed-data
+- **Priority (user, 2026-07-18):** the Trezor integration is too clunky. Frame
+  works with a Trezor with no Trezor Suite/Bridge running; Callisto shouldn't
+  need it either. Make this the next major effort **after the initial
+  WalletConnect release (v0.6.0)**. Two parts:
+  1. **Drop the Bridge dependency** — direct libusb transport (details below).
+  2. **Native streaming EIP-712** — implement the full `EthereumSignTypedData`
+     (464) request/struct/value flow so Trezor typed-data works *without* the
+     device's experimental features. v0.6.0 shipped `EthereumSignTypedHash` (470),
+     but that's an **experimental** firmware message — disabled by default, so the
+     device rejects it as "Unexpected message". Hot + Ledger typed-data already
+     work; Trezor needs the streaming flow (StructRequest/StructAck →
+     ValueRequest/ValueAck → EthereumTypedDataSignature; wire types 464-469 all
+     hand-encoded, plus a typed-data JSON → type/value model). Sizeable, live-
+     device work.
 - Frame (github.com/floating/frame, `main/signers/trezor`) talks to Trezor with
   **no** Trezor Suite/Bridge running. Confirmed from its source: it uses
   `@trezor/connect` configured with `transports: ['NodeUsbTransport']` — i.e.
@@ -202,9 +216,22 @@
     (macOS Keychain; Secret Service / DPAPI elsewhere) for defense in depth beyond the
     passphrase-encrypted file. Deferred; noted in the README roadmap.
 
-### support wallet connect
-- user should be able to paste a walletconnect link and use callisto to sign transactions with their configured wallet on arbitrary web3 dApps
-- like Safe, this should be a separate pane. it should link via walletconnect whichever wallet is selected 
+### support wallet connect — ✅ shipped in v0.6.0 (initial integration)
+- ~~paste a walletconnect link and sign transactions with the configured wallet on arbitrary web3 dApps; a separate pane linking whichever wallet is selected~~
+  - Hand-implemented WalletConnect v2 Sign (wallet role) in `internal/walletconnect`
+    — no Go SDK exists — using only stdlib + already-vendored x/crypto + the
+    existing gorilla/websocket dep. Relay client (Ed25519 JWT + embedded Reown
+    projectId, env-overridable), X25519/HKDF + ChaCha20-Poly1305 envelopes, the
+    full pair→propose→approve→settle→request session engine, and a WalletConnect
+    pane: paste URI, approve a session exposing the active wallet, review + sign
+    requests. Handles `eth_sendTransaction` (through the tx pipeline),
+    `eth_signTransaction`, `personal_sign`, and `eth_signTypedData_v4`.
+  - **Verified live on mainnet:** a real Uniswap swap (eth_sendTransaction) and a
+    CoW Swap order (eth_signTypedData_v4) signed with a hot wallet.
+  - Caveats for the initial release: **hot + Ledger** are fully supported;
+    **Trezor** does sends + personal_sign, but typed-data needs the device's
+    experimental features enabled (fixed properly by the Trezor overhaul above).
+    Sessions are in-memory (not persisted across restarts).
 
 ### trezor wallet types — ✅ done (see "bugs" above for the full story)
 - ~~trezor is kind of weird... "unlock with pin (on device) -> enter passphrase

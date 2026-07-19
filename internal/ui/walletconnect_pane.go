@@ -18,6 +18,7 @@ import (
 
 	"codeberg.org/pasiphae/callisto/internal/address"
 	"codeberg.org/pasiphae/callisto/internal/assets"
+	"codeberg.org/pasiphae/callisto/internal/chain"
 	"codeberg.org/pasiphae/callisto/internal/history"
 	"codeberg.org/pasiphae/callisto/internal/signer"
 	"codeberg.org/pasiphae/callisto/internal/tx"
@@ -69,7 +70,7 @@ func (p *walletConnectPane) build() fyne.CanvasObject {
 	p.sessionsBox = container.NewVBox()
 
 	header := widget.NewLabelWithStyle("WalletConnect", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
-	help := widget.NewLabel("On a dApp (e.g. Uniswap) choose Connect → WalletConnect → Copy link, then paste it here and Connect. Approve the session to expose your active wallet, then come back here to review and sign the dApp's requests. The active wallet in the Wallets tab is the one used.")
+	help := widget.NewLabel("On a dApp (e.g. Uniswap) choose Connect, then WalletConnect, then Copy link. Paste it below and Connect, then Approve the session.\n\nThe dApp's requests then appear here to review and sign; the active wallet in the Wallets tab is the one used.")
 	help.Wrapping = fyne.TextWrapWord
 
 	top := container.NewVBox(
@@ -347,12 +348,24 @@ func (p *walletConnectPane) dispatchSendTx(ctx context.Context, req walletconnec
 	}
 	p.recordHistory(conn.ChainID.Uint64(), s.Address(), *tp.To, tp.Value, hash.Hex(), req)
 	p.respondResult(req, hash.Hex())
+	info := conn.ChainInfo
 	fyne.Do(func() {
-		p.status.SetText("Sent: " + hash.Hex())
+		p.status.SetText("Transaction submitted to " + info.Name)
+		p.showTxResult(hash.Hex(), info)
 		if p.app.historyReload != nil {
 			p.app.historyReload()
 		}
 	})
+}
+
+// showTxResult presents a submitted transaction with the hash in the monospace
+// font and a clickable explorer link.
+func (p *walletConnectPane) showTxResult(hash string, info chain.Info) {
+	body := container.NewVBox(widget.NewLabel("Transaction submitted."), monoLabel(hash))
+	if link := info.TxURL(hash); link != "" {
+		body.Add(widget.NewButton("View on explorer", func() { p.app.openURL(link) }))
+	}
+	dialog.ShowCustom("WalletConnect transaction", "Close", body, p.app.window)
 }
 
 func (p *walletConnectPane) dispatchSignTx(ctx context.Context, req walletconnect.Request, s signer.Signer) {
@@ -444,7 +457,7 @@ func (p *walletConnectPane) refreshSessions() {
 	}
 	for _, s := range sessions {
 		s := s
-		label := fmt.Sprintf("%s · %s · %s", firstNonEmpty(s.Peer.Name, "dApp"), address.Short(mustAddr(s.Account)), strings.Join(s.Chains, ","))
+		label := fmt.Sprintf("%s · %s · %s", firstNonEmpty(s.Peer.Name, "dApp"), address.Short(mustAddr(s.Account)), chainsSummary(s.Chains))
 		disc := widget.NewButton("Disconnect", func() { p.disconnect(s.Topic) })
 		p.sessionsBox.Add(container.NewBorder(nil, nil, nil, disc, widget.NewLabel(label)))
 	}
@@ -520,6 +533,30 @@ func proposalChains(prop walletconnect.Proposal) []string {
 	add(prop.RequiredNamespaces)
 	add(prop.OptionalNamespaces)
 	return out
+}
+
+// chainsSummary renders a session's chains compactly (dApps like Uniswap request
+// dozens; showing them all made the window absurdly wide).
+func chainsSummary(chains []string) string {
+	switch len(chains) {
+	case 0:
+		return "no chains"
+	case 1:
+		return chainName(chains[0])
+	default:
+		return fmt.Sprintf("%s +%d more", chainName(chains[0]), len(chains)-1)
+	}
+}
+
+// chainName maps a CAIP-2 chain id to a human name where known.
+func chainName(caip2 string) string {
+	if n, ok := parseEIP155(caip2); ok {
+		if info, found := chain.Lookup(n); found {
+			return info.Name
+		}
+		return fmt.Sprintf("chain %d", n)
+	}
+	return caip2
 }
 
 func parseEIP155(caip2 string) (uint64, bool) {

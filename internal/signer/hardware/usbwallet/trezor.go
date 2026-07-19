@@ -73,7 +73,7 @@ type trezorDriver struct {
 	label          string          // Current textual label of the Trezor device
 	pinwait        bool            // Flags whether the device is waiting for PIN entry
 	passphrasewait bool            // Flags whether the device is waiting for passphrase entry
-	initialized    bool            // Callisto-local: whether Initialize+ClearSession+Ping has run this Open
+	initialized    bool            // Callisto-local: whether Initialize(+conditional ClearSession)+Ping has run this Open
 	passphrase     string          // Last passphrase supplied via Open/OpenBridge; "" selects the standard (non-hidden) wallet
 	failure        error           // Any failure that would make the device unusable
 	log            log.Logger      // Contextual logger to tag the trezor with its id
@@ -141,8 +141,10 @@ func (w *trezorDriver) OpenBridge(transport trezorTransport, passphrase string) 
 // a fresh driver, confirmed live: it caused a device with a cached unlock from
 // a *previous* Open (e.g. a prior attempt with a different passphrase) to
 // answer with the stale cached derivation instead of the one just requested.
-// Initialize/ClearSession/Ping now always run once per fresh Open, regardless
-// of whether a passphrase was supplied up front.
+// Initialize/Ping now always run once per fresh Open, regardless of whether a
+// passphrase was supplied up front; ClearSession runs only when the device
+// reports a cached passphrase (see the inline note) so a fresh connect keeps the
+// PIN the user just entered instead of forcing them to re-enter it.
 func (w *trezorDriver) openProtocol(passphrase string) error {
 	if !w.initialized {
 		// If we're already waiting for a PIN entry, insta-return
@@ -158,10 +160,21 @@ func (w *trezorDriver) openProtocol(passphrase string) error {
 		w.label = features.GetLabel()
 		w.initialized = true
 
-		// Drop any PIN/passphrase state cached from a previous Open on this
-		// physical device (see the doc comment above) so this Open starts clean.
-		if _, err := w.trezorExchange(&trezor.ClearSession{}, new(trezor.Success)); err != nil {
-			return err
+		// Clear the device session ONLY if it already holds a cached passphrase
+		// from a previous Open. ClearSession wipes the whole session — including
+		// the cached PIN — so calling it unconditionally forces the user to
+		// re-enter their PIN on the device on every connect even though they just
+		// entered it (the "double PIN" quirk). We still need it to defend against
+		// a stale cached passphrase silently satisfying a connect that meant to use
+		// a different one (the bug the original unconditional clear fixed), but that
+		// can only happen when a passphrase is actually cached — which the device
+		// reports via Features.passphrase_cached. On a fresh connect no passphrase
+		// is cached, so we skip the clear, keep the PIN the user already entered,
+		// and the Ping below prompts for the passphrase directly (the Frame flow).
+		if features.GetPassphraseCached() {
+			if _, err := w.trezorExchange(&trezor.ClearSession{}, new(trezor.Success)); err != nil {
+				return err
+			}
 		}
 
 		// Do a manual ping, forcing the device to ask for its PIN and Passphrase

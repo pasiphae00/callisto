@@ -79,6 +79,7 @@ import "C"
 
 import (
 	"fmt"
+	"sync"
 	"unsafe"
 )
 
@@ -92,10 +93,31 @@ type darwinSecretStore struct{}
 
 func osSecretStore() SecretStore { return darwinSecretStore{} }
 
-// Available: on macOS the keychain is present. Whether user-presence items can be
-// created depends on the app being signed with the right entitlements — a failure
-// there surfaces from Set(), and the passphrase path always remains as fallback.
-func (darwinSecretStore) Available() bool { return true }
+var (
+	availOnce   sync.Once
+	availResult bool
+)
+
+// Available probes whether a Touch-ID-gated keychain item can actually be created:
+// it stores and deletes a throwaway access-control item. Unsigned / un-entitled
+// builds fail with errSecMissingEntitlement (-34018), so this returns false and the
+// Touch ID UI stays hidden until Callisto is code-signed with a Developer ID. The
+// probe is silent (Set doesn't prompt) and cached (signing state is fixed per run).
+func (darwinSecretStore) Available() bool {
+	availOnce.Do(func() {
+		const probeRef = "__callisto_touchid_probe__"
+		cs := C.CString(keychainService)
+		defer C.free(unsafe.Pointer(cs))
+		ca := C.CString(probeRef)
+		defer C.free(unsafe.Pointer(ca))
+		probe := [1]byte{0x01}
+		if st := C.ks_set(cs, ca, unsafe.Pointer(&probe[0]), 1); st == 0 {
+			C.ks_delete(cs, ca)
+			availResult = true
+		}
+	})
+	return availResult
+}
 
 func (darwinSecretStore) Set(ref string, value []byte) error {
 	cs := C.CString(keychainService)

@@ -188,7 +188,10 @@ func (p *walletsPane) buildDetailBox() *fyne.Container {
 // emoji they're not being confused with a status color).
 func (p *walletsPane) rowLabel(w wallet.Descriptor) string {
 	icon := "🔒"
-	if _, id, ok := p.app.currentSigner(); ok && id == w.ID {
+	switch {
+	case w.IsWatchOnly():
+		icon = "👁" // view-only, no key to lock/unlock
+	case func() bool { _, id, ok := p.app.currentSigner(); return ok && id == w.ID }():
 		icon = "🔓"
 	}
 	name := w.Label

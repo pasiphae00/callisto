@@ -250,8 +250,130 @@ func (w *trezorDriver) SignTx(path accounts.DerivationPath, tx *types.Transactio
 	return w.trezorSign(path, tx, chainID)
 }
 
+// msgTypeEthereumSignTypedHash / …Signature are the Trezor wire message types for
+// EIP-712 hash signing (470 request, 469 reply, from trezor-firmware
+// common/protob/messages.proto). The vendored trezor protobuf predates these, so
+// they are hand-encoded/decoded like the EIP-1559 message.
+const (
+	msgTypeEthereumSignTypedHash      = 470
+	msgTypeEthereumTypedDataSignature = 469
+)
+
+// SignTypedMessage signs an EIP-712 typed-data hash on the Trezor via the
+// EthereumSignTypedHash message (domain-separator hash + message hash). Callisto
+// shows the full decoded typed data in its own review UI; the device confirms and
+// signs the hashes. Returns the 65-byte signature.
+//
+// Note: on some firmware EthereumSignTypedHash requires the device's experimental
+// features to be enabled; if disabled, the device replies with a Failure that this
+// surfaces verbatim.
 func (w *trezorDriver) SignTypedMessage(path accounts.DerivationPath, domainHash []byte, messageHash []byte) ([]byte, error) {
-	return nil, accounts.ErrNotSupported
+	if w.transport == nil {
+		return nil, accounts.ErrWalletClosed
+	}
+	req := encodeEthereumSignTypedHash(path, domainHash, messageHash)
+	kind, reply, err := w.rawExchange(msgTypeEthereumSignTypedHash, req)
+	if err != nil {
+		return nil, err
+	}
+	if kind != msgTypeEthereumTypedDataSignature {
+		return nil, fmt.Errorf("trezor: unexpected reply type %d to typed-hash signing", kind)
+	}
+	sig, err := decodeTypedDataSignature(reply)
+	if err != nil {
+		return nil, err
+	}
+	if len(sig) != 65 {
+		return nil, fmt.Errorf("trezor: unexpected typed-data signature length %d", len(sig))
+	}
+	return sig, nil
+}
+
+// encodeEthereumSignTypedHash hand-encodes the EthereumSignTypedHash protobuf
+// (field numbers from messages-ethereum.proto: 1=address_n repeated uint32,
+// 2=domain_separator_hash bytes, 3=message_hash bytes).
+func encodeEthereumSignTypedHash(path []uint32, domainHash, messageHash []byte) []byte {
+	var b []byte
+	for _, n := range path {
+		b = protowire.AppendTag(b, 1, protowire.VarintType)
+		b = protowire.AppendVarint(b, uint64(n))
+	}
+	b = appendProtoBytes(b, 2, domainHash)
+	b = appendProtoBytes(b, 3, messageHash)
+	return b
+}
+
+// decodeTypedDataSignature extracts field 1 (bytes signature) of an
+// EthereumTypedDataSignature reply.
+func decodeTypedDataSignature(b []byte) ([]byte, error) {
+	for len(b) > 0 {
+		num, typ, n := protowire.ConsumeTag(b)
+		if n < 0 {
+			return nil, protowire.ParseError(n)
+		}
+		b = b[n:]
+		if num == 1 && typ == protowire.BytesType {
+			v, vn := protowire.ConsumeBytes(b)
+			if vn < 0 {
+				return nil, protowire.ParseError(vn)
+			}
+			return append([]byte(nil), v...), nil
+		}
+		m := protowire.ConsumeFieldValue(num, typ, b)
+		if m < 0 {
+			return nil, protowire.ParseError(m)
+		}
+		b = b[m:]
+	}
+	return nil, errors.New("trezor: signature field missing in typed-data reply")
+}
+
+// rawExchange sends a hand-encoded message and returns the raw reply type/bytes,
+// transparently handling the device's control messages (button confirmation,
+// passphrase) — the equivalent of trezorExchangeRaw for replies whose Go type is
+// not in the vendored protobuf.
+func (w *trezorDriver) rawExchange(msgType uint16, data []byte) (uint16, []byte, error) {
+	kind, reply, err := w.transport.exchange(msgType, data)
+	if err != nil {
+		return 0, nil, err
+	}
+	for {
+		switch kind {
+		case uint16(trezor.MessageType_MessageType_Failure):
+			failure := new(trezor.Failure)
+			if uerr := proto.Unmarshal(reply, failure); uerr != nil {
+				return 0, nil, uerr
+			}
+			return 0, nil, errors.New("trezor: " + failure.GetMessage())
+		case uint16(trezor.MessageType_MessageType_ButtonRequest):
+			ackData, merr := proto.Marshal(&trezor.ButtonAck{})
+			if merr != nil {
+				return 0, nil, merr
+			}
+			if kind, reply, err = w.transport.exchange(uint16(trezor.MessageType_MessageType_ButtonAck), ackData); err != nil {
+				return 0, nil, err
+			}
+		case uint16(trezor.MessageType_MessageType_PassphraseRequest):
+			preq := new(trezor.PassphraseRequest)
+			if uerr := proto.Unmarshal(reply, preq); uerr != nil {
+				return 0, nil, uerr
+			}
+			ack := &trezor.PassphraseAck{}
+			if !preq.GetOnDevice() {
+				pass := w.passphrase
+				ack.Passphrase = &pass
+			}
+			ackData, merr := proto.Marshal(ack)
+			if merr != nil {
+				return 0, nil, merr
+			}
+			if kind, reply, err = w.transport.exchange(uint16(trezor.MessageType_MessageType_PassphraseAck), ackData); err != nil {
+				return 0, nil, err
+			}
+		default:
+			return kind, reply, nil
+		}
+	}
 }
 
 // SignMessage asks the Trezor to sign an Ethereum personal message (eth_sign):

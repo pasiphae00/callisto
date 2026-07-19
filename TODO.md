@@ -137,6 +137,68 @@
     fine; flag if repeated connect/disconnect in real use shows the same
     instability.
 
+### OS keychain-backed keystore (defense in depth)
+- **What:** back the encrypted hot-wallet keystore (`internal/keystore`, today a
+  scrypt+AES-256-GCM file guarded by a user passphrase) with the operating
+  system's secret store, so the seed's encryption secret is held by the OS and
+  unlock can ride the platform's own auth (e.g. Touch ID) instead of only a typed
+  passphrase.
+- **Design constraints:**
+  - The passphrase-encrypted **file stays the source of truth and portable
+    fallback**. The keychain is an *optional* second factor/convenience, not a
+    replacement — a user must always be able to unlock with the passphrase alone
+    (e.g. after moving the config to another machine, or if the keychain entry is
+    lost). Never make the OS store the *only* copy of anything unrecoverable.
+  - Store the *keystore encryption key* (or a wrapping key) in the OS store, not
+    the raw seed, so the on-disk format and its scrypt guard are unchanged and the
+    keychain is a clean add-on layer behind a small `SecretStore` interface.
+  - Per-platform backends, degrading gracefully to "passphrase only" when absent:
+    **macOS** Keychain (Security framework; Touch ID via LAContext — needs CGo or
+    a small Objective-C shim), **Linux** Secret Service / libsecret (D-Bus),
+    **Windows** DPAPI / Credential Manager.
+  - **Dependency discipline (PRINCIPLES):** prefer a tiny self-contained shim over
+    a heavy cross-platform keyring dep; if one is used, vet its transitive tree the
+    same way we rejected btcutil. Evaluate `github.com/zalando/go-keyring` (no-CGo
+    on Linux/Windows, shells out to `security` on macOS — but that path can't gate
+    on Touch ID) vs. a small direct Security-framework binding for the macOS
+    biometric story.
+  - Wipe-on-remove must also clear the OS keychain entry (extend
+    `maybeWipeKeystore`). Enrolling/removing keychain backing needs UI in Settings
+    or the wallet's context menu.
+- **Status:** designed-for, not built. Supersedes the brief roadmap note under the
+  v0.5.0 keystore item below. Primary user is on macOS, so lead with the macOS
+  Keychain + Touch ID path.
+
+### GridPlus Lattice1 signer
+- **What:** add the GridPlus Lattice1 as a hardware `signer.Signer` alongside
+  Ledger/Trezor (currently stubbed — see DESIGN.md "support for grid lattice" and
+  the README roadmap). Lets a Lattice sign EOA sends, Safe-owner hashes, and dApp
+  (WalletConnect) requests, same as the other hardware signers.
+- **Why it's non-trivial:** **no Go SDK exists.** The reference is the JS
+  `gridplus-sdk` (`@gridplus/gridplus-sdk`). Unlike Ledger/Trezor (local USB), the
+  Lattice is reached over an **end-to-end-encrypted channel relayed through
+  GridPlus's routing service** (the device is addressed by its `deviceId`): a
+  one-time **pairing** (ECDH → shared secret, user enters a pairing code shown on
+  the Lattice screen) establishes a persistent secure channel, then signing
+  requests (`sign` with an EVM/generic-signing payload) are encrypted to the
+  device and the user approves on-device. This is the same "implement the protocol
+  ourselves from the reference SDK, no new heavy dep" pattern we used for
+  WalletConnect and the Trezor wire messages.
+- **Design constraints:**
+  - New `internal/signer/hardware/lattice` (or similar) implementing
+    `signer.Signer` + the optional capabilities it can serve (`SafeHashSigner`,
+    `PersonalSigner`, `TypedDataSigner`) so it slots into every existing flow with
+    no core rewrite — mirror how Ledger/Trezor register.
+  - Reuse existing crypto primitives (secp256k1/ECDH, AES) already vendored via
+    go-ethereum; **no new signing-critical dependency** (same bar as HD
+    derivation). Persist the pairing (device id + channel keys) in config,
+    encrypted, so re-pairing isn't needed every launch.
+  - Port from the `gridplus-sdk` protocol (pairing handshake, request/response
+    envelope framing, the EVM signing request encoding), verified against a real
+    Lattice1 — a live device is required, like all prior hardware work.
+- **Status:** designed-for, stubbed, not built. Out of scope until a Lattice1 is on
+  hand to verify against.
+
 ## minor
 
 ### show full wallet address in wallets pane — ✅ done
@@ -229,9 +291,9 @@
     Unlock is passphrase-only (legacy phrase-unlock kept as a fallback for pre-0.5
     wallets). Delete wipes the keystore once the last referencing account is removed.
     Security-model docs (README/DESIGN/CLAUDE) updated.
-  - **roadmap follow-up:** back the keystore with the **OS keychain** where available
-    (macOS Keychain; Secret Service / DPAPI elsewhere) for defense in depth beyond the
-    passphrase-encrypted file. Deferred; noted in the README roadmap.
+  - **roadmap follow-up:** back the keystore with the OS keychain for defense in
+    depth — see the dedicated **"OS keychain-backed keystore"** section under
+    researched / planned above.
 
 ### support wallet connect — ✅ shipped in v0.6.0 (initial integration)
 - ~~paste a walletconnect link and sign transactions with the configured wallet on arbitrary web3 dApps; a separate pane linking whichever wallet is selected~~

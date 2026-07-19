@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -41,6 +42,7 @@ type walletsPane struct {
 	list       *widget.List
 	unlockBtn  *widget.Button
 	lockBtn    *widget.Button
+	renameBtn  *widget.Button
 	removeBtn  *widget.Button
 	selected   int
 	detailAddr *widget.Entry // full, selectable/copyable address of the selected wallet
@@ -137,12 +139,13 @@ func (p *walletsPane) build() fyne.CanvasObject {
 	addHwBtn := widget.NewButton("Add hardware…", p.showAddHardwareWallet)
 	p.unlockBtn = widget.NewButton("Unlock", p.unlockSelected)
 	p.lockBtn = widget.NewButton("Lock", p.lockActive)
+	p.renameBtn = widget.NewButton("Rename", p.renameSelected)
 	p.removeBtn = widget.NewButton("Remove", p.removeSelected)
 
 	header := widget.NewLabelWithStyle("Wallets", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
 	help := widget.NewLabel("Add a hot wallet (its seed is encrypted with your passphrase and stored locally; decrypted in memory only while unlocked, wiped on lock/exit) or a hardware device (keys never leave the device). Double-click a wallet to make it active.")
 	help.Wrapping = fyne.TextWrapWord
-	buttons := container.NewHBox(addBtn, addHwBtn, p.unlockBtn, p.lockBtn, p.removeBtn)
+	buttons := container.NewHBox(addBtn, addHwBtn, p.unlockBtn, p.lockBtn, p.renameBtn, p.removeBtn)
 
 	p.detailBox = p.buildDetailBox()
 	p.updateButtons() // also populates the detail box for the initial (no-selection) state
@@ -213,6 +216,7 @@ func (p *walletsPane) updateButtons() {
 	_, activeID, unlocked := p.app.currentSigner()
 	if has {
 		p.removeBtn.Enable()
+		p.renameBtn.Enable()
 		w := p.app.cfg.Wallets[p.selected]
 		if unlocked && activeID == w.ID {
 			p.unlockBtn.Disable()
@@ -226,6 +230,7 @@ func (p *walletsPane) updateButtons() {
 		}
 	} else {
 		p.removeBtn.Disable()
+		p.renameBtn.Disable()
 		p.unlockBtn.Disable()
 		p.setDetailAddr("")
 	}
@@ -675,6 +680,46 @@ func (p *walletsPane) connectHardware(desc wallet.Descriptor, kind signer.Kind, 
 func (p *walletsPane) lockActive() {
 	p.app.clearSigner()
 	p.refresh()
+}
+
+// renameSelected changes the label of the selected wallet. Only the display
+// label changes — the address, derivation path, and any keystore are untouched.
+func (p *walletsPane) renameSelected() {
+	if p.selected < 0 || p.selected >= len(p.app.cfg.Wallets) {
+		return
+	}
+	desc := p.app.cfg.Wallets[p.selected]
+
+	entry := widget.NewEntry()
+	entry.SetText(desc.Label)
+	entry.SetPlaceHolder("wallet label")
+	d := dialog.NewForm("Rename wallet", "Save", "Cancel",
+		[]*widget.FormItem{widget.NewFormItem("Label", entry)},
+		func(ok bool) {
+			if !ok {
+				return
+			}
+			name := strings.TrimSpace(entry.Text)
+			if name == "" {
+				dialog.ShowError(fmt.Errorf("label cannot be empty"), p.app.window)
+				return
+			}
+			if name == desc.Label {
+				return
+			}
+			desc.Label = name
+			if err := p.app.cfg.UpsertWallet(desc); err != nil {
+				dialog.ShowError(err, p.app.window)
+				return
+			}
+			if err := p.app.cfg.Save(); err != nil {
+				dialog.ShowError(err, p.app.window)
+				return
+			}
+			p.refresh()
+		}, p.app.window)
+	d.Resize(fyne.NewSize(460, 180))
+	d.Show()
 }
 
 // removeSelected deletes a wallet descriptor (locking it first if it is active).

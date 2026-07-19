@@ -9,6 +9,10 @@ changes; `v1.0.0` marks the first stable, documented release.
 
 ## [Unreleased]
 
+### Added
+- Wallets: a **Rename** button changes a wallet's label (address, derivation
+  path, and keystore are untouched).
+
 ## [0.7.1] - 2026-07-18
 
 ### Added

@@ -303,6 +303,32 @@
     tests) + local packaging; the live download→install→relaunch is verified on the
     user's machine once the first signed release is published.
 
+### CI/CD: automate releases on tag push (user, 2026-07-19)
+- **Goal:** pushing a `vX.Y.Z` tag triggers CI to build, package, checksum, **sign**,
+  and publish the Codeberg release automatically — no manual `make release` +
+  web-UI upload. Builds on the v0.8.0 pipeline (`make release` already does
+  everything; CI just needs to run it per-OS and upload).
+- **Runner:** Codeberg supports **Forgejo Actions** (GitHub-Actions-compatible
+  workflows in `.forgejo/workflows/`). A tag-triggered job matrix over macOS +
+  Linux runners runs `make package-<os>`, then a job collects artifacts, runs
+  `make checksums` + `make sign`, and creates the release via the Forgejo API
+  (`POST /repos/pasiphae/callisto/releases` + asset uploads). Fyne is CGo, so each
+  OS needs a native runner (or fyne-cross for Linux); confirm Codeberg's hosted
+  runner availability vs. self-hosting one.
+- **⭐ Signing on the CD server — the crux (security):** moving the ed25519 release
+  key off the maintainer's offline machine into CI weakens the trust root (the
+  updater installs anything signed by it). Options, roughly increasing safety:
+  (a) CI secret holding the private key — simplest, but the key is exposed to the
+  runner/anyone who can edit workflows; (b) sign in a hardened/isolated job with
+  restricted secret scope; (c) a hosted KMS/HSM signer (sign via API, key never
+  leaves the HSM); (d) keep signing **offline/manual** and let CI only build +
+  draft the release, maintainer signs + publishes. Given this signs a **wallet's
+  auto-update trust root**, lean toward (c) or (d); (a) is a real supply-chain risk.
+  Decide this explicitly before wiring it up.
+- **Also:** cache Go build + the local `./bin/fyne`; gate release jobs on tests
+  passing; keep `internal/buildinfo.Version` as the version source (or derive from
+  the tag and assert they match).
+
 ### enable passphrase unlock of hot-wallets — ✅ done (v0.5.0)
 - ~~the recovery phrase should only be needed on the first import; enforce a passphrase to encrypt the keystore; unlock re-enters only the passphrase; one-time import, not a frequent phrase re-entry~~
   - New `internal/keystore` (scrypt N=2^18 + AES-256-GCM, authenticated) encrypts the

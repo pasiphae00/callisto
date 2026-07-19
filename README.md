@@ -9,6 +9,7 @@
 </p>
 
 <p align="left">
+  <a href="https://codeberg.org/pasiphae/callisto/releases"><strong>Download</strong></a> ·
   <a href="https://codeberg.org/pasiphae/callisto/src/branch/main/CHANGELOG.md">Changelog</a> ·
   <a href="https://codeberg.org/pasiphae/callisto/src/branch/main/DESIGN.md">Design</a> ·
   <a href="https://codeberg.org/pasiphae/callisto/src/branch/main/PRINCIPLES.md">Principles</a> ·
@@ -27,7 +28,7 @@ Currently, in addition to Safe contract wallets, it supports Trezor and Ledger h
 
 See some screenshots of it in action [here](./EXAMPLES.md).
 
-> **Status: pre-1.0 (`v0.6.0`).** The foundation, basic transaction flows, Gnosis Safe multisig (including owner/threshold administration), encrypted hot-wallet keystores, and WalletConnect (sign for web dApps) are in place and usable. The Claude-assisted complex-transaction pipeline is planned — see [Roadmap](#roadmap).
+> **Status: pre-1.0 (`v0.8.0`).** Distributed as a native, self-updating desktop app (see [Download](https://codeberg.org/pasiphae/callisto/releases)). The foundation, basic transaction flows, Gnosis Safe multisig (including owner/threshold administration), encrypted hot-wallet keystores, WalletConnect (sign for web dApps), and direct-USB Ledger/Trezor signing (no Trezor Suite/Bridge) are in place and usable. The Claude-assisted complex-transaction pipeline is planned — see [Roadmap](#roadmap).
 
 ## Features
 
@@ -64,18 +65,25 @@ See some screenshots of it in action [here](./EXAMPLES.md).
 
 ### Download a release (recommended)
 
-Grab the latest `Callisto.app` (macOS) or `.tar.gz` (Linux) from the
-[Codeberg releases](https://codeberg.org/pasiphae/callisto/releases), unzip, and
-move `Callisto.app` to **/Applications**.
+Get the latest build from the **[releases page](https://codeberg.org/pasiphae/callisto/releases)**:
 
-macOS builds are not yet Apple-notarized, so the **first** launch needs one extra
-step: right-click the app → **Open** (once), or run
+1. Download the archive for your platform — `Callisto-v<version>-darwin-arm64.zip`
+   (Apple-silicon macOS) or `Callisto-v<version>-linux-amd64.tar.gz` (Linux).
+2. **(Optional, recommended) verify it** against the release's `SHA256SUMS`:
+   `shasum -a 256 -c SHA256SUMS`. `SHA256SUMS` is itself ed25519-signed
+   (`SHA256SUMS.sig`) with the maintainer key — the same key Callisto's in-app
+   updater checks.
+3. Unzip and, on macOS, move **`Callisto.app`** to **/Applications**.
+
+Because macOS builds are not yet Apple-notarized, the **first** launch needs one
+extra step: right-click the app → **Open** (once), or run
 `xattr -dr com.apple.quarantine /Applications/Callisto.app`. After that it opens
 normally.
 
-**Updating:** Settings → **Check for updates**. Callisto downloads the new version,
+**Updating:** Settings → **Check for updates**. Callisto pulls the newest release,
 verifies it against the maintainer signing key, installs it, and restarts — your
-wallets, RPC config, and history are preserved (they live outside the app bundle).
+wallets, RPC config, and history are preserved (they live outside the app bundle,
+in your OS config directory).
 
 ### Build from source
 

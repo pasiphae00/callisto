@@ -169,7 +169,7 @@ Paste this as the Codeberg release body, replacing `X.Y.Z` and the highlights, a
 appending the `CHANGELOG.md` section for this version.
 
 ```markdown
-## Callisto vX.Y.Z
+## Callisto `vX.Y.Z`
 
 <one- or two-line summary of the headline change>
 
@@ -190,6 +190,7 @@ and installs this release for you.
 ```
 shasum -a 256 -c SHA256SUMS
 ```
+
 `SHA256SUMS` is ed25519-signed as `SHA256SUMS.sig` with the maintainer key (the
 same key the in-app updater checks).
 

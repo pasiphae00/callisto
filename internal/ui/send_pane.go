@@ -244,6 +244,30 @@ func (p *sendPane) prepare() {
 	}()
 }
 
+// addressCell renders an address in the mono font and, when the connected chain
+// has ENS, reverse-resolves it and appends the primary name in a smaller accent
+// font below. The lookup is async so it never blocks showing the review.
+func (p *sendPane) addressCell(addr common.Address) fyne.CanvasObject {
+	box := container.NewVBox(monoLabel(address.Format(addr)))
+	resolver := p.app.currentResolver()
+	if resolver == nil {
+		return box
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+		defer cancel()
+		name, err := resolver.ReverseResolve(ctx, addr)
+		if err != nil || name == "" {
+			return
+		}
+		fyne.Do(func() {
+			box.Add(ensAnnotation(name))
+			box.Refresh()
+		})
+	}()
+	return box
+}
+
 // showReview presents the full pre-sign review: decoded transfer, fees, and a
 // Sign & send action enabled only when the matching wallet is unlocked.
 func (p *sendPane) showReview(prep tx.Prepared, info chain.Info) {
@@ -275,10 +299,19 @@ func (p *sendPane) showReview(prep tx.Prepared, info chain.Info) {
 	)
 
 	grid := container.New(layout.NewFormLayout())
+	addRow := func(key string, value fyne.CanvasObject) {
+		grid.Add(widget.NewLabelWithStyle(key, fyne.TextAlignLeading, fyne.TextStyle{Bold: true}))
+		grid.Add(value)
+	}
 	for _, r := range rows {
-		key := widget.NewLabelWithStyle(r[0], fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
-		grid.Add(key)
-		grid.Add(monoLabel(r[1])) // values: addresses, amounts, fees
+		switch r[0] {
+		case "To":
+			addRow(r[0], p.addressCell(s.Recipient))
+		case "From":
+			addRow(r[0], p.addressCell(s.From))
+		default:
+			addRow(r[0], monoLabel(r[1])) // values: addresses, amounts, fees
+		}
 	}
 
 	// Determine whether we can sign right now.
@@ -411,11 +444,8 @@ func (p *sendPane) trackInclusion(recID int64, client rpc.Client, hash common.Ha
 func (p *sendPane) showBroadcastResult(hash string, info chain.Info) {
 	body := container.NewVBox(
 		widget.NewLabel("Transaction submitted. Waiting for inclusion…"),
-		monoLabel(hash),
+		monoHyperlink(hash, info.TxURL(hash)),
 	)
-	if link := info.TxURL(hash); link != "" {
-		body.Add(widget.NewButton("View on explorer", func() { p.app.openURL(link) }))
-	}
 	dialog.ShowCustom("Broadcast", "Close", body, p.app.window)
 }
 

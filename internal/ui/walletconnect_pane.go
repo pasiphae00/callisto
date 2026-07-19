@@ -366,10 +366,10 @@ func (p *walletConnectPane) dispatchSendTx(ctx context.Context, req walletconnec
 // showTxResult presents a submitted transaction with the hash in the monospace
 // font and a clickable explorer link.
 func (p *walletConnectPane) showTxResult(hash string, info chain.Info) {
-	body := container.NewVBox(widget.NewLabel("Transaction submitted."), monoLabel(hash))
-	if link := info.TxURL(hash); link != "" {
-		body.Add(widget.NewButton("View on explorer", func() { p.app.openURL(link) }))
-	}
+	body := container.NewVBox(
+		widget.NewLabel("Transaction submitted."),
+		monoHyperlink(hash, info.TxURL(hash)),
+	)
 	dialog.ShowCustom("WalletConnect transaction", "Close", body, p.app.window)
 }
 

@@ -3,10 +3,12 @@ package ui
 import (
 	_ "embed"
 	"image/color"
+	"net/url"
 	"os"
 	"path/filepath"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
@@ -29,6 +31,28 @@ func monoLabel(text string) *widget.Label {
 	l := widget.NewLabel(text)
 	l.TextStyle = fyne.TextStyle{Monospace: true}
 	return l
+}
+
+// monoHyperlink returns a clickable, monospace hyperlink that opens rawURL in the
+// browser — used for transaction hashes. Falls back to a plain mono label when
+// there is no valid URL.
+func monoHyperlink(text, rawURL string) fyne.CanvasObject {
+	u, err := url.Parse(rawURL)
+	if rawURL == "" || err != nil {
+		return monoLabel(text)
+	}
+	h := widget.NewHyperlink(text, u)
+	h.TextStyle = fyne.TextStyle{Monospace: true}
+	return h
+}
+
+// ensAnnotation returns a small, de-emphasized colored label for an ENS name shown
+// alongside an address (reverse-resolved or as typed).
+func ensAnnotation(name string) *canvas.Text {
+	t := canvas.NewText(name, colorOK)
+	t.TextStyle = fyne.TextStyle{Monospace: true}
+	t.TextSize = theme.DefaultTheme().Size(theme.SizeNameCaptionText)
+	return t
 }
 
 // monoTheme wraps the default Fyne theme and substitutes a monospace font (e.g.

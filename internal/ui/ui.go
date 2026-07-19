@@ -9,7 +9,6 @@ package ui
 
 import (
 	"context"
-	"fmt"
 	"image/color"
 	"net/url"
 	"sync"
@@ -233,6 +232,8 @@ var (
 	statusGreen = color.NRGBA{R: 0x2e, G: 0x7d, B: 0x32, A: 0xff}
 	statusAmber = color.NRGBA{R: 0xef, G: 0x6c, B: 0x00, A: 0xff}
 	statusGray  = color.NRGBA{R: 0x9e, G: 0x9e, B: 0x9e, A: 0xff}
+	// colorTransparent hides a status glyph while preserving its layout space.
+	colorTransparent = color.NRGBA{}
 )
 
 // refreshStatusBar rebuilds the bottom status bar to reflect live connection and
@@ -242,33 +243,41 @@ func (a *App) refreshStatusBar() {
 	if a.statusBarBox == nil {
 		return
 	}
-	// Connection: colored dot + label.
+	// Connection: colored dot + "RPC: <label>" with the endpoint label in mono.
 	dotColor := statusGray
-	endpoint := "no RPC connected"
+	rpcLabel := "none"
+	rpcSuffix := ""
 	if conn, ok := a.rpc.Active(); ok {
 		dotColor = statusGreen
-		endpoint = conn.Endpoint.Name + " · " + conn.ChainInfo.Name
+		rpcLabel = conn.Endpoint.Name
+		rpcSuffix = " · " + conn.ChainInfo.Name
 	} else if e, ok := a.cfg.ActiveEndpointConfig(); ok {
 		dotColor = statusAmber
-		endpoint = e.Name + " (not connected)"
+		rpcLabel = e.Name
+		rpcSuffix = " (not connected)"
 	}
-	dot := canvas.NewText("●", dotColor)
 
-	// Wallet: label + lock state.
-	wallet := "no wallet selected"
+	objs := []fyne.CanvasObject{
+		canvas.NewText("●", dotColor),
+		widget.NewLabel("RPC:"),
+		monoLabel(rpcLabel),
+	}
+	if rpcSuffix != "" {
+		objs = append(objs, widget.NewLabel(rpcSuffix))
+	}
+	objs = append(objs, widget.NewLabel("|"), widget.NewLabel("Active wallet:"))
+
+	// Wallet: label in mono + lock state.
 	if w, ok := a.cfg.WalletByID(a.cfg.ActiveWallet); ok && w.Label != "" {
 		state := "locked"
 		if _, id, unlocked := a.currentSigner(); unlocked && id == w.ID {
 			state = "unlocked"
 		}
-		wallet = fmt.Sprintf("%s (%s)", w.Label, state)
+		objs = append(objs, monoLabel(w.Label), widget.NewLabel("("+state+")"))
+	} else {
+		objs = append(objs, widget.NewLabel("none"))
 	}
 
-	a.statusBarBox.Objects = []fyne.CanvasObject{
-		dot,
-		widget.NewLabel(endpoint),
-		widget.NewSeparator(),
-		widget.NewLabel(wallet),
-	}
+	a.statusBarBox.Objects = objs
 	a.statusBarBox.Refresh()
 }

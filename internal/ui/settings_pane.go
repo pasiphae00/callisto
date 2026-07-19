@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
@@ -27,6 +28,7 @@ type settingsPane struct {
 	statusLbl  *widget.Label
 	connectBtn *widget.Button
 	removeBtn  *widget.Button
+	defaultBtn *widget.Button
 
 	selected int // index into app.cfg.Endpoints, or -1
 }
@@ -43,18 +45,31 @@ func (p *settingsPane) build() fyne.CanvasObject {
 	p.list = widget.NewList(
 		func() int { return len(p.app.cfg.Endpoints) },
 		func() fyne.CanvasObject {
-			return widget.NewLabel("template")
+			// dot (active) · name · URL (mono) · default marker.
+			dot := canvas.NewText("●", statusGray)
+			return container.NewHBox(dot, widget.NewLabel("name"), monoLabel("url"), widget.NewLabel(""))
 		},
 		func(i widget.ListItemID, o fyne.CanvasObject) {
 			e := p.app.cfg.Endpoints[i]
-			label := e.Name + "  —  " + e.URL
-			if e.AutoConnect {
-				label += "   ⭐ default"
-			}
+			row := o.(*fyne.Container)
+			dot := row.Objects[0].(*canvas.Text)
+			name := row.Objects[1].(*widget.Label)
+			urlLbl := row.Objects[2].(*widget.Label)
+			def := row.Objects[3].(*widget.Label)
+
 			if p.app.cfg.ActiveEndpoint == e.Name {
-				label = "● " + label
+				dot.Color = statusGreen
+			} else {
+				dot.Color = colorTransparent
 			}
-			o.(*widget.Label).SetText(label)
+			dot.Refresh()
+			name.SetText(e.Name + "  —")
+			urlLbl.SetText(e.URL)
+			if e.AutoConnect {
+				def.SetText("  ⭐ default")
+			} else {
+				def.SetText("")
+			}
 		},
 	)
 	p.list.OnSelected = func(id widget.ListItemID) {
@@ -68,10 +83,11 @@ func (p *settingsPane) build() fyne.CanvasObject {
 
 	addBtn := widget.NewButton("Add endpoint…", p.showAddDialog)
 	p.connectBtn = widget.NewButton("Connect", p.connectSelected)
+	p.defaultBtn = widget.NewButton("Set Default", p.setDefaultSelected)
 	p.removeBtn = widget.NewButton("Remove", p.removeSelected)
 	p.updateButtons()
 
-	buttons := container.NewHBox(addBtn, p.connectBtn, p.removeBtn)
+	buttons := container.NewHBox(addBtn, p.connectBtn, p.defaultBtn, p.removeBtn)
 	header := widget.NewLabelWithStyle("RPC endpoints", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
 	help := widget.NewLabel(rpcHelpText)
 	help.Wrapping = fyne.TextWrapWord
@@ -82,15 +98,31 @@ func (p *settingsPane) build() fyne.CanvasObject {
 
 func (p *settingsPane) updateButtons() {
 	has := p.selected >= 0 && p.selected < len(p.app.cfg.Endpoints)
-	if p.connectBtn != nil {
+	if p.connectBtn == nil {
+		return
+	}
+	for _, b := range []*widget.Button{p.connectBtn, p.removeBtn, p.defaultBtn} {
 		if has {
-			p.connectBtn.Enable()
-			p.removeBtn.Enable()
+			b.Enable()
 		} else {
-			p.connectBtn.Disable()
-			p.removeBtn.Disable()
+			b.Disable()
 		}
 	}
+}
+
+// setDefaultSelected makes the selected endpoint the exclusive auto-connect
+// default (the one Callisto connects to on startup).
+func (p *settingsPane) setDefaultSelected() {
+	if p.selected < 0 || p.selected >= len(p.app.cfg.Endpoints) {
+		return
+	}
+	name := p.app.cfg.Endpoints[p.selected].Name
+	p.app.cfg.SetAutoConnect(name)
+	if err := p.app.cfg.Save(); err != nil {
+		dialog.ShowError(err, p.app.window)
+		return
+	}
+	p.list.Refresh()
 }
 
 func (p *settingsPane) refreshStatus() {

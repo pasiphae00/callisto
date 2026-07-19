@@ -42,7 +42,7 @@ type walletsPane struct {
 	list       *widget.List
 	unlockBtn  *widget.Button
 	lockBtn    *widget.Button
-	renameBtn  *widget.Button
+	manageBtn  *widget.Button
 	removeBtn  *widget.Button
 	selected   int
 	detailAddr *widget.Entry // full, selectable/copyable address of the selected wallet
@@ -139,13 +139,13 @@ func (p *walletsPane) build() fyne.CanvasObject {
 	addHwBtn := widget.NewButton("Add hardware…", p.showAddHardwareWallet)
 	p.unlockBtn = widget.NewButton("Unlock", p.unlockSelected)
 	p.lockBtn = widget.NewButton("Lock", p.lockActive)
-	p.renameBtn = widget.NewButton("Rename", p.renameSelected)
+	p.manageBtn = widget.NewButton("Manage…", p.showManageMenu)
 	p.removeBtn = widget.NewButton("Remove", p.removeSelected)
 
 	header := widget.NewLabelWithStyle("Wallets", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
 	help := widget.NewLabel("Add a hot wallet (its seed is encrypted with your passphrase and stored locally; decrypted in memory only while unlocked, wiped on lock/exit) or a hardware device (keys never leave the device). Double-click a wallet to make it active.")
 	help.Wrapping = fyne.TextWrapWord
-	buttons := container.NewHBox(addBtn, addHwBtn, p.unlockBtn, p.lockBtn, p.renameBtn, p.removeBtn)
+	buttons := container.NewHBox(addBtn, addHwBtn, p.unlockBtn, p.lockBtn, p.manageBtn, p.removeBtn)
 
 	p.detailBox = p.buildDetailBox()
 	p.updateButtons() // also populates the detail box for the initial (no-selection) state
@@ -216,7 +216,7 @@ func (p *walletsPane) updateButtons() {
 	_, activeID, unlocked := p.app.currentSigner()
 	if has {
 		p.removeBtn.Enable()
-		p.renameBtn.Enable()
+		p.manageBtn.Enable()
 		w := p.app.cfg.Wallets[p.selected]
 		if unlocked && activeID == w.ID {
 			p.unlockBtn.Disable()
@@ -230,7 +230,7 @@ func (p *walletsPane) updateButtons() {
 		}
 	} else {
 		p.removeBtn.Disable()
-		p.renameBtn.Disable()
+		p.manageBtn.Disable()
 		p.unlockBtn.Disable()
 		p.setDetailAddr("")
 	}
@@ -264,6 +264,8 @@ func (p *walletsPane) showAddHotWallet() {
 	ksPass.SetPlaceHolder("passphrase to encrypt this wallet")
 	ksPass2 := widget.NewPasswordEntry()
 	ksPass2.SetPlaceHolder("confirm passphrase")
+	ksHint := widget.NewLabel("")
+	ksPass.OnChanged = func(s string) { ksHint.SetText(passphraseStrength(s)) }
 
 	// Account-selection state, populated on demand from the phrase.
 	var checks []*widget.Check
@@ -315,6 +317,7 @@ func (p *walletsPane) showAddHotWallet() {
 		widget.NewLabelWithStyle("Encryption passphrase (used to unlock later)", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
 		ksPass,
 		ksPass2,
+		ksHint,
 	)
 
 	d := dialog.NewCustomConfirm("Import hot wallet", "Import", "Cancel",
@@ -722,6 +725,116 @@ func (p *walletsPane) renameSelected() {
 	d.Show()
 }
 
+// showManageMenu opens a per-wallet actions sheet for the selected wallet. It
+// grows with the key-management features (v0.10): Rename, Change passphrase, and
+// later Reveal private key / Export backup / Add account / Touch ID.
+func (p *walletsPane) showManageMenu() {
+	if p.selected < 0 || p.selected >= len(p.app.cfg.Wallets) {
+		return
+	}
+	desc := p.app.cfg.Wallets[p.selected]
+	isHotKeystore := !desc.IsHardware() && desc.KeystoreID != ""
+
+	box := container.NewVBox()
+	d := dialog.NewCustom("Manage "+displayName(desc), "Close", box, p.app.window)
+	item := func(label string, fn func()) {
+		b := widget.NewButton(label, func() { d.Hide(); fn() })
+		b.Alignment = widget.ButtonAlignLeading
+		box.Add(b)
+	}
+	item("Rename…", p.renameSelected)
+	if isHotKeystore {
+		item("Change passphrase…", p.changePassphraseSelected)
+	}
+	d.Resize(fyne.NewSize(340, 200))
+	d.Show()
+}
+
+// changePassphraseSelected re-encrypts the selected hot wallet's keystore under a
+// new passphrase. Accounts sharing the keystore all move to the new passphrase.
+func (p *walletsPane) changePassphraseSelected() {
+	if p.selected < 0 || p.selected >= len(p.app.cfg.Wallets) {
+		return
+	}
+	desc := p.app.cfg.Wallets[p.selected]
+	if desc.IsHardware() || desc.KeystoreID == "" {
+		dialog.ShowError(fmt.Errorf("only encrypted hot wallets have a passphrase"), p.app.window)
+		return
+	}
+	cur := widget.NewPasswordEntry()
+	cur.SetPlaceHolder("current passphrase")
+	next := widget.NewPasswordEntry()
+	next.SetPlaceHolder("new passphrase")
+	confirm := widget.NewPasswordEntry()
+	confirm.SetPlaceHolder("confirm new passphrase")
+	hint := widget.NewLabel("")
+	next.OnChanged = func(s string) { hint.SetText(passphraseStrength(s)) }
+
+	items := []*widget.FormItem{
+		widget.NewFormItem("Current", cur),
+		widget.NewFormItem("New", next),
+		widget.NewFormItem("Confirm", confirm),
+		widget.NewFormItem("", hint),
+	}
+	d := dialog.NewForm("Change passphrase — "+displayName(desc), "Change", "Cancel", items,
+		func(ok bool) {
+			if !ok {
+				return
+			}
+			p.doChangePassphrase(desc, cur.Text, next.Text, confirm.Text)
+		}, p.app.window)
+	d.Resize(fyne.NewSize(500, 260))
+	d.Show()
+}
+
+// doChangePassphrase validates and performs the re-encryption off the UI thread
+// (scrypt is deliberately slow).
+func (p *walletsPane) doChangePassphrase(desc wallet.Descriptor, cur, next, confirm string) {
+	if len(next) < minKeystorePassphraseLen {
+		dialog.ShowError(fmt.Errorf("choose a new passphrase of at least %d characters", minKeystorePassphraseLen), p.app.window)
+		return
+	}
+	if next != confirm {
+		dialog.ShowError(fmt.Errorf("the new passphrases do not match"), p.app.window)
+		return
+	}
+	ksDir, err := config.KeystoreDir()
+	if err != nil {
+		dialog.ShowError(err, p.app.window)
+		return
+	}
+	path := filepath.Join(ksDir, desc.KeystoreID+".json")
+	ks, err := keystore.Load(path)
+	if err != nil {
+		dialog.ShowError(fmt.Errorf("keystore not found for this wallet: %w", err), p.app.window)
+		return
+	}
+
+	progress := dialog.NewCustomWithoutButtons("Re-encrypting…",
+		widget.NewLabel("Deriving keys (this takes a moment)…"), p.app.window)
+	progress.Show()
+	go func() {
+		rk, rekeyErr := keystore.Rekey(ks, cur, next)
+		fyne.Do(func() {
+			progress.Hide()
+			if rekeyErr != nil {
+				if errors.Is(rekeyErr, keystore.ErrBadPassphrase) {
+					dialog.ShowError(fmt.Errorf("wrong current passphrase"), p.app.window)
+				} else {
+					dialog.ShowError(rekeyErr, p.app.window)
+				}
+				return
+			}
+			if err := keystore.Save(path, rk); err != nil {
+				dialog.ShowError(fmt.Errorf("save keystore: %w", err), p.app.window)
+				return
+			}
+			dialog.ShowInformation("Passphrase changed",
+				"This wallet's keystore was re-encrypted. Any accounts sharing it now unlock with the new passphrase.", p.app.window)
+		})
+	}()
+}
+
 // removeSelected deletes a wallet descriptor (locking it first if it is active).
 // For an encrypted hot wallet, the encrypted keystore file is securely wiped once
 // no remaining wallet references it (accounts from one import share a keystore).
@@ -801,6 +914,45 @@ func (p *walletsPane) persistAndActivate(desc wallet.Descriptor, s signer.Signer
 }
 
 // --- helpers ---------------------------------------------------------------
+
+// passphraseStrength returns a short human hint for an encryption passphrase, used
+// as live feedback at import and change-passphrase time. It's guidance, not a gate
+// (the only hard rule is minKeystorePassphraseLen).
+func passphraseStrength(s string) string {
+	if s == "" {
+		return ""
+	}
+	if len(s) < minKeystorePassphraseLen {
+		return "Strength: too short"
+	}
+	var lower, upper, digit, other bool
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z':
+			lower = true
+		case r >= 'A' && r <= 'Z':
+			upper = true
+		case r >= '0' && r <= '9':
+			digit = true
+		default:
+			other = true
+		}
+	}
+	classes := 0
+	for _, b := range []bool{lower, upper, digit, other} {
+		if b {
+			classes++
+		}
+	}
+	switch {
+	case len(s) >= 16 && classes >= 3:
+		return "Strength: strong"
+	case len(s) >= 12 && classes >= 2:
+		return "Strength: good"
+	default:
+		return "Strength: weak — add length or variety"
+	}
+}
 
 func displayName(w wallet.Descriptor) string {
 	if w.Label != "" {

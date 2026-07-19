@@ -297,6 +297,12 @@ platform/CGo Keychain last):
 
 ## medium
 
+### improve balances system
+- during testing, callisto did not auto-populate balances of new tokens (purchased several random coins)
+- we need to detect transfer logs for the active wallet (live and historical) and show all non-0 non-dust amount balances 
+- we should be able to detect transfer logs, then call `name()` `symbol()` and `decimals()` on ERC20 tokens received to do a full parse and populate flow
+- additonally, we should update the implementation so the user does not have to click "refresh tokens" or "refresh balances" anywhere, it should be fully automatic
+
 ### create "approvals" pane — ✅ shipped v0.9.0, enhanced v0.9.1, verified live
 - ~~see/scroll all outstanding ERC-20 approvals for the selected wallet (however
   created); show token, spender (by name — cowswap/uniswap/…), and unlimited vs a

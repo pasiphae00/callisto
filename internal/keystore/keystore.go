@@ -114,15 +114,38 @@ func Encrypt(secret []byte, passphrase string) (*Keystore, error) {
 // if the passphrase is wrong or the keystore has been tampered with. The caller is
 // responsible for zeroing the returned secret when done.
 func (ks *Keystore) Decrypt(passphrase string) ([]byte, error) {
+	key, err := ks.DeriveKey(passphrase)
+	if err != nil {
+		return nil, err
+	}
+	defer zero(key)
+	return ks.DecryptWithKey(key)
+}
+
+// DeriveKey re-derives the AES key from a passphrase using ks's stored KDF params.
+// The caller must zero the returned key. Exposed so an OS-keychain / Touch ID unlock
+// can cache the derived key and decrypt later without the passphrase (DecryptWithKey).
+func (ks *Keystore) DeriveKey(passphrase string) ([]byte, error) {
 	if ks.KDF != "scrypt" {
 		return nil, fmt.Errorf("keystore: unsupported kdf %q", ks.KDF)
-	}
-	if ks.Cipher != "aes-256-gcm" {
-		return nil, fmt.Errorf("keystore: unsupported cipher %q", ks.Cipher)
 	}
 	salt, err := hex.DecodeString(ks.KDFParams.Salt)
 	if err != nil {
 		return nil, fmt.Errorf("keystore: decode salt: %w", err)
+	}
+	key, err := scrypt.Key([]byte(passphrase), salt, ks.KDFParams.N, ks.KDFParams.R, ks.KDFParams.P, ks.KDFParams.DKLen)
+	if err != nil {
+		return nil, fmt.Errorf("keystore: derive key: %w", err)
+	}
+	return key, nil
+}
+
+// DecryptWithKey recovers the secret using a pre-derived AES key (from DeriveKey),
+// bypassing the (slow) scrypt step. Returns ErrBadPassphrase on a wrong key or
+// tampering. The caller zeroes the returned secret.
+func (ks *Keystore) DecryptWithKey(key []byte) ([]byte, error) {
+	if ks.Cipher != "aes-256-gcm" {
+		return nil, fmt.Errorf("keystore: unsupported cipher %q", ks.Cipher)
 	}
 	nonce, err := hex.DecodeString(ks.Nonce)
 	if err != nil {
@@ -132,13 +155,6 @@ func (ks *Keystore) Decrypt(passphrase string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("keystore: decode ciphertext: %w", err)
 	}
-
-	key, err := scrypt.Key([]byte(passphrase), salt, ks.KDFParams.N, ks.KDFParams.R, ks.KDFParams.P, ks.KDFParams.DKLen)
-	if err != nil {
-		return nil, fmt.Errorf("keystore: derive key: %w", err)
-	}
-	defer zero(key)
-
 	gcm, err := newGCM(key)
 	if err != nil {
 		return nil, err
@@ -148,10 +164,22 @@ func (ks *Keystore) Decrypt(passphrase string) ([]byte, error) {
 	}
 	secret, err := gcm.Open(nil, nonce, ciphertext, nil)
 	if err != nil {
-		// Wrong passphrase and tampering both land here (auth-tag failure).
+		// Wrong key and tampering both land here (auth-tag failure).
 		return nil, ErrBadPassphrase
 	}
 	return secret, nil
+}
+
+// Rekey re-encrypts ks's secret under a new passphrase, returning a fresh keystore
+// (new salt + nonce). oldPassphrase must be correct (else ErrBadPassphrase). The
+// decrypted secret is zeroed before returning.
+func Rekey(ks *Keystore, oldPassphrase, newPassphrase string) (*Keystore, error) {
+	secret, err := ks.Decrypt(oldPassphrase)
+	if err != nil {
+		return nil, err
+	}
+	defer zero(secret)
+	return Encrypt(secret, newPassphrase)
 }
 
 // newGCM builds an AES-256-GCM AEAD from a 32-byte key.

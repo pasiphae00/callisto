@@ -154,7 +154,7 @@ func (p *walletConnectPane) showProposal(prop walletconnect.Proposal) {
 		{"dApp", firstNonEmpty(prop.Proposer.Name, "(unknown)")},
 		{"URL", prop.Proposer.URL},
 		{"Expose account", desc.Label + " · " + address.Short(mustAddr(desc.Address))},
-		{"Chains", strings.Join(chains, ", ")},
+		{"Chains", fmt.Sprintf("%d chains · %s", len(chains), chainsSummary(chains))},
 	}
 	grid := container.New(layout.NewFormLayout())
 	for _, r := range rows {

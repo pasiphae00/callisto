@@ -57,7 +57,9 @@ func newApprovalsPane(a *App) *approvalsPane {
 }
 
 func (p *approvalsPane) build() fyne.CanvasObject {
-	p.status = widget.NewLabel("")
+	// Mono so status text (which embeds short addresses / the "…" and "→" glyphs)
+	// renders in the bundled font rather than falling back to a replacement glyph.
+	p.status = monoLabel("")
 	p.status.Wrapping = fyne.TextWrapWord
 
 	p.list = widget.NewList(
@@ -80,7 +82,7 @@ func (p *approvalsPane) build() fyne.CanvasObject {
 	p.autoChk.Checked = p.app.cfg.AutoDetectApprovals // set field directly; don't fire OnChanged at build
 
 	header := widget.NewLabelWithStyle("Approvals", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
-	help := widget.NewLabel("Every outstanding token approval for the active wallet — direct ERC-20 allowances and Uniswap Permit2 grants. Unlimited approvals to a compromised contract are a common drain vector; revoke anything you don't recognise.\n\nDiscovery scans on-chain logs (needs a full node that serves eth_getLogs). The first scan of an old wallet can take a while; later scans are incremental (only new blocks since the last scan).")
+	help := widget.NewLabel("Every outstanding token approval for the active wallet — direct ERC-20 allowances and Uniswap Permit2 grants. Unlimited approvals to a compromised contract are a common drain vector; revoke anything you don't recognise.\n\nDiscovery scans on-chain logs, so it needs an archive endpoint to see approvals older than a pruned node keeps. The first scan of an old wallet can take a while; later scans are incremental (only new blocks since the last scan) and, over a WSS endpoint, live.")
 	help.Wrapping = fyne.TextWrapWord
 
 	controls := indentToText(container.NewHBox(p.scanBtn, p.autoChk))
@@ -184,7 +186,7 @@ func (p *approvalsPane) scan() {
 			p.progress.Hide()
 			if scanErr != nil {
 				p.status.SetText("")
-				dialog.ShowError(fmt.Errorf("could not scan approvals: %w\n\nThis usually means the active RPC doesn't serve log queries — connect a full-node endpoint in Settings.", scanErr), p.app.window)
+				dialog.ShowError(fmt.Errorf("could not scan approvals: %w\n\nThis usually means the active RPC doesn't serve log queries (or prunes them) — connect an archive endpoint in Settings.", scanErr), p.app.window)
 				return
 			}
 			p.items = found

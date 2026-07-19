@@ -9,6 +9,8 @@ changes; `v1.0.0` marks the first stable, documented release.
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-07-19
+
 ### Added
 - **Approvals pane.** Discover and revoke the active wallet's outstanding token
   approvals — both direct ERC-20 allowances and Uniswap **Permit2** inner
@@ -18,9 +20,10 @@ changes; `v1.0.0` marks the first stable, documented release.
   inclusion-tracked transaction (`approve(spender, 0)` or Permit2 `lockdown`),
   logs it to History, and drops the row once confirmed. Discovery scans `Approval`
   logs on the active RPC, bounded below by the wallet's first tx (a `NonceAt` binary
-  search) so it never scans from genesis — it needs a full endpoint and surfaces a
-  clear message when the RPC can't serve `eth_getLogs`. Scans honor a node's
-  per-query block-range cap automatically, and the progress bar shows an ETA.
+  search) so it never scans from genesis — it needs an **archive** endpoint for full
+  history (a pruned node only keeps recent logs), and surfaces a clear message when
+  the RPC can't serve `eth_getLogs`. Scans honor a node's per-query block-range cap
+  automatically, and the progress bar shows an ETA.
   - **Incremental re-scans:** results and a per-wallet scan watermark are persisted,
     so a later scan only covers new blocks (and re-checks known allowances to catch
     externally-revoked/spent ones) — seconds instead of minutes.

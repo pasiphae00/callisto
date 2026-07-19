@@ -49,7 +49,7 @@ See some screenshots of it in action [here](./EXAMPLES.md).
 - **Basic transfers.**
   - Send ETH or ERC-20 tokens with a consistent flow and a detailed pre-signature summary — review decoded calldata, nonce, EIP-1559 fees, and maximum total fee — before signing.
 - **Approvals (safety).**
-  - See every outstanding token approval for the active wallet — direct ERC-20 allowances *and* Uniswap Permit2 inner allowances — with the spender named where known and unlimited allowances flagged. **Revoke** any of them with a reviewed, signed, tracked transaction. Discovery scans on-chain logs (needs a full/archive RPC), bounded to the wallet's first tx so it never scans from genesis.
+  - See every outstanding token approval for the active wallet — direct ERC-20 allowances *and* Uniswap Permit2 inner allowances — with the spender named where known and unlimited allowances flagged. **Revoke** any of them with a reviewed, signed, tracked transaction. Discovery scans on-chain logs (needs an archive RPC for full history), bounded to the wallet's first tx so it never scans from genesis; re-scans are incremental and, over a WSS endpoint, live.
 - **Broadcast & track.** 
   - Transaction monitoring post-broadcast to pre-configured chain and node.
   - Live monitoring for block inclusion and execution status.

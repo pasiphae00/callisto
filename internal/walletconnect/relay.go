@@ -178,6 +178,9 @@ func (r *Relay) write(v interface{}) error {
 	}
 	r.writeMu.Lock()
 	defer r.writeMu.Unlock()
+	if r.conn == nil {
+		return fmt.Errorf("walletconnect: relay not connected")
+	}
 	return r.conn.WriteMessage(websocket.TextMessage, data)
 }
 

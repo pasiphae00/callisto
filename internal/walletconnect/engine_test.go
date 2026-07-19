@@ -157,6 +157,28 @@ func TestSessionRoundTrip(t *testing.T) {
 	}
 }
 
+// TestDisconnectAllClearsSessions verifies shutdown clears every session (and the
+// best-effort dApp notification doesn't panic when the relay isn't connected).
+func TestDisconnectAllClearsSessions(t *testing.T) {
+	c, err := NewClient("ws://unused.invalid", "proj", Metadata{Name: "Callisto"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Inject two live sessions (no relay dialed).
+	for _, topic := range []string{"t1", "t2"} {
+		c.sessions[topic] = &Session{Topic: topic}
+		c.keys[topic] = make([]byte, symKeyLen)
+	}
+	if len(c.Sessions()) != 2 {
+		t.Fatalf("setup: %d sessions", len(c.Sessions()))
+	}
+
+	c.DisconnectAll(context.Background()) // must not panic despite no connection
+	if n := len(c.Sessions()); n != 0 {
+		t.Errorf("after DisconnectAll: %d sessions, want 0", n)
+	}
+}
+
 // dappPublish seals a wc_* request under sym and publishes it on topic.
 func dappPublish(t *testing.T, ctx context.Context, r *Relay, sym []byte, topic, method string, params interface{}, tag, ttl int) {
 	t.Helper()

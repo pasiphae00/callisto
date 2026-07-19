@@ -39,5 +39,4 @@ _Callisto supports ENS forwards and reverse resolution for additional details on
 ![pre-sign approval](./images/UX-6.png)
 
 ## Balances auto-populate, and support custom tokens.
-_Callisto ensures full visibility into what you are signing._
 ![pre-sign approval](./images/UX-5.png)

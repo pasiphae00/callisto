@@ -64,6 +64,11 @@ type App struct {
 	// first connect and torn down on app close.
 	wcMu sync.Mutex
 	wc   *walletconnect.Client
+
+	// Auto-lock: last user-activity time; the background watcher (autolock.go)
+	// locks the signer after the configured idle period or on wake-from-sleep.
+	secMu      sync.Mutex
+	lastActive time.Time
 }
 
 // setWalletConnect stores the WalletConnect client for teardown at app close.
@@ -185,6 +190,7 @@ func (a *App) setSigner(walletID string, s signer.Signer) {
 	a.signerWallet = walletID
 	a.signerMu.Unlock()
 	lockSigner(old)
+	a.touchActivity() // unlocking counts as activity (resets the idle timer)
 }
 
 // clearSigner locks and drops the active signer session (if any).
@@ -237,6 +243,9 @@ func (a *App) Run() {
 	a.window.CenterOnScreen()
 	// Fail over to the fallback endpoint if the active connection drops mid-session.
 	a.rpc.SetOnConnectionLost(a.failoverToFallback)
+	// Keyboard activity resets the auto-lock idle timer; start the lock watcher.
+	a.window.Canvas().SetOnTypedKey(func(*fyne.KeyEvent) { a.touchActivity() })
+	a.startAutoLock()
 	// Auto-connect the default endpoint (if any) once the event loop is running.
 	go a.autoConnectOnStart()
 
@@ -276,6 +285,7 @@ func (a *App) buildRoot() fyne.CanvasObject {
 	content := container.NewStack()
 	buttons := make([]*widget.Button, len(items))
 	selectItem := func(i int) {
+		a.touchActivity() // switching panes counts as activity
 		content.Objects = []fyne.CanvasObject{items[i].content}
 		content.Refresh()
 		if items[i].onShow != nil {

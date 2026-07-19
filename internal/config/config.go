@@ -72,6 +72,9 @@ func defaultConfig() *Config {
 	return &Config{
 		Endpoints:      []rpc.Endpoint{ganymede, flashbots},
 		ActiveEndpoint: active,
+		// Gentle defaults for fresh installs: lock after 15 idle minutes and on
+		// wake-from-sleep. (Existing configs load with 0 = never, unchanged.)
+		Security: SecuritySettings{AutoLockMinutes: 15, LockOnSleep: true},
 	}
 }
 
@@ -95,6 +98,20 @@ type Config struct {
 	// AutoDetectApprovals enables live approval detection over a WSS endpoint in
 	// the Approvals pane (opt-in; off by default to stay resource-mindful).
 	AutoDetectApprovals bool `json:"auto_detect_approvals"`
+	// Security holds wallet auto-lock preferences.
+	Security SecuritySettings `json:"security"`
+}
+
+// SecuritySettings controls when an unlocked hot wallet is automatically locked.
+// The defaults are deliberately gentle (see defaultConfig) so they protect an
+// unattended machine without interrupting active use.
+type SecuritySettings struct {
+	// AutoLockMinutes locks any unlocked wallet after this many minutes of
+	// inactivity. 0 = never. Existing configs load as 0 (unchanged behavior); new
+	// installs get a gentle default.
+	AutoLockMinutes int `json:"auto_lock_minutes"`
+	// LockOnSleep locks when the computer wakes from sleep.
+	LockOnSleep bool `json:"lock_on_sleep"`
 }
 
 // Dir returns the Callisto config directory, creating it if needed.

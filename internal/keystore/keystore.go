@@ -67,6 +67,10 @@ type Keystore struct {
 	Nonce      string    `json:"nonce"`      // hex
 	Ciphertext string    `json:"ciphertext"` // hex
 	CreatedAt  int64     `json:"created_at"` // unix seconds
+	// Secret labels what the encrypted bytes are, for the consumer (the keystore
+	// package itself is agnostic): "" / "seed" = a BIP-39 seed (HD wallet),
+	// "private-key" = a raw 32-byte account key (single-account import).
+	Secret string `json:"secret,omitempty"`
 }
 
 // Encrypt seals secret under passphrase, returning a Keystore that can be written

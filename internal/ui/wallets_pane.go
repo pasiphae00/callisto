@@ -136,8 +136,7 @@ func (p *walletsPane) build() fyne.CanvasObject {
 	p.list.OnSelected = func(id widget.ListItemID) { p.selected = id; p.updateButtons() }
 	p.list.OnUnselected = func(widget.ListItemID) { p.selected = -1; p.updateButtons() }
 
-	addBtn := widget.NewButton("Add hot wallet…", p.showAddHotWallet)
-	addHwBtn := widget.NewButton("Add hardware…", p.showAddHardwareWallet)
+	addBtn := widget.NewButton("Add wallet…", p.showAddMenu)
 	p.unlockBtn = widget.NewButton("Unlock", p.unlockSelected)
 	p.lockBtn = widget.NewButton("Lock", p.lockActive)
 	p.manageBtn = widget.NewButton("Manage…", p.showManageMenu)
@@ -146,7 +145,7 @@ func (p *walletsPane) build() fyne.CanvasObject {
 	header := widget.NewLabelWithStyle("Wallets", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
 	help := widget.NewLabel("Add a hot wallet (its seed is encrypted with your passphrase and stored locally; decrypted in memory only while unlocked, wiped on lock/exit) or a hardware device (keys never leave the device). Double-click a wallet to make it active.")
 	help.Wrapping = fyne.TextWrapWord
-	buttons := container.NewHBox(addBtn, addHwBtn, p.unlockBtn, p.lockBtn, p.manageBtn, p.removeBtn)
+	buttons := container.NewHBox(addBtn, p.unlockBtn, p.lockBtn, p.manageBtn, p.removeBtn)
 
 	p.detailBox = p.buildDetailBox()
 	p.updateButtons() // also populates the detail box for the initial (no-selection) state
@@ -219,8 +218,8 @@ func (p *walletsPane) updateButtons() {
 		p.removeBtn.Enable()
 		p.manageBtn.Enable()
 		w := p.app.cfg.Wallets[p.selected]
-		if unlocked && activeID == w.ID {
-			p.unlockBtn.Disable()
+		if w.IsWatchOnly() || (unlocked && activeID == w.ID) {
+			p.unlockBtn.Disable() // watch-only can't unlock; nor the already-unlocked active wallet
 		} else {
 			p.unlockBtn.Enable()
 		}
@@ -503,6 +502,8 @@ func (p *walletsPane) unlockSelected() {
 	desc := p.app.cfg.Wallets[p.selected]
 
 	switch {
+	case desc.IsWatchOnly():
+		dialog.ShowError(fmt.Errorf("this is a watch-only wallet — it has no key to unlock or sign with"), p.app.window)
 	case desc.IsHardware():
 		p.unlockHardware(desc)
 	case desc.KeystoreID != "":

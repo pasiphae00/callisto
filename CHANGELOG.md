@@ -9,6 +9,12 @@ changes; `v1.0.0` marks the first stable, documented release.
 
 ## [Unreleased]
 
+### Added
+- Release pipeline now builds **both macOS architectures** — `darwin-arm64`
+  (Apple silicon) and `darwin-amd64` (Intel) — from one Mac (`make release`), plus
+  `make package-mac-intel` / `package-mac-arm` targets. `docs/RELEASING.md` gains a
+  full release checklist, a build-target matrix, and a release-message template.
+
 ## [0.8.0] - 2026-07-19
 
 ### Added

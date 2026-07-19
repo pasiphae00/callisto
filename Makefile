@@ -37,8 +37,9 @@ FYNE_VER   := v2.8.0
 CALLISTO_RELEASE_KEY ?= $(HOME)/.callisto/release_ed25519.key
 PUBKEY     := internal/updater/release_pubkey.ed25519
 
-.PHONY: all build test vet package-mac package-linux package-linux-cross \
-        checksums sign release gen-release-key tools clean
+.PHONY: all build test vet package-mac package-mac-arm package-mac-intel mac-arch \
+        package-linux package-linux-cross checksums sign release gen-release-key \
+        tools clean
 
 all: build
 
@@ -63,19 +64,34 @@ tools: $(FYNE)
 $(FYNE):
 	GOBIN="$(CURDIR)/$(BIN)" go install fyne.io/fyne/v2/cmd/fyne@$(FYNE_VER)
 
-# macOS: produce Callisto.app and zip it. Run on macOS.
-package-mac: tools
-	@mkdir -p $(DIST)
-	rm -rf $(DIST)/$(APP).app
-	$(FYNE) package --sourceDir $(MAIN) --icon $(ICON) --name $(APP) \
+# macOS: Callisto.app + a per-arch .zip. `package-mac` builds for this machine's
+# arch; `package-mac-intel` cross-builds an Intel (amd64) app; `package-mac-arm`
+# forces Apple-silicon (arm64). Each mac's in-app updater matches its own arch by
+# filename, so a release should carry BOTH darwin-arm64 and darwin-amd64 (see the
+# `release` target, which builds both on macOS). Cross-arch CGo works with the
+# Xcode toolchain.
+package-mac: ; @$(MAKE) mac-arch ARCH=$(GOARCH)
+package-mac-arm: ; @$(MAKE) mac-arch ARCH=arm64
+package-mac-intel: ; @$(MAKE) mac-arch ARCH=amd64
+
+# mac-arch ARCH=<arm64|amd64>: build that arch and wrap it in Callisto.app. Builds
+# the binary ourselves (named "callisto" so the bundle executable is clean), then
+# `fyne package --exe` wraps it with the icon/plist without rebuilding.
+mac-arch: tools
+	@mkdir -p $(DIST)/.build-$(ARCH)
+	GOOS=darwin GOARCH=$(ARCH) CGO_ENABLED=1 go build -o $(DIST)/.build-$(ARCH)/callisto $(MAIN)
+	rm -rf $(APP).app $(DIST)/$(APP).app
+	$(FYNE) package --exe $(DIST)/.build-$(ARCH)/callisto --icon $(ICON) --name $(APP) \
 		--appID $(APP_ID) --appVersion $(VERSION) --appBuild 1 --release
-	@# fyne writes $(APP).app next to the source; move it into dist/.
-	mv $(MAIN)/$(APP).app $(DIST)/$(APP).app 2>/dev/null || mv $(APP).app $(DIST)/$(APP).app
+	@# fyne --exe writes $(APP).app in the CWD; normalize into dist/.
+	mv $(APP).app $(DIST)/$(APP).app 2>/dev/null || \
+		find . -maxdepth 2 -name '$(APP).app' -not -path './$(DIST)/*' -exec mv {} $(DIST)/$(APP).app \;
+	rm -rf $(DIST)/.build-$(ARCH)
 	@# strip any quarantine xattr so a locally built app opens cleanly.
 	-xattr -cr $(DIST)/$(APP).app
-	cd $(DIST) && rm -f $(APP)-v$(VERSION)-darwin-$(GOARCH).zip && \
-		ditto -c -k --sequesterRsrc --keepParent $(APP).app $(APP)-v$(VERSION)-darwin-$(GOARCH).zip
-	@echo "built $(DIST)/$(APP)-v$(VERSION)-darwin-$(GOARCH).zip"
+	cd $(DIST) && rm -f $(APP)-v$(VERSION)-darwin-$(ARCH).zip && \
+		ditto -c -k --sequesterRsrc --keepParent $(APP).app $(APP)-v$(VERSION)-darwin-$(ARCH).zip
+	@echo "built $(DIST)/$(APP)-v$(VERSION)-darwin-$(ARCH).zip"
 
 # Linux: produce a tar.gz of the packaged app dir. Run on Linux.
 package-linux: tools
@@ -114,9 +130,14 @@ sign:
 		--in $(DIST)/SHA256SUMS --out $(DIST)/SHA256SUMS.sig
 	@echo "wrote $(DIST)/SHA256SUMS.sig"
 
-# Full local release for the current OS: package, checksum, sign.
+# Full local release for the current OS: package, checksum, sign. On macOS this
+# builds BOTH mac architectures (Intel first, Apple-silicon last so the leftover
+# dist/Callisto.app is native for this machine). Linux artifacts are built on Linux.
 release:
-	@if [ "$(GOOS)" = "darwin" ]; then $(MAKE) package-mac; else $(MAKE) package-linux; fi
+	@if [ "$(GOOS)" = "darwin" ]; then \
+		$(MAKE) mac-arch ARCH=amd64; \
+		$(MAKE) mac-arch ARCH=arm64; \
+	else $(MAKE) package-linux; fi
 	@$(MAKE) checksums
 	@$(MAKE) sign
 	@echo

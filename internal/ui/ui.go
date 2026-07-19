@@ -16,6 +16,7 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
+	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
@@ -47,6 +48,10 @@ type App struct {
 
 	// historyReload, if set by the History pane, refreshes it after a send.
 	historyReload func()
+
+	// assetsReloaders are pane reload callbacks (Assets, Send) invoked together so
+	// refreshing balances on one pane refreshes the other too.
+	assetsReloaders []func()
 
 	// Live signer session for the currently unlocked wallet, if any. Held in
 	// memory only; wiped on lock/disconnect/close. Never persisted.
@@ -93,6 +98,19 @@ func New(cfg *config.Config, st *store.Store) *App {
 		a.safeProposals = safe.NewProposalRepo(st.DB())
 	}
 	return a
+}
+
+// registerAssetsReloader lets a pane (Assets, Send) be reloaded when balances are
+// refreshed from anywhere, so the user needn't press Refresh on each pane.
+func (a *App) registerAssetsReloader(fn func()) {
+	a.assetsReloaders = append(a.assetsReloaders, fn)
+}
+
+// refreshAssets reloads every registered assets pane (both Assets and Send).
+func (a *App) refreshAssets() {
+	for _, fn := range a.assetsReloaders {
+		fn()
+	}
 }
 
 // openURL opens a URL in the user's browser if a Fyne app is running.
@@ -201,24 +219,64 @@ func (a *App) Run() {
 	a.window.ShowAndRun()
 }
 
-// buildRoot assembles the top-level tabbed layout. Panes are placeholders in the
-// bootstrap phase and are filled in by subsequent phases; keeping the tab shell
-// here means each phase slots its pane in without touching the frame.
+// navWidth is the fixed width of the left navigation column — a bit wider than the
+// longest label so the left-aligned names have breathing room.
+const navWidth = 210
+
+// buildRoot assembles the top-level layout: a fixed-width left nav of left-aligned
+// buttons that swap the active pane in the content area, over the shared status
+// bar. (Replaces Fyne's AppTabs, whose tab labels are centered and auto-width.)
 func (a *App) buildRoot() fyne.CanvasObject {
-	tabs := container.NewAppTabs(
-		container.NewTabItem("Wallets", newWalletsPane(a).build()),
-		container.NewTabItem("Assets", newAssetsPane(a).build()),
-		container.NewTabItem("Send", newSendPane(a).build()),
-		container.NewTabItem("Safe", newSafePane(a).build()),
-		container.NewTabItem("WalletConnect", newWalletConnectPane(a).build()),
-		container.NewTabItem("History", newHistoryPane(a).build()),
-		container.NewTabItem("Settings", newSettingsPane(a).build()),
-	)
-	tabs.SetTabLocation(container.TabLocationLeading)
+	type navItem struct {
+		name    string
+		content fyne.CanvasObject
+	}
+	items := []navItem{
+		{"Wallets", newWalletsPane(a).build()},
+		{"Assets", newAssetsPane(a).build()},
+		{"Send", newSendPane(a).build()},
+		{"Safe", newSafePane(a).build()},
+		{"WalletConnect", newWalletConnectPane(a).build()},
+		{"History", newHistoryPane(a).build()},
+		{"Settings", newSettingsPane(a).build()},
+	}
+
+	content := container.NewStack()
+	buttons := make([]*widget.Button, len(items))
+	selectItem := func(i int) {
+		content.Objects = []fyne.CanvasObject{items[i].content}
+		content.Refresh()
+		for j, b := range buttons {
+			if j == i {
+				b.Importance = widget.HighImportance
+			} else {
+				b.Importance = widget.LowImportance
+			}
+			b.Refresh()
+		}
+	}
+
+	// A transparent spacer fixes the nav column width; VBox children stretch to it,
+	// so the buttons are full-width with left-aligned labels.
+	spacer := canvas.NewRectangle(color.Transparent)
+	spacer.SetMinSize(fyne.NewSize(navWidth, 0))
+	navObjs := []fyne.CanvasObject{spacer}
+	for i, it := range items {
+		i := i
+		b := widget.NewButton(it.name, func() { selectItem(i) })
+		b.Alignment = widget.ButtonAlignLeading
+		buttons[i] = b
+		navObjs = append(navObjs, b)
+	}
+	nav := container.NewVBox(navObjs...)
+	selectItem(0)
 
 	a.statusBarBox = container.NewHBox()
 	a.refreshStatusBar()
-	return container.NewBorder(nil, a.statusBarBox, nil, nil, tabs)
+
+	// nav (left, with a divider) + content (fills the rest), over the status bar.
+	navCol := container.NewBorder(nil, nil, nil, widget.NewSeparator(), container.NewVScroll(nav))
+	return container.NewBorder(nil, a.statusBarBox, navCol, nil, content)
 }
 
 // placeholder is a temporary pane body used until a phase provides the real one.

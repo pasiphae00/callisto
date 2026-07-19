@@ -9,6 +9,29 @@ changes; `v1.0.0` marks the first stable, documented release.
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-07-18
+
+### Added
+- Settings: **double-click an RPC endpoint** to edit its label and URL, with
+  Set Default and a red Remove shortcut in the dialog.
+
+### Changed
+- The left navigation is wider with left-aligned labels.
+- Refreshing balances on the Assets or Send pane now refreshes the other too — no
+  need to press Refresh on both.
+- **Trezor no longer needs Trezor Suite or Trezor Bridge running.** The USB
+  backend was migrated from HID (hidapi) to `github.com/karalabe/usb` (bundled
+  libusb + hidapi, no system libraries — still a single self-contained binary), so
+  Callisto now talks to the Trezor Safe directly over raw libusb (its WebUSB
+  interface, which hidapi could not claim). Just plug in the device and sign.
+  **Verified live** on a Trezor Safe 5 with Trezor Suite closed. Trezor Bridge is
+  kept only as an automatic fallback, so existing setups aren't regressed.
+  - Ledger's driver was forked in alongside Trezor (so Callisto no longer imports
+    upstream go-ethereum's usbwallet, which is what let us drop the `ethereum/hid`
+    dependency), and gained personal-message signing (`personal_sign` / Safe
+    owner `eth_sign`), which upstream never implemented.
+  - `go run ./cmd/hwscan` now lists both raw (libusb) and HID interfaces.
+
 ## [0.6.2] - 2026-07-18
 
 ### Added
@@ -329,7 +352,8 @@ keys), and shows live balances — the foundation for the v1 transaction flows.
   (already vendored by go-ethereum) rather than pulling in `btcutil`, which drags
   a personal-fork transitive dependency into a signing wallet.
 
-[Unreleased]: https://codeberg.org/pasiphae/callisto/compare/v0.6.2...HEAD
+[Unreleased]: https://codeberg.org/pasiphae/callisto/compare/v0.7.0...HEAD
+[0.7.0]: https://codeberg.org/pasiphae/callisto/compare/v0.6.2...v0.7.0
 [0.6.2]: https://codeberg.org/pasiphae/callisto/compare/v0.6.1...v0.6.2
 [0.6.1]: https://codeberg.org/pasiphae/callisto/compare/v0.6.0...v0.6.1
 [0.6.0]: https://codeberg.org/pasiphae/callisto/compare/v0.5.0...v0.6.0

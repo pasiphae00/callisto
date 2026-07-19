@@ -16,7 +16,6 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/accounts"
-	upstreamusb "github.com/ethereum/go-ethereum/accounts/usbwallet"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -153,23 +152,23 @@ func DerivationPath(index uint32) accounts.DerivationPath {
 
 // newHubs creates the usbwallet backend(s) to probe for a hardware kind.
 //
-// Ledger uses upstream go-ethereum's usbwallet unmodified. Trezor uses our local
-// fork (internal/signer/hardware/usbwallet), which patches device matching to
-// support Trezor Safe-family USB descriptors that upstream doesn't recognize —
-// see that package's doc comment for the full rationale and the tracked upstream
-// issue. We build both WebUSB and HID hubs for Trezor and probe each, so a
-// connected device is found regardless of transport.
+// Both Ledger and Trezor use Callisto's local fork of go-ethereum's usbwallet
+// (internal/signer/hardware/usbwallet), which runs on github.com/karalabe/usb:
+// Ledger over HID, and the Trezor Safe over raw libusb (its WebUSB interface,
+// which hidapi cannot claim) — so Trezor works with no Trezor Suite/Bridge
+// running. We build both the WebUSB (raw) and HID (Trezor One) hubs for Trezor
+// and probe each. See the fork's package doc comment for the full rationale.
 //
-// Errors constructing a backend (e.g. the underlying HID subsystem being
+// Errors constructing a backend (e.g. the underlying USB subsystem being
 // unavailable on this platform/build) are collected rather than discarded: if
 // every backend fails to construct, the caller needs that reason, not a generic
 // "no device" message that implies enumeration ran and simply found nothing.
 func newHubs(kind signer.Kind) ([]accounts.Backend, error) {
 	switch kind {
 	case signer.KindLedger:
-		h, err := upstreamusb.NewLedgerHub()
+		h, err := usbwallet.NewLedgerHub()
 		if err != nil {
-			return nil, fmt.Errorf("open USB HID subsystem: %w", err)
+			return nil, fmt.Errorf("open USB subsystem: %w", err)
 		}
 		return []accounts.Backend{h}, nil
 	case signer.KindTrezor:
@@ -199,46 +198,51 @@ func newHubs(kind signer.Kind) ([]accounts.Backend, error) {
 // firstWallet probes for a connected device of the given kind and returns the
 // first opened wallet.
 //
-// For Trezor, Trezor Bridge is tried first, not direct USB. This is
-// deliberate and load-bearing, not an arbitrary preference: on some
-// platforms/devices (confirmed: Trezor Safe 5 on macOS) the wallet-protocol USB
-// interface isn't reachable via the OS's HID API at all — writes succeed but
-// reads never return data — so a direct-USB attempt doesn't fail fast, it hangs
-// for the full deviceReadTimeoutMs (60s) before giving up. Bridge already solves
-// USB access correctly on every OS, and probing it first fails near-instantly
-// (connection refused) when it isn't running, so this ordering is strictly
-// better: fast either way, instead of a guaranteed 60s tax on the one path we've
-// confirmed is broken for at least one real device. Older Trezors without
-// Bridge running still work via the direct-USB fallback below.
+// Direct USB (libusb, via the fork) is now tried FIRST — this is the whole point
+// of the karalabe/usb migration: libusb can claim the Trezor Safe's WebUSB
+// interface that hidapi could not, so Trezor works with no Trezor Suite/Bridge
+// running. The Bridge is kept only as a fallback for Trezor (rarely hit now, e.g.
+// if libusb can't claim the interface on some setup), so existing Bridge users
+// aren't regressed. Reversed from the old HID-era ordering, where direct USB
+// hung on reads and Bridge had to go first.
 //
 // passphrase is forwarded to Trezor's Open (see trezorDriver's reactive
 // PassphraseRequest handling); "" selects the standard, non-hidden wallet.
 // Ignored for Ledger, which has no equivalent concept.
 func firstWallet(kind signer.Kind, passphrase string) (accounts.Wallet, error) {
+	var lastErr error
+
+	// 1) Direct USB (libusb raw for Trezor Safe / HID for Ledger + Trezor One).
+	if hubs, err := newHubs(kind); err == nil {
+		for _, hub := range hubs {
+			wallets := hub.Wallets()
+			if len(wallets) == 0 {
+				continue
+			}
+			w := wallets[0]
+			if oerr := w.Open(passphrase); oerr != nil {
+				// Release whatever a partially-completed Open acquired rather than
+				// leaving it dangling for the next attempt to trip over.
+				_ = w.Close()
+				lastErr = fmt.Errorf("open %s: %w", kind, oerr)
+				continue
+			}
+			return w, nil
+		}
+	} else {
+		lastErr = err
+	}
+
+	// 2) Trezor only: fall back to Trezor Bridge if direct USB didn't yield a
+	// working wallet (e.g. libusb couldn't claim the interface on this setup).
 	if kind == signer.KindTrezor {
 		if w, err := bridgeWallet(passphrase); err == nil {
 			return w, nil
 		}
 	}
 
-	hubs, err := newHubs(kind)
-	if err != nil {
-		return nil, err
-	}
-	for _, hub := range hubs {
-		wallets := hub.Wallets()
-		if len(wallets) == 0 {
-			continue
-		}
-		w := wallets[0]
-		if err := w.Open(passphrase); err != nil {
-			// See the matching comment in bridgeWallet: release whatever a
-			// partially-completed Open acquired rather than leaving it dangling
-			// for the next attempt to trip over.
-			_ = w.Close()
-			return nil, fmt.Errorf("open %s: %w", kind, err)
-		}
-		return w, nil
+	if lastErr != nil {
+		return nil, lastErr
 	}
 	return nil, ErrNoDevice
 }

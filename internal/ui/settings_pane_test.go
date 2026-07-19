@@ -43,6 +43,36 @@ func TestSetDefaultSelected(t *testing.T) {
 	}
 }
 
+func TestSaveEditRenameAndURL(t *testing.T) {
+	test.NewApp()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+
+	cfg := &config.Config{}
+	_ = cfg.UpsertEndpoint(rpc.Endpoint{Name: "old", URL: "https://old.example", AutoConnect: true})
+	cfg.ActiveEndpoint = "old"
+	p := newSettingsPane(New(cfg, nil))
+	_ = p.build()
+
+	// Rename the label and change the URL; default + active selection must carry.
+	p.saveEdit("old", "new", "https://new.example", true)
+
+	if _, ok := cfg.EndpointByName("old"); ok {
+		t.Error("old endpoint should be gone after rename")
+	}
+	got, ok := cfg.EndpointByName("new")
+	if !ok || got.URL != "https://new.example" {
+		t.Errorf("renamed endpoint = %+v (ok=%v)", got, ok)
+	}
+	if cfg.ActiveEndpoint != "new" {
+		t.Errorf("active endpoint should follow the rename, got %q", cfg.ActiveEndpoint)
+	}
+	if d, _ := cfg.AutoConnectEndpoint(); d.Name != "new" {
+		t.Errorf("default should follow the rename, got %q", d.Name)
+	}
+}
+
 func TestMonoHyperlink(t *testing.T) {
 	test.NewApp()
 	// Valid URL → a clickable hyperlink in the mono style.

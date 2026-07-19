@@ -398,10 +398,10 @@ type bridgeSession struct {
 	id     string // set once Acquire succeeds
 }
 
-// bridgeDeviceStub satisfies hid.Device so a bridge-backed *wallet can reuse
+// bridgeDeviceStub satisfies usb.Device so a bridge-backed *wallet can reuse
 // wallet.go's existing nil-checks/lifecycle (w.device != nil, Close, etc.)
 // without modifying them — all actual I/O for a bridge wallet goes through
-// bridgeTrezorTransport instead; this stub's Write/Read/* are never called by
+// bridgeTrezorTransport instead; this stub's Write/Read are never called by
 // trezorDriver once opened via OpenBridge. Only Close does real work: releasing
 // the Bridge session.
 type bridgeDeviceStub struct {
@@ -419,13 +419,8 @@ func (b bridgeDeviceStub) Close() error {
 
 func (b bridgeDeviceStub) Write(p []byte) (int, error) { return 0, errBridgeStubUnused }
 func (b bridgeDeviceStub) Read(p []byte) (int, error)  { return 0, errBridgeStubUnused }
-func (b bridgeDeviceStub) ReadTimeout(p []byte, timeout int) (int, error) {
-	return 0, errBridgeStubUnused
-}
-func (b bridgeDeviceStub) GetFeatureReport(p []byte) (int, error)  { return 0, errBridgeStubUnused }
-func (b bridgeDeviceStub) SendFeatureReport(p []byte) (int, error) { return 0, errBridgeStubUnused }
 
-var errBridgeStubUnused = errors.New("usbwallet: bridge wallet does not use raw HID I/O")
+var errBridgeStubUnused = errors.New("usbwallet: bridge wallet does not use raw USB I/O")
 
 // bridgeTrezorTransport implements trezorTransport over a Trezor Bridge session
 // (single HTTP round trip per message; no USB HID chunking).

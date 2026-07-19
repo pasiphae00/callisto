@@ -90,35 +90,74 @@ func NewScanner(client rpc.Client, chainID uint64) *Scanner {
 	}
 }
 
+// Progress reports scan advancement to the UI: a human-readable stage and an
+// overall completion fraction in [0,1] (from the wallet's first block to head,
+// across both the direct and Permit2 passes).
+type Progress struct {
+	Stage    string
+	Fraction float64
+}
+
 // Scan returns every outstanding approval (direct + Permit2) for owner. progress
-// (may be nil) receives human-readable status updates.
-func (s *Scanner) Scan(ctx context.Context, owner common.Address, progress func(string)) ([]Approval, error) {
-	report(progress, "Finding first activity…")
+// (may be nil) receives stage + fraction updates.
+func (s *Scanner) Scan(ctx context.Context, owner common.Address, progress func(Progress)) ([]Approval, error) {
+	emitStage := func(stage string, frac float64) {
+		if progress != nil {
+			progress(Progress{Stage: stage, Fraction: frac})
+		}
+	}
+	emitStage("Finding first activity…", 0)
 	head, err := s.client.BlockNumber(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("head: %w", err)
 	}
 	from := firstActiveBlock(ctx, s.client, owner, head)
 
-	report(progress, "Scanning token approvals…")
-	direct, err := s.scanDirect(ctx, owner, from, head, progress)
+	// The two passes (direct, then Permit2) each cover [from, head]; report a
+	// single fraction across both, throttled so we don't flood the UI thread.
+	var span uint64 = 1
+	if head >= from {
+		span = head - from + 1
+	}
+	total := float64(2 * span)
+	lastFrac := -1.0
+	emit := func(stage string, base, cur uint64) {
+		if progress == nil {
+			return
+		}
+		done := base
+		if cur >= from {
+			done += cur - from + 1
+		}
+		frac := float64(done) / total
+		if frac > 1 {
+			frac = 1
+		}
+		if frac-lastFrac < 0.004 {
+			return // throttle to meaningful advances
+		}
+		lastFrac = frac
+		progress(Progress{Stage: stage, Fraction: frac})
+	}
+
+	direct, err := s.scanDirect(ctx, owner, from, head, func(cur uint64) { emit("Scanning token approvals…", 0, cur) })
 	if err != nil {
 		return nil, err
 	}
-	report(progress, "Scanning Permit2 approvals…")
-	permit2, err := s.scanPermit2(ctx, owner, from, head, progress)
+	permit2, err := s.scanPermit2(ctx, owner, from, head, func(cur uint64) { emit("Scanning Permit2 approvals…", span, cur) })
 	if err != nil {
 		return nil, err
 	}
+	emitStage("Done", 1)
 	return append(direct, permit2...), nil
 }
 
 // scanDirect finds live direct ERC-20 allowances: Approval logs by owner give the
 // (token, spender) pairs ever touched; the current allowance() decides which are
 // still outstanding.
-func (s *Scanner) scanDirect(ctx context.Context, owner common.Address, from, head uint64, progress func(string)) ([]Approval, error) {
+func (s *Scanner) scanDirect(ctx context.Context, owner common.Address, from, head uint64, onBlock func(uint64)) ([]Approval, error) {
 	ownerTopic := common.BytesToHash(owner.Bytes())
-	logs, err := s.getLogs(ctx, nil, [][]common.Hash{{approvalEventSig}, {ownerTopic}}, from, head, progress)
+	logs, err := s.getLogs(ctx, nil, [][]common.Hash{{approvalEventSig}, {ownerTopic}}, from, head, onBlock)
 	if err != nil {
 		return nil, err
 	}
@@ -176,11 +215,14 @@ func (s *Scanner) build(ctx context.Context, layer Layer, token, spender common.
 }
 
 // getLogs runs an eth_getLogs scan over [from, head] in windows, shrinking the
-// window if the RPC rejects a range (many public RPCs cap the span). A persistent
-// failure (e.g. an endpoint that doesn't serve logs at all) is returned so the UI
-// can tell the user to connect a full RPC.
-func (s *Scanner) getLogs(ctx context.Context, addrs []common.Address, topics [][]common.Hash, from, head uint64, progress func(string)) ([]types.Log, error) {
-	const minWindow = 5_000
+// window when the RPC rejects a range (nodes commonly cap the block span per
+// query). It honors a limit the server states in its error (e.g. "…limit… 1000")
+// and otherwise backs off geometrically. onBlock (may be nil) is called with the
+// last block scanned after each successful window, for progress reporting. A
+// failure that persists down to the minimum window (e.g. an endpoint that doesn't
+// serve logs at all) is returned so the UI can tell the user to use a full RPC.
+func (s *Scanner) getLogs(ctx context.Context, addrs []common.Address, topics [][]common.Hash, from, head uint64, onBlock func(uint64)) ([]types.Log, error) {
+	const minWindow = 64
 	window := uint64(1_000_000)
 	var out []types.Log
 	start := from
@@ -197,17 +239,43 @@ func (s *Scanner) getLogs(ctx context.Context, addrs []common.Address, topics []
 		}
 		logs, err := s.client.FilterLogs(ctx, q)
 		if err != nil {
-			if window > minWindow {
-				window /= 5 // range likely too wide; retry the same start smaller
-				continue
+			next := window / 4
+			if lim := parseBlockRangeLimit(err.Error()); lim > 0 && lim < next {
+				next = lim // jump straight to the server's stated cap
 			}
-			return nil, fmt.Errorf("scan logs: %w", err)
+			if next < minWindow {
+				return nil, fmt.Errorf("scan logs: %w", err)
+			}
+			window = next
+			continue
 		}
 		out = append(out, logs...)
 		start = end + 1
-		report(progress, fmt.Sprintf("Scanned to block %d…", end))
+		if onBlock != nil {
+			onBlock(end)
+		}
 	}
 	return out, nil
+}
+
+// parseBlockRangeLimit returns the last integer in a getLogs error message, which
+// for "block range exceeds server limit … N" style errors is the node's per-query
+// block cap. Returns 0 if none is found.
+func parseBlockRangeLimit(msg string) uint64 {
+	var best uint64
+	for i := 0; i < len(msg); {
+		if msg[i] < '0' || msg[i] > '9' {
+			i++
+			continue
+		}
+		var n uint64
+		for i < len(msg) && msg[i] >= '0' && msg[i] <= '9' {
+			n = n*10 + uint64(msg[i]-'0')
+			i++
+		}
+		best = n
+	}
+	return best
 }
 
 // call performs a read-only contract call and returns the raw output.
@@ -257,12 +325,6 @@ func (a Approval) RevokeCall() (to common.Address, data []byte, err error) {
 	}
 	data, err = erc20ABI.Pack("approve", a.Spender, big.NewInt(0))
 	return a.Token, data, err
-}
-
-func report(progress func(string), msg string) {
-	if progress != nil {
-		progress(msg)
-	}
 }
 
 func mustABI(s string) abi.ABI {

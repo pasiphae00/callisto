@@ -32,6 +32,7 @@ type approvalsPane struct {
 
 	status   *widget.Label
 	scanBtn  *widget.Button
+	progress *widget.ProgressBar
 	list     *widget.List
 	items    []approvals.Approval
 	scanning bool
@@ -57,12 +58,14 @@ func (p *approvalsPane) build() fyne.CanvasObject {
 	)
 
 	p.scanBtn = widget.NewButton("Scan approvals", p.scan)
+	p.progress = widget.NewProgressBar()
+	p.progress.Hide()
 
 	header := widget.NewLabelWithStyle("Approvals", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
-	help := widget.NewLabel("Every outstanding token approval for the active wallet — direct ERC-20 allowances and Uniswap Permit2 grants. Unlimited approvals to a compromised contract are a common drain vector; revoke anything you don't recognise. Discovery scans on-chain logs, so it needs a full/archive RPC (the default Flashbots endpoint can't scan).")
+	help := widget.NewLabel("Every outstanding token approval for the active wallet — direct ERC-20 allowances and Uniswap Permit2 grants. Unlimited approvals to a compromised contract are a common drain vector; revoke anything you don't recognise. Discovery scans on-chain logs, so it needs a full RPC that serves eth_getLogs (the default Flashbots endpoint can't).")
 	help.Wrapping = fyne.TextWrapWord
 
-	top := container.NewVBox(header, help, indentToText(container.NewHBox(p.scanBtn)), p.status, widget.NewSeparator())
+	top := container.NewVBox(header, help, indentToText(container.NewHBox(p.scanBtn)), p.status, p.progress, widget.NewSeparator())
 	return container.NewBorder(top, nil, nil, nil, p.list)
 }
 
@@ -91,16 +94,24 @@ func (p *approvalsPane) scan() {
 	p.scanBtn.Disable()
 	p.items = nil
 	p.list.Refresh()
+	p.progress.SetValue(0)
+	p.progress.Show()
 	scanner := approvals.NewScanner(conn.Client, conn.ChainID.Uint64())
 
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 		defer cancel()
-		report := func(s string) { fyne.Do(func() { p.status.SetText(s) }) }
-		found, err := scanner.Scan(ctx, owner, report)
+		onProgress := func(pr approvals.Progress) {
+			fyne.Do(func() {
+				p.status.SetText(pr.Stage)
+				p.progress.SetValue(pr.Fraction)
+			})
+		}
+		found, err := scanner.Scan(ctx, owner, onProgress)
 		fyne.Do(func() {
 			p.scanning = false
 			p.scanBtn.Enable()
+			p.progress.Hide()
 			if err != nil {
 				p.status.SetText("")
 				dialog.ShowError(fmt.Errorf("could not scan approvals: %w\n\nThis usually means the active RPC doesn't serve log queries — connect a full/archive endpoint in Settings.", err), p.app.window)

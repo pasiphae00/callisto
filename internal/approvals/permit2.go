@@ -45,10 +45,10 @@ type tokenSpenderPair struct {
 // scanPermit2 finds live Permit2 inner allowances: Approval/Permit logs from the
 // Permit2 contract by owner give the (token, spender) pairs; the live allowance()
 // (non-zero and not expired) decides which are still outstanding.
-func (s *Scanner) scanPermit2(ctx context.Context, owner common.Address, from, head uint64, progress func(string)) ([]Approval, error) {
+func (s *Scanner) scanPermit2(ctx context.Context, owner common.Address, from, head uint64, onBlock func(uint64)) ([]Approval, error) {
 	ownerTopic := common.BytesToHash(owner.Bytes())
 	topics := [][]common.Hash{{permit2ApprovalSig, permit2PermitSig}, {ownerTopic}}
-	logs, err := s.getLogs(ctx, []common.Address{permit2Address}, topics, from, head, progress)
+	logs, err := s.getLogs(ctx, []common.Address{permit2Address}, topics, from, head, onBlock)
 	if err != nil {
 		return nil, err
 	}

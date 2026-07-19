@@ -2,6 +2,7 @@ package approvals
 
 import (
 	"context"
+	"fmt"
 	"math/big"
 	"testing"
 
@@ -225,6 +226,48 @@ func TestDisplayHelpers(t *testing.T) {
 	b := Approval{Token: common.HexToAddress("0xAAAA000000000000000000000000000000000001")}
 	if b.DisplayToken() != Short(b.Token) {
 		t.Errorf("DisplayToken (no symbol) = %q", b.DisplayToken())
+	}
+}
+
+func TestParseBlockRangeLimit(t *testing.T) {
+	cases := map[string]uint64{
+		"query block range exceeds server limit, narrow your filter: 1000": 1000,
+		"eth_getLogs range too large, max 10000 blocks":                    10000,
+		"no numbers here":             0,
+		"from 500 to 999, limit 2000": 2000, // last integer wins
+	}
+	for msg, want := range cases {
+		if got := parseBlockRangeLimit(msg); got != want {
+			t.Errorf("parseBlockRangeLimit(%q) = %d, want %d", msg, got, want)
+		}
+	}
+}
+
+func TestScanHonorsServerBlockLimit(t *testing.T) {
+	owner := common.HexToAddress("0x1111111111111111111111111111111111111111")
+	token := common.HexToAddress("0xAAAA000000000000000000000000000000000001")
+	spender := common.HexToAddress("0xBBBB000000000000000000000000000000000002")
+
+	const cap = uint64(1000)
+	f := &fakeClient{
+		head:    2500,
+		nonceFn: func(uint64) uint64 { return 1 },
+		filterFn: func(q ethereum.FilterQuery) ([]types.Log, error) {
+			if span := q.ToBlock.Uint64() - q.FromBlock.Uint64(); span > cap {
+				return nil, fmt.Errorf("query block range exceeds server limit, narrow your filter: %d", cap)
+			}
+			return []types.Log{approvalLog(token, owner, spender)}, nil
+		},
+		callFn: func(ethereum.CallMsg) ([]byte, error) {
+			return erc20ABI.Methods["allowance"].Outputs.Pack(big.NewInt(500))
+		},
+	}
+	got, err := stubScanner(f).scanDirect(context.Background(), owner, 0, f.head, nil)
+	if err != nil {
+		t.Fatalf("scan should honor the server cap and complete, got %v", err)
+	}
+	if len(got) != 1 || got[0].Amount.Cmp(big.NewInt(500)) != 0 {
+		t.Fatalf("unexpected result under capped scan: %+v", got)
 	}
 }
 

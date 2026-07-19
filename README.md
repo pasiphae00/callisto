@@ -1,5 +1,5 @@
 <p align="left">
-  <img src="images/CALLISTO-NASA-GALILEO-transparent-small.PNG" alt="Callisto" width="180">
+  <img src="images/CALLISTO-NASA-GALILEO-transparent-small.PNG" alt="Callisto" width="160">
 </p>
 
 <h1 align="left">Callisto</h1>
@@ -25,7 +25,7 @@ Callisto can act as wallet middleware for any web3 application that supports [Wa
 
 Currently, in addition to Safe contract wallets, it supports Trezor and Ledger hardware wallets, with richer support for additional signer types on the roadmap.
 
-See some screenshots of it in action [here](./SCREENSHOTS.md).
+See some screenshots of it in action [here](./EXAMPLES.md).
 
 > **Status: pre-1.0 (`v0.6.0`).** The foundation, basic transaction flows, Gnosis Safe multisig (including owner/threshold administration), encrypted hot-wallet keystores, and WalletConnect (sign for web dApps) are in place and usable. The Claude-assisted complex-transaction pipeline is planned — see [Roadmap](#roadmap).
 

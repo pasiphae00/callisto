@@ -271,7 +271,7 @@
 
 ## medium
 
-### create "approvals" pane — ✅ built for v0.9.0 (pending live verification)
+### create "approvals" pane — ✅ shipped v0.9.0, enhanced v0.9.1, verified live
 - ~~see/scroll all outstanding ERC-20 approvals for the selected wallet (however
   created); show token, spender (by name — cowswap/uniswap/…), and unlimited vs a
   specific amount; a Revoke button; revoked entries disappear once confirmed on
@@ -287,11 +287,24 @@
     (token → spender, UNLIMITED/amount, Permit2 badge+expiry) with a red Revoke that
     runs the review→sign→broadcast→track pipeline, logs to History (Kind `revoke`),
     and drops the row on confirmation. `rpc.Client` gained `FilterLogs`.
-  - **Discovery needs a full/archive RPC** (the default Flashbots relay can't serve
-    `eth_getLogs`); the pane shows a clear message when the active RPC can't scan.
-  - **Follow-ups:** NFT `setApprovalForAll` (ERC-721/1155); an optional external-API
-    or node-proxy accelerator behind a Settings toggle; allowance *editing* (only
-    full revoke today). Live-verify on the user's full node before tagging v0.9.0.
+  - **v0.9.1 enhancements:** persisted approvals + per-(chain,owner) scan watermark
+    (`internal/approvals/cache.go`, store migrations 6/7) → **incremental re-scans**
+    (`Scanner.Refresh` scans only new blocks + re-reads live allowances); **live WSS
+    watch** (`Scanner.Watch` + `rpc.Client.SubscribeFilterLogs`, opt-in
+    `config.AutoDetectApprovals` checkbox); **progress-bar ETA**; instant cached
+    display on tab open. Adaptive `getLogs` window honors a node's block-range cap.
+  - **Discovery needs an ARCHIVE RPC** for full history — a pruned node (incl. erigon
+    `--prune.mode=full`) only keeps recent logs, so old approvals are invisible.
+    Verified live against the Ganymede archive node (full history + Permit2 found).
+    The v0.9.1 default endpoint is that archive node, so it works out of the box.
+  - **⭐ NEXT follow-up — "Full re-scan" button:** a scan on a limited/pruned RPC
+    advances the watermark to head with an empty result; a later scan then runs
+    incrementally and never re-reads old history (a real trap — hit during v0.9.1
+    testing, worked around by deleting the `approval_scan` row). Add a button that
+    clears the watermark + cache and forces a full scan. Small; slot into v0.9.2.
+  - **Other follow-ups:** NFT `setApprovalForAll` (ERC-721/1155); an optional
+    external-API / node-proxy discovery accelerator behind a Settings toggle;
+    allowance *editing* (only full revoke today).
 
 ### created "packaged" pipeline — ✅ shipped in v0.8.0
 - ~~makefile to deliver a native, logo-bearing, clickable app for macOS + Linux;

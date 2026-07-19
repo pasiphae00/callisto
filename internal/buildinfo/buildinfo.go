@@ -8,7 +8,7 @@ package buildinfo
 import "runtime/debug"
 
 // Version is Callisto's current version. Update at release time.
-const Version = "0.6.0"
+const Version = "0.6.1"
 
 // ShortCommit returns the short (7-char) git commit the running binary was
 // built from, or "unknown" if that information isn't available (e.g. built

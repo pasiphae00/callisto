@@ -52,14 +52,14 @@ func newWalletsPane(a *App) *walletsPane {
 	return &walletsPane{app: a, selected: -1}
 }
 
-// walletRow is a wallets-list row that adds double-tap handling on top of the
-// dot + label visual. It implements fyne.DoubleTappable but deliberately not
-// Tappable, so single taps still bubble to the enclosing List for selection while
-// double taps activate the wallet.
+// walletRow is a wallets-list row: a single tap selects it (driven explicitly,
+// since a custom tappable widget consumes the tap the List would otherwise use for
+// selection) and a double tap activates the wallet.
 type walletRow struct {
 	widget.BaseWidget
 	dot         *canvas.Text
 	label       *widget.Label
+	onTap       func()
 	onDoubleTap func()
 }
 
@@ -74,6 +74,13 @@ func newWalletRow() *walletRow {
 
 func (r *walletRow) CreateRenderer() fyne.WidgetRenderer {
 	return widget.NewSimpleRenderer(container.NewHBox(r.dot, r.label))
+}
+
+// Tapped selects the wallet this row represents.
+func (r *walletRow) Tapped(*fyne.PointEvent) {
+	if r.onTap != nil {
+		r.onTap()
+	}
 }
 
 // DoubleTapped activates the wallet this row represents.
@@ -119,8 +126,8 @@ func (p *walletsPane) build() fyne.CanvasObject {
 			}
 			row.dot.Refresh()
 			row.label.SetText(p.rowLabel(w))
-			// Double-clicking a row makes that wallet the active one.
-			row.onDoubleTap = func() { p.activateWallet(i) }
+			row.onTap = func() { p.list.Select(i) }        // single-click selects
+			row.onDoubleTap = func() { p.activateWallet(i) } // double-click activates
 		},
 	)
 	p.list.OnSelected = func(id widget.ListItemID) { p.selected = id; p.updateButtons() }

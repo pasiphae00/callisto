@@ -15,14 +15,16 @@ import (
 	"codeberg.org/pasiphae/callisto/internal/rpc"
 )
 
-// endpointRow is a settings-list row that reports double-taps so an endpoint can
-// be edited by double-clicking it. Single taps still select via the List.
+// endpointRow is a settings-list row: a single tap selects it (driven explicitly,
+// because a custom tappable widget consumes the tap the List would otherwise use
+// for selection), and a double tap opens the editor.
 type endpointRow struct {
 	widget.BaseWidget
 	dot         *canvas.Text
 	name        *widget.Label
 	url         *widget.Label
 	def         *widget.Label
+	onTap       func()
 	onDoubleTap func()
 }
 
@@ -39,6 +41,13 @@ func newEndpointRow() *endpointRow {
 
 func (r *endpointRow) CreateRenderer() fyne.WidgetRenderer {
 	return widget.NewSimpleRenderer(container.NewHBox(r.dot, r.name, r.url, r.def))
+}
+
+// Tapped selects this row.
+func (r *endpointRow) Tapped(*fyne.PointEvent) {
+	if r.onTap != nil {
+		r.onTap()
+	}
 }
 
 // DoubleTapped opens the edit dialog for this endpoint.
@@ -96,8 +105,8 @@ func (p *settingsPane) build() fyne.CanvasObject {
 			} else {
 				row.def.SetText("")
 			}
-			// Double-click a row to edit that endpoint.
-			row.onDoubleTap = func() { p.showEditDialog(i) }
+			row.onTap = func() { p.list.Select(i) }        // single-click selects
+			row.onDoubleTap = func() { p.showEditDialog(i) } // double-click edits
 		},
 	)
 	p.list.OnSelected = func(id widget.ListItemID) {

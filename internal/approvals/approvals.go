@@ -385,7 +385,13 @@ func (s *Scanner) build(ctx context.Context, layer Layer, token, spender common.
 // serve logs at all) is returned so the UI can tell the user to use a full RPC.
 func (s *Scanner) getLogs(ctx context.Context, addrs []common.Address, topics [][]common.Hash, from, head uint64, onBlock func(uint64)) ([]types.Log, error) {
 	const minWindow = 64
-	window := uint64(1_000_000)
+	// Start at logScanWindow and shrink only if the node rejects the range (it
+	// parses the node's stated cap from the error). Approval scans are topic-
+	// filtered with tiny result sets, so a wide window is cheap on the node; this
+	// default matches a comfortable node getLogs block-range cap (see the node's
+	// getLogs range setting, e.g. reth --rpc.max-blocks-per-filter).
+	const logScanWindow = 100_000
+	window := uint64(logScanWindow)
 	var out []types.Log
 	start := from
 	for start <= head {

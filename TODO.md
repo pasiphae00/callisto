@@ -34,15 +34,15 @@
      upstream go-ethereum usbwallet is no longer imported, Trezor Safe uses raw
      libusb (its WebUSB interface, `Hub.raw`), Bridge kept as an auto-fallback.
      `hwscan` shows `[raw] VID=0x1209 PID=0x53c1 iface=0`.
-  2. **⭐ NEXT (v0.7.1) — Native streaming EIP-712** — implement the full `EthereumSignTypedData`
-     (464) request/struct/value flow so Trezor typed-data works *without* the
-     device's experimental features. v0.6.0 shipped `EthereumSignTypedHash` (470),
-     but that's an **experimental** firmware message — disabled by default, so the
-     device rejects it as "Unexpected message". Hot + Ledger typed-data already
-     work; Trezor needs the streaming flow (StructRequest/StructAck →
-     ValueRequest/ValueAck → EthereumTypedDataSignature; wire types 464-469 all
-     hand-encoded, plus a typed-data JSON → type/value model). Sizeable, live-
-     device work.
+  2. **Native streaming EIP-712** — ✅ **DONE in v0.7.1, verified live** (CoW Swap
+     order signed on a Trezor Safe 5). Replaced the experimental
+     `EthereumSignTypedHash` (470) — which newer firmware rejects as "Unexpected
+     message" unless experimental features are on — with the full streaming flow
+     (`EthereumSignTypedData` 464 → StructRequest/StructAck 465/466 →
+     ValueRequest/ValueAck 467/468 → EthereumTypedDataSignature 469, all wire
+     types hand-encoded via protowire, plus a typed-data JSON → type/value model in
+     `trezor_typeddata.go`). WalletConnect `eth_signTypedData_v4` and Safe-owner
+     typed-data now work on a stock Trezor.
 - Frame (github.com/floating/frame, `main/signers/trezor`) talks to Trezor with
   **no** Trezor Suite/Bridge running. Confirmed from its source: it uses
   `@trezor/connect` configured with `transports: ['NodeUsbTransport']` — i.e.
@@ -138,6 +138,7 @@
     instability.
 
 ## minor
+
 ### show full wallet address in wallets pane — ✅ done
 - ~~lets show the full wallet address in the wallets selection pane... copyable~~
   - Wallets pane now has a detail bar below the list: selecting a wallet shows
@@ -208,6 +209,17 @@
 
 ## medium
 
+### created "packaged" pipeline
+- lets create a makefile (or similar) to deliver a native app "packaged format,"
+  - complete with the app's logo 
+  - the ability to move it into the "applications" directory and run it as a normal, standard, clickable app
+- we should work on a distribution model that allows us to easily ship macos and linux versions of the app
+- i'm not sure if an installer is needed, but if so, lets build that too
+- the goal is eventually that with each tagged version and CHANGELOG update, we can ship an easily downloadable version of the app for users to download
+- we should make sure that to the greatest extent possible updating the app preserves a users wallet config, rpc config, transaction history, etc.
+- ideally, in settings there is an "update app" button. lots of apps these days do this withour requiring a fresh download
+  - im not sure how hard that is to implement. 
+
 ### enable passphrase unlock of hot-wallets — ✅ done (v0.5.0)
 - ~~the recovery phrase should only be needed on the first import; enforce a passphrase to encrypt the keystore; unlock re-enters only the passphrase; one-time import, not a frequent phrase re-entry~~
   - New `internal/keystore` (scrypt N=2^18 + AES-256-GCM, authenticated) encrypts the
@@ -269,12 +281,23 @@
   2-of-4) broadcast and confirmed. Ledger's eth_sign path uses upstream go-ethereum
   `SignText` unchanged; not separately device-tested but shares the same code path.
 
+### transaction simulation
+- lets plan and figure out the best way to surface to the user the option to "simulate" a transaction against a blockchain snapshot
+- we can implement it ourself, we could also use tenderly
+  - i lean towards keeping everything within callisto instead of relying on a external api
+  - we should have it be a button next to sign and send for both multisig and eoa accounts
+  - if a user presses simulate, they should ulatimately see a dialogue box (or maybe be directed to a separate pane) that shows the relevant before and after state of the account (and ether balance before and after) to confirm the transaction does what they expect
+  - if a simulation is run, the user should be prompted after to continue to an actual sign and submission, or a reject path if something is wrong
+  - if we implement this well, we should advertise it in the documentation as an imporant safety feature
+
 ### claude-assisted advanced transaction preparation
 - can be used for both EOA and Safe wallets
 - if a Safe wallet is connected, "multi-step" transactions are also enabled
 - the user should have an option in settings to _fully_ disable all AI features, and they should be off by default
 - in settings, there should be a place to enter a claude API key, and a toggle switch to enable/disable the AI features
 - this is a security and performance measure, so if the toggle is off the backend should truly put all AI features in a "cold path" (untouched until it's flipped on)
+- the entry of the claude api key should be in settings, formatted well and the key should be saved and persist across restarts
+- there should be an option to delete the key and a separate toggle to fully disable the AI feature
 
 ### researching multi-step transactions
 

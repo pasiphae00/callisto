@@ -116,6 +116,21 @@ func OpenFromKeystore(ks *keystore.Keystore, keystorePassphrase, path string) (*
 	return newFromSeed(secret, path)
 }
 
+// OpenFromKeystoreWithKey opens a keystore using a pre-derived AES key (from
+// keystore.DeriveKey, cached in the OS keychain for Touch ID unlock) instead of a
+// passphrase. Same account semantics as OpenFromKeystore.
+func OpenFromKeystoreWithKey(ks *keystore.Keystore, key []byte, path string) (*Wallet, error) {
+	secret, err := ks.DecryptWithKey(key)
+	if err != nil {
+		return nil, err
+	}
+	defer zero(secret)
+	if ks.Secret == secretPrivateKey {
+		return newFromPrivateKey(secret)
+	}
+	return newFromSeed(secret, path)
+}
+
 // secretPrivateKey marks a keystore whose sealed bytes are a raw 32-byte account
 // private key (a single-account import) rather than a BIP-39 seed.
 const secretPrivateKey = "private-key"

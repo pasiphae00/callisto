@@ -129,7 +129,7 @@ func (p *walletsPane) build() fyne.CanvasObject {
 			}
 			row.dot.Refresh()
 			row.label.SetText(p.rowLabel(w))
-			row.onTap = func() { p.list.Select(i) }        // single-click selects
+			row.onTap = func() { p.list.Select(i) }          // single-click selects
 			row.onDoubleTap = func() { p.activateWallet(i) } // double-click activates
 		},
 	)
@@ -513,19 +513,30 @@ func (p *walletsPane) unlockSelected() {
 	}
 }
 
-// unlockHotKeystore unlocks an encrypted hot wallet with its passphrase only.
+// unlockHotKeystore unlocks an encrypted hot wallet with its passphrase, offering
+// Touch ID first when the wallet is enrolled.
 func (p *walletsPane) unlockHotKeystore(desc wallet.Descriptor) {
+	enrolled := p.app.cfg.IsTouchIDEnrolled(desc.KeystoreID) && keystore.OSSecretStore().Available()
 	pass := widget.NewPasswordEntry()
 	pass.SetPlaceHolder("wallet passphrase")
-	d := dialog.NewForm("Unlock "+displayName(desc), "Unlock", "Cancel",
-		[]*widget.FormItem{widget.NewFormItem("Passphrase", pass)},
+
+	content := container.NewVBox()
+	var d dialog.Dialog
+	if enrolled {
+		tid := widget.NewButton("Use Touch ID", func() { d.Hide(); p.unlockWithTouchID(desc) })
+		tid.Importance = widget.HighImportance
+		content.Add(tid)
+		content.Add(widget.NewLabel("…or enter your passphrase:"))
+	}
+	content.Add(widget.NewForm(widget.NewFormItem("Passphrase", pass)))
+
+	d = dialog.NewCustomConfirm("Unlock "+displayName(desc), "Unlock", "Cancel", content,
 		func(ok bool) {
-			if !ok {
-				return
+			if ok {
+				p.openFromKeystore(desc, pass.Text)
 			}
-			p.openFromKeystore(desc, pass.Text)
 		}, p.app.window)
-	d.Resize(fyne.NewSize(460, 180))
+	d.Resize(fyne.NewSize(460, 240))
 	d.Show()
 }
 
@@ -750,8 +761,15 @@ func (p *walletsPane) showManageMenu() {
 		item("Change passphrase…", p.changePassphraseSelected)
 		item("Reveal private key…", p.revealPrivateKeySelected)
 		item("Export encrypted backup…", p.exportBackupSelected)
+		if keystore.OSSecretStore().Available() {
+			if p.app.cfg.IsTouchIDEnrolled(desc.KeystoreID) {
+				item("Disable Touch ID unlock", p.disableTouchIDSelected)
+			} else {
+				item("Enable Touch ID unlock…", p.enableTouchIDSelected)
+			}
+		}
 	}
-	d.Resize(fyne.NewSize(340, 300))
+	d.Resize(fyne.NewSize(340, 340))
 	d.Show()
 }
 
@@ -1181,6 +1199,12 @@ func (p *walletsPane) maybeWipeKeystore(removed wallet.Descriptor) {
 	}
 	if ksDir, err := config.KeystoreDir(); err == nil {
 		_ = keystore.Wipe(filepath.Join(ksDir, removed.KeystoreID+".json"))
+	}
+	// Also drop any Touch ID enrollment for this keystore.
+	if p.app.cfg.IsTouchIDEnrolled(removed.KeystoreID) {
+		_ = keystore.OSSecretStore().Delete(touchIDRef(removed.KeystoreID))
+		p.app.cfg.SetTouchIDEnrolled(removed.KeystoreID, false)
+		_ = p.app.cfg.Save()
 	}
 }
 

@@ -61,7 +61,7 @@ type KDFParams struct {
 // to decrypt it. It is JSON-serializable for on-disk storage.
 type Keystore struct {
 	Version    int       `json:"version"`
-	KDF        string    `json:"kdf"`        // "scrypt"
+	KDF        string    `json:"kdf"` // "scrypt"
 	KDFParams  KDFParams `json:"kdfparams"`
 	Cipher     string    `json:"cipher"`     // "aes-256-gcm"
 	Nonce      string    `json:"nonce"`      // hex

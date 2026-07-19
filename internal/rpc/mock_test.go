@@ -115,6 +115,10 @@ type mockSubscription struct {
 func (s *mockSubscription) Unsubscribe()      {}
 func (s *mockSubscription) Err() <-chan error { return s.errCh }
 
+func (m *mockClient) SubscribeFilterLogs(context.Context, ethereum.FilterQuery, chan<- types.Log) (ethereum.Subscription, error) {
+	return &mockSubscription{errCh: m.subErrCh}, nil
+}
+
 func (m *mockClient) SubscribeNewHead(ctx context.Context, ch chan<- *types.Header) (ethereum.Subscription, error) {
 	if m.failSub {
 		return nil, ethereum.NotFound

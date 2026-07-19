@@ -45,6 +45,9 @@ func (m *txMock) SendTransaction(context.Context, *types.Transaction) error { re
 func (m *txMock) TransactionReceipt(context.Context, common.Hash) (*types.Receipt, error) {
 	return nil, nil
 }
+func (m *txMock) SubscribeFilterLogs(context.Context, ethereum.FilterQuery, chan<- types.Log) (ethereum.Subscription, error) {
+	return nil, nil
+}
 func (m *txMock) SubscribeNewHead(context.Context, chan<- *types.Header) (ethereum.Subscription, error) {
 	return nil, nil
 }

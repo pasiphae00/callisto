@@ -144,6 +144,34 @@ var migrations = []string{
 		signed_at      INTEGER NOT NULL,
 		PRIMARY KEY (proposal_id, signer_address)
 	)`,
+
+	// 6: cached token approvals for the Approvals pane, so re-scans are incremental.
+	// The PK is ordered (chain_id, owner, …) so listing by (chain_id, owner) is a
+	// prefix scan — no separate index needed.
+	`CREATE TABLE IF NOT EXISTS approvals (
+		chain_id       INTEGER NOT NULL,
+		owner          TEXT    NOT NULL,           -- EIP-55 owner address
+		layer          INTEGER NOT NULL,           -- 0=direct ERC-20, 1=Permit2
+		token          TEXT    NOT NULL,           -- token contract (EIP-55)
+		spender        TEXT    NOT NULL,           -- spender contract (EIP-55)
+		token_symbol   TEXT,
+		token_decimals INTEGER NOT NULL DEFAULT 0,
+		amount         TEXT    NOT NULL,           -- decimal string (base units)
+		unlimited      INTEGER NOT NULL DEFAULT 0,
+		expiration     INTEGER NOT NULL DEFAULT 0, -- Permit2 expiry (unix), 0 if none
+		updated_block  INTEGER NOT NULL DEFAULT 0,
+		updated_at     INTEGER NOT NULL,
+		PRIMARY KEY (chain_id, owner, layer, token, spender)
+	)`,
+
+	// 7: per-(chain, owner) scan high-watermark, so a rescan only covers new blocks.
+	`CREATE TABLE IF NOT EXISTS approval_scan (
+		chain_id   INTEGER NOT NULL,
+		owner      TEXT    NOT NULL,
+		last_block INTEGER NOT NULL,
+		updated_at INTEGER NOT NULL,
+		PRIMARY KEY (chain_id, owner)
+	)`,
 }
 
 // migrate applies any not-yet-applied migrations inside a transaction.

@@ -45,6 +45,9 @@ func (m *mockClient) SendTransaction(context.Context, *types.Transaction) error 
 func (m *mockClient) TransactionReceipt(context.Context, common.Hash) (*types.Receipt, error) {
 	return nil, nil
 }
+func (m *mockClient) SubscribeFilterLogs(context.Context, ethereum.FilterQuery, chan<- types.Log) (ethereum.Subscription, error) {
+	return nil, nil
+}
 func (m *mockClient) SubscribeNewHead(context.Context, chan<- *types.Header) (ethereum.Subscription, error) {
 	return nil, nil
 }

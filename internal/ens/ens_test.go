@@ -78,6 +78,9 @@ func (m *mockRPC) SendTransaction(context.Context, *types.Transaction) error    
 func (m *mockRPC) TransactionReceipt(context.Context, common.Hash) (*types.Receipt, error) {
 	return nil, nil
 }
+func (m *mockRPC) SubscribeFilterLogs(context.Context, ethereum.FilterQuery, chan<- types.Log) (ethereum.Subscription, error) {
+	return nil, nil
+}
 func (m *mockRPC) SubscribeNewHead(context.Context, chan<- *types.Header) (ethereum.Subscription, error) {
 	return nil, nil
 }

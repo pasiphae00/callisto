@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"math/big"
 	"strings"
+	"time"
 
 	ethereum "github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -98,9 +99,10 @@ type Progress struct {
 	Fraction float64
 }
 
-// Scan returns every outstanding approval (direct + Permit2) for owner. progress
-// (may be nil) receives stage + fraction updates.
-func (s *Scanner) Scan(ctx context.Context, owner common.Address, progress func(Progress)) ([]Approval, error) {
+// Scan returns every outstanding approval (direct + Permit2) for owner, plus the
+// head block scanned (the new watermark). progress (may be nil) receives stage +
+// fraction updates.
+func (s *Scanner) Scan(ctx context.Context, owner common.Address, progress func(Progress)) ([]Approval, uint64, error) {
 	emitStage := func(stage string, frac float64) {
 		if progress != nil {
 			progress(Progress{Stage: stage, Fraction: frac})
@@ -109,7 +111,7 @@ func (s *Scanner) Scan(ctx context.Context, owner common.Address, progress func(
 	emitStage("Finding first activity…", 0)
 	head, err := s.client.BlockNumber(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("head: %w", err)
+		return nil, 0, fmt.Errorf("head: %w", err)
 	}
 	from := firstActiveBlock(ctx, s.client, owner, head)
 
@@ -142,14 +144,174 @@ func (s *Scanner) Scan(ctx context.Context, owner common.Address, progress func(
 
 	direct, err := s.scanDirect(ctx, owner, from, head, func(cur uint64) { emit("Scanning token approvals…", 0, cur) })
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	permit2, err := s.scanPermit2(ctx, owner, from, head, func(cur uint64) { emit("Scanning Permit2 approvals…", span, cur) })
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	emitStage("Done", 1)
-	return append(direct, permit2...), nil
+	return append(direct, permit2...), head, nil
+}
+
+// pair identifies one (layer, token, spender) approval slot.
+type pair struct {
+	layer   Layer
+	token   common.Address
+	spender common.Address
+}
+
+func (p pair) key() string { return string(rune(p.layer)) + p.token.Hex() + p.spender.Hex() }
+
+// Refresh performs an incremental update: it scans only the blocks after
+// sinceBlock for approval changes, unions those (token, spender) pairs with the
+// already-known cached ones, and re-reads every pair's live allowance (which also
+// catches finite allowances spent down via transferFrom, and revocations made
+// elsewhere). It returns the current outstanding set and the new watermark (head).
+func (s *Scanner) Refresh(ctx context.Context, owner common.Address, sinceBlock uint64, cached []Approval, progress func(Progress)) ([]Approval, uint64, error) {
+	emit := func(stage string, frac float64) {
+		if progress != nil {
+			progress(Progress{Stage: stage, Fraction: frac})
+		}
+	}
+	emit("Checking for new approvals…", 0)
+	head, err := s.client.BlockNumber(ctx)
+	if err != nil {
+		return nil, 0, fmt.Errorf("head: %w", err)
+	}
+
+	// Seed the working set with the known pairs, then add any that changed since
+	// the watermark.
+	set := map[string]pair{}
+	for _, a := range cached {
+		p := pair{a.Layer, a.Token, a.Spender}
+		set[p.key()] = p
+	}
+
+	if from := sinceBlock + 1; from <= head {
+		ownerTopic := common.BytesToHash(owner.Bytes())
+		span := head - from + 1
+		onBlk := func(cur uint64) {
+			if span > 0 {
+				emit("Scanning new blocks…", 0.5*float64(cur-from+1)/float64(span))
+			}
+		}
+		directLogs, err := s.getLogs(ctx, nil, [][]common.Hash{{approvalEventSig}, {ownerTopic}}, from, head, onBlk)
+		if err != nil {
+			return nil, 0, err
+		}
+		for _, lg := range directLogs {
+			if len(lg.Topics) >= 3 {
+				p := pair{LayerDirect, lg.Address, common.BytesToAddress(lg.Topics[2].Bytes())}
+				set[p.key()] = p
+			}
+		}
+		p2Logs, err := s.getLogs(ctx, []common.Address{permit2Address}, [][]common.Hash{{permit2ApprovalSig, permit2PermitSig}, {ownerTopic}}, from, head, nil)
+		if err != nil {
+			return nil, 0, err
+		}
+		for _, lg := range p2Logs {
+			if len(lg.Topics) >= 4 {
+				p := pair{LayerPermit2, common.BytesToAddress(lg.Topics[2].Bytes()), common.BytesToAddress(lg.Topics[3].Bytes())}
+				set[p.key()] = p
+			}
+		}
+	}
+
+	// Re-read the live allowance for every candidate pair.
+	pairs := make([]pair, 0, len(set))
+	for _, p := range set {
+		pairs = append(pairs, p)
+	}
+	out := make([]Approval, 0, len(pairs))
+	for i, p := range pairs {
+		emit("Refreshing allowances…", 0.5+0.5*float64(i)/float64(len(pairs)+1))
+		if a, ok := s.resolve(ctx, owner, p); ok {
+			out = append(out, a)
+		}
+	}
+	emit("Done", 1)
+	return out, head, nil
+}
+
+// resolve reads the live allowance for one pair and returns the Approval if it is
+// still outstanding (non-zero, and non-expired for Permit2).
+func (s *Scanner) resolve(ctx context.Context, owner common.Address, p pair) (Approval, bool) {
+	if p.layer == LayerPermit2 {
+		amount, expiration, err := s.permit2Allowance(ctx, owner, p.token, p.spender)
+		if err != nil || amount == nil || amount.Sign() == 0 {
+			return Approval{}, false
+		}
+		if expiration != 0 && expiration <= time.Now().Unix() {
+			return Approval{}, false
+		}
+		return s.build(ctx, LayerPermit2, p.token, p.spender, amount, maxUint160, expiration), true
+	}
+	amount, err := s.allowance(ctx, p.token, owner, p.spender)
+	if err != nil || amount == nil || amount.Sign() == 0 {
+		return Approval{}, false
+	}
+	return s.build(ctx, LayerDirect, p.token, p.spender, amount, unlimitedThreshold, 0), true
+}
+
+// Watch subscribes to live approval changes for owner (WSS endpoints only) and
+// invokes onChange for each event with the re-read Approval, whether it is still
+// outstanding, and the block it changed at, until ctx is cancelled or the
+// subscription drops. Non-outstanding (revoked/zero) changes carry a zero-amount
+// Approval carrying only the identity (layer/token/spender) for removal.
+func (s *Scanner) Watch(ctx context.Context, owner common.Address, onChange func(a Approval, outstanding bool, block uint64)) error {
+	ownerTopic := common.BytesToHash(owner.Bytes())
+	ch := make(chan types.Log, 64)
+	subD, err := s.client.SubscribeFilterLogs(ctx,
+		ethereum.FilterQuery{Topics: [][]common.Hash{{approvalEventSig}, {ownerTopic}}}, ch)
+	if err != nil {
+		return err
+	}
+	subP, err := s.client.SubscribeFilterLogs(ctx,
+		ethereum.FilterQuery{Addresses: []common.Address{permit2Address}, Topics: [][]common.Hash{{permit2ApprovalSig, permit2PermitSig}, {ownerTopic}}}, ch)
+	if err != nil {
+		subD.Unsubscribe()
+		return err
+	}
+	go func() {
+		defer subD.Unsubscribe()
+		defer subP.Unsubscribe()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-subD.Err():
+				return
+			case <-subP.Err():
+				return
+			case lg := <-ch:
+				p, ok := logToPair(lg)
+				if !ok {
+					continue
+				}
+				a, outstanding := s.resolve(ctx, owner, p)
+				if !outstanding {
+					a = Approval{Layer: p.layer, Token: p.token, Spender: p.spender, Amount: big.NewInt(0)}
+				}
+				onChange(a, outstanding, lg.BlockNumber)
+			}
+		}
+	}()
+	return nil
+}
+
+// logToPair maps an Approval/Permit log to its (layer, token, spender) pair.
+func logToPair(lg types.Log) (pair, bool) {
+	if lg.Address == permit2Address {
+		if len(lg.Topics) >= 4 {
+			return pair{LayerPermit2, common.BytesToAddress(lg.Topics[2].Bytes()), common.BytesToAddress(lg.Topics[3].Bytes())}, true
+		}
+		return pair{}, false
+	}
+	if len(lg.Topics) >= 3 && lg.Topics[0] == approvalEventSig {
+		return pair{LayerDirect, lg.Address, common.BytesToAddress(lg.Topics[2].Bytes())}, true
+	}
+	return pair{}, false
 }
 
 // scanDirect finds live direct ERC-20 allowances: Approval logs by owner give the

@@ -33,13 +33,27 @@ type approvalsPane struct {
 	status   *widget.Label
 	scanBtn  *widget.Button
 	progress *widget.ProgressBar
+	autoChk  *widget.Check
 	list     *widget.List
 	items    []approvals.Approval
 	scanning bool
+	cache    *approvals.Cache
+
+	// scan progress / ETA
+	scanStart time.Time
+	scanFrac  float64
+
+	// live watcher
+	watchCancel context.CancelFunc
+	watchOwner  common.Address
 }
 
 func newApprovalsPane(a *App) *approvalsPane {
-	return &approvalsPane{app: a}
+	p := &approvalsPane{app: a}
+	if a.store != nil {
+		p.cache = approvals.NewCache(a.store)
+	}
+	return p
 }
 
 func (p *approvalsPane) build() fyne.CanvasObject {
@@ -59,73 +73,239 @@ func (p *approvalsPane) build() fyne.CanvasObject {
 
 	p.scanBtn = widget.NewButton("Scan approvals", p.scan)
 	p.progress = widget.NewProgressBar()
+	p.progress.TextFormatter = p.progressText
 	p.progress.Hide()
 
+	p.autoChk = widget.NewCheck("Auto-detect new approvals (WSS)", p.toggleAuto)
+	p.autoChk.Checked = p.app.cfg.AutoDetectApprovals // set field directly; don't fire OnChanged at build
+
 	header := widget.NewLabelWithStyle("Approvals", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
-	help := widget.NewLabel("Every outstanding token approval for the active wallet — direct ERC-20 allowances and Uniswap Permit2 grants. Unlimited approvals to a compromised contract are a common drain vector; revoke anything you don't recognise. Discovery scans on-chain logs, so it needs a full RPC that serves eth_getLogs (the default Flashbots endpoint can't).")
+	help := widget.NewLabel("Every outstanding token approval for the active wallet — direct ERC-20 allowances and Uniswap Permit2 grants. Unlimited approvals to a compromised contract are a common drain vector; revoke anything you don't recognise.\n\nDiscovery scans on-chain logs (needs a full node that serves eth_getLogs). The first scan of an old wallet can take a while; later scans are incremental (only new blocks since the last scan).")
 	help.Wrapping = fyne.TextWrapWord
 
-	top := container.NewVBox(header, help, indentToText(container.NewHBox(p.scanBtn)), p.status, p.progress, widget.NewSeparator())
+	controls := indentToText(container.NewHBox(p.scanBtn, p.autoChk))
+	top := container.NewVBox(header, help, controls, p.status, p.progress, widget.NewSeparator())
 	return container.NewBorder(top, nil, nil, nil, p.list)
 }
 
-// scan discovers approvals for the active wallet off the UI thread.
+// onShow loads cached approvals for instant display and starts the live watcher
+// (if enabled + WSS). Called each time the pane is selected.
+func (p *approvalsPane) onShow() {
+	owner, conn, chainID, ok := p.activeContext()
+	if !ok {
+		return
+	}
+	if !p.scanning && p.cache != nil {
+		if items, err := p.cache.List(chainID, owner); err == nil {
+			p.items = items
+			p.list.Refresh()
+			if _, hasWM, _ := p.cache.Watermark(chainID, owner); hasWM && len(items) > 0 {
+				p.status.SetText(fmt.Sprintf("%d approval(s) from the last scan — Scan to refresh.", len(items)))
+			}
+		}
+	}
+	if p.watchCancel == nil || p.watchOwner != owner {
+		p.startWatch(owner, conn)
+	}
+}
+
+// activeContext returns the active wallet's owner address and connection, or
+// ok=false if either is missing.
+func (p *approvalsPane) activeContext() (common.Address, *rpc.Connection, uint64, bool) {
+	desc, ok := p.app.cfg.WalletByID(p.app.cfg.ActiveWallet)
+	if !ok {
+		return common.Address{}, nil, 0, false
+	}
+	owner, err := address.Parse(desc.Address)
+	if err != nil {
+		return common.Address{}, nil, 0, false
+	}
+	conn, ok := p.app.rpc.Active()
+	if !ok {
+		return common.Address{}, nil, 0, false
+	}
+	return owner, conn, conn.ChainID.Uint64(), true
+}
+
+// scan discovers approvals for the active wallet off the UI thread. It is
+// incremental when a prior scan watermark exists (only new blocks are scanned),
+// else a full scan.
 func (p *approvalsPane) scan() {
 	if p.scanning {
 		return
 	}
-	desc, ok := p.app.cfg.WalletByID(p.app.cfg.ActiveWallet)
+	owner, conn, chainID, ok := p.activeContext()
 	if !ok {
-		p.status.SetText("Select a wallet in the Wallets tab.")
+		p.status.SetText("Select a wallet and connect a full-node RPC first.")
 		return
 	}
-	owner, err := address.Parse(desc.Address)
-	if err != nil {
-		p.status.SetText("This wallet has an invalid address on record.")
-		return
-	}
-	conn, ok := p.app.rpc.Active()
-	if !ok {
-		p.status.SetText("Connect an RPC endpoint first (a full/archive node).")
-		return
+
+	var watermark uint64
+	var haveWM bool
+	var cached []approvals.Approval
+	if p.cache != nil {
+		if wm, ok, _ := p.cache.Watermark(chainID, owner); ok {
+			watermark, haveWM = wm, true
+		}
+		cached, _ = p.cache.List(chainID, owner)
+		p.items = cached // show what we have while the (incremental) scan runs
+		p.list.Refresh()
 	}
 
 	p.scanning = true
 	p.scanBtn.Disable()
-	p.items = nil
-	p.list.Refresh()
+	p.scanStart = time.Now()
+	p.scanFrac = 0
 	p.progress.SetValue(0)
 	p.progress.Show()
-	scanner := approvals.NewScanner(conn.Client, conn.ChainID.Uint64())
+	scanner := approvals.NewScanner(conn.Client, chainID)
 
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
 		defer cancel()
 		onProgress := func(pr approvals.Progress) {
 			fyne.Do(func() {
+				p.scanFrac = pr.Fraction
 				p.status.SetText(pr.Stage)
 				p.progress.SetValue(pr.Fraction)
 			})
 		}
-		found, err := scanner.Scan(ctx, owner, onProgress)
+		var found []approvals.Approval
+		var newWM uint64
+		var scanErr error
+		if haveWM {
+			found, newWM, scanErr = scanner.Refresh(ctx, owner, watermark, cached, onProgress)
+		} else {
+			found, newWM, scanErr = scanner.Scan(ctx, owner, onProgress)
+		}
 		fyne.Do(func() {
 			p.scanning = false
 			p.scanBtn.Enable()
 			p.progress.Hide()
-			if err != nil {
+			if scanErr != nil {
 				p.status.SetText("")
-				dialog.ShowError(fmt.Errorf("could not scan approvals: %w\n\nThis usually means the active RPC doesn't serve log queries — connect a full/archive endpoint in Settings.", err), p.app.window)
+				dialog.ShowError(fmt.Errorf("could not scan approvals: %w\n\nThis usually means the active RPC doesn't serve log queries — connect a full-node endpoint in Settings.", scanErr), p.app.window)
 				return
 			}
 			p.items = found
 			p.list.Refresh()
+			if p.cache != nil {
+				_ = p.cache.Save(chainID, owner, found, newWM)
+			}
 			if len(found) == 0 {
 				p.status.SetText("No outstanding approvals for " + address.Short(owner) + ".")
 			} else {
 				p.status.SetText(fmt.Sprintf("%d outstanding approval(s) for %s.", len(found), address.Short(owner)))
 			}
+			p.startWatch(owner, conn) // (re)start live detection for this owner/connection
 		})
 	}()
+}
+
+// progressText renders the ETA overlay text on the progress bar.
+func (p *approvalsPane) progressText() string {
+	frac := p.scanFrac
+	pct := int(frac*100 + 0.5)
+	if frac < 0.02 || p.scanStart.IsZero() {
+		return fmt.Sprintf("%d%% (estimating…)", pct)
+	}
+	remaining := time.Duration(float64(time.Since(p.scanStart)) * (1 - frac) / frac)
+	return fmt.Sprintf("%d%% (~%s remaining)", pct, humanizeDuration(remaining))
+}
+
+func humanizeDuration(d time.Duration) string {
+	switch {
+	case d < time.Minute:
+		return fmt.Sprintf("%ds", int(d.Seconds())+1)
+	case d < time.Hour:
+		return fmt.Sprintf("%dm", int(d.Minutes())+1)
+	default:
+		return fmt.Sprintf("%dh%dm", int(d.Hours()), int(d.Minutes())%60)
+	}
+}
+
+// --- live watcher -----------------------------------------------------------
+
+// toggleAuto handles the "Auto-detect new approvals" checkbox.
+func (p *approvalsPane) toggleAuto(checked bool) {
+	p.app.cfg.AutoDetectApprovals = checked
+	_ = p.app.cfg.Save()
+	if !checked {
+		p.stopWatch()
+		p.status.SetText("Live detection off.")
+		return
+	}
+	if owner, conn, _, ok := p.activeContext(); ok {
+		p.startWatch(owner, conn)
+	}
+}
+
+// startWatch subscribes to live approval changes for owner over a WSS endpoint.
+// No-op if auto-detect is off or the active endpoint isn't WSS.
+func (p *approvalsPane) startWatch(owner common.Address, conn *rpc.Connection) {
+	p.stopWatch()
+	if !p.app.cfg.AutoDetectApprovals || conn == nil {
+		return
+	}
+	if sch, _ := rpc.SchemeOf(conn.Endpoint.URL); sch != rpc.SchemeWS {
+		if p.autoChk != nil && p.autoChk.Checked {
+			p.status.SetText("Live detection needs a WSS endpoint; connect one in Settings.")
+		}
+		return
+	}
+	chainID := conn.ChainID.Uint64()
+	scanner := approvals.NewScanner(conn.Client, chainID)
+	ctx, cancel := context.WithCancel(context.Background())
+	err := scanner.Watch(ctx, owner, func(a approvals.Approval, outstanding bool, block uint64) {
+		fyne.Do(func() { p.applyLiveChange(chainID, owner, a, outstanding, block) })
+	})
+	if err != nil {
+		cancel()
+		return
+	}
+	p.watchCancel = cancel
+	p.watchOwner = owner
+}
+
+func (p *approvalsPane) stopWatch() {
+	if p.watchCancel != nil {
+		p.watchCancel()
+		p.watchCancel = nil
+		p.watchOwner = common.Address{}
+	}
+}
+
+// applyLiveChange updates the list + cache when a live approval event arrives.
+func (p *approvalsPane) applyLiveChange(chainID uint64, owner common.Address, a approvals.Approval, outstanding bool, block uint64) {
+	if outstanding {
+		p.upsertItem(a)
+		if p.cache != nil {
+			_ = p.cache.Upsert(chainID, owner, a, block)
+		}
+		p.status.SetText(fmt.Sprintf("Live: %s → %s updated.", a.DisplayToken(), a.DisplaySpender()))
+	} else {
+		p.removeItem(a)
+		if p.cache != nil {
+			_ = p.cache.Delete(chainID, owner, a)
+		}
+		p.status.SetText(fmt.Sprintf("Live: %s → %s revoked.", a.DisplayToken(), a.DisplaySpender()))
+	}
+	if p.cache != nil {
+		_ = p.cache.SetWatermark(chainID, owner, block)
+	}
+}
+
+// upsertItem replaces or appends an approval in the list.
+func (p *approvalsPane) upsertItem(a approvals.Approval) {
+	for i, it := range p.items {
+		if it.Layer == a.Layer && it.Token == a.Token && it.Spender == a.Spender {
+			p.items[i] = a
+			p.list.Refresh()
+			return
+		}
+	}
+	p.items = append(p.items, a)
+	p.list.Refresh()
 }
 
 // revoke prepares, reviews, signs, and submits a revocation for ap.
@@ -280,13 +460,13 @@ func (p *approvalsPane) signAndRevoke(prep tx.Prepared, ap approvals.Approval, i
 			)
 			dialog.ShowCustom("Revoke approval", "Close", body, p.app.window)
 		})
-		p.trackRevoke(recID, conn.Client, hash, ap, info)
+		p.trackRevoke(recID, conn.Client, hash, ap, prep.Send.From, info)
 	}()
 }
 
 // trackRevoke waits for the receipt, updates history, and removes the row on
 // success (the allowance is now zero).
-func (p *approvalsPane) trackRevoke(recID int64, client rpc.Client, hash common.Hash, ap approvals.Approval, info chain.Info) {
+func (p *approvalsPane) trackRevoke(recID int64, client rpc.Client, hash common.Hash, ap approvals.Approval, owner common.Address, info chain.Info) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 	receipt, err := tx.WaitForReceipt(ctx, client, hash)
@@ -305,6 +485,9 @@ func (p *approvalsPane) trackRevoke(recID int64, client rpc.Client, hash common.
 		p.notifyHistory()
 		if success {
 			p.removeItem(ap)
+			if p.cache != nil {
+				_ = p.cache.Delete(info.ID, owner, ap)
+			}
 			p.status.SetText(fmt.Sprintf("Revoked %s → %s (block %d).", ap.DisplayToken(), ap.DisplaySpender(), block))
 		} else {
 			p.status.SetText("Revocation transaction reverted.")

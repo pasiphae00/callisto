@@ -42,6 +42,9 @@ type Client interface {
 
 	// Live subscriptions (WebSocket transports only; see Endpoint.Scheme).
 	SubscribeNewHead(ctx context.Context, ch chan<- *types.Header) (ethereum.Subscription, error)
+	// SubscribeFilterLogs streams logs matching q (used for live approval
+	// detection over a WSS endpoint).
+	SubscribeFilterLogs(ctx context.Context, q ethereum.FilterQuery, ch chan<- types.Log) (ethereum.Subscription, error)
 
 	// Close releases the underlying connection.
 	Close()

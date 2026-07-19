@@ -58,6 +58,9 @@ func (f *fakeClient) TransactionReceipt(context.Context, common.Hash) (*types.Re
 func (f *fakeClient) SubscribeNewHead(context.Context, chan<- *types.Header) (ethereum.Subscription, error) {
 	return nil, nil
 }
+func (f *fakeClient) SubscribeFilterLogs(context.Context, ethereum.FilterQuery, chan<- types.Log) (ethereum.Subscription, error) {
+	return nil, nil
+}
 func (f *fakeClient) Close() {}
 
 // stubMeta gives every token a fixed symbol so tests don't hit CallContract for
@@ -226,6 +229,48 @@ func TestDisplayHelpers(t *testing.T) {
 	b := Approval{Token: common.HexToAddress("0xAAAA000000000000000000000000000000000001")}
 	if b.DisplayToken() != Short(b.Token) {
 		t.Errorf("DisplayToken (no symbol) = %q", b.DisplayToken())
+	}
+}
+
+func TestRefreshIncremental(t *testing.T) {
+	owner := common.HexToAddress("0x1111111111111111111111111111111111111111")
+	token := common.HexToAddress("0xAAAA000000000000000000000000000000000001")
+	spenderA := common.HexToAddress("0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D") // cached, now revoked
+	spenderB := common.HexToAddress("0xBBBB000000000000000000000000000000000002") // new, live
+
+	f := &fakeClient{
+		head:    2000,
+		nonceFn: func(uint64) uint64 { return 1 },
+		filterFn: func(q ethereum.FilterQuery) ([]types.Log, error) {
+			if len(q.Addresses) > 0 { // Permit2 pass: nothing changed
+				return nil, nil
+			}
+			return []types.Log{ // direct pass: A changed (revoked), B is new
+				approvalLog(token, owner, spenderA),
+				approvalLog(token, owner, spenderB),
+			}, nil
+		},
+		callFn: func(msg ethereum.CallMsg) ([]byte, error) {
+			sp := common.BytesToAddress(msg.Data[len(msg.Data)-20:])
+			amt := big.NewInt(0) // spenderA → 0 (revoked)
+			if sp == spenderB {
+				amt = big.NewInt(500)
+			}
+			return erc20ABI.Methods["allowance"].Outputs.Pack(amt)
+		},
+	}
+	cached := []Approval{{Layer: LayerDirect, Token: token, Spender: spenderA, Amount: big.NewInt(999)}}
+
+	got, wm, err := stubScanner(f).Refresh(context.Background(), owner, 1000, cached, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if wm != 2000 {
+		t.Errorf("new watermark = %d, want 2000", wm)
+	}
+	// A is dropped (allowance 0), B is kept (live 500).
+	if len(got) != 1 || got[0].Spender != spenderB || got[0].Amount.Cmp(big.NewInt(500)) != 0 {
+		t.Fatalf("incremental refresh result: %+v", got)
 	}
 }
 

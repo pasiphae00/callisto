@@ -17,9 +17,9 @@
 
 ---
 
-Callisto is a Go + [Fyne](https://fyne.io) native desktop application for preparing, signing, and broadcasting Ethereum transactions. 
+Callisto is a native desktop application for preparing, signing, and broadcasting Ethereum transactions. It is implemented 100% in Go.
 
-It runs entirely on your machine, talks to an Ethereum node you choose, and keeps signing keys under your control — hot-wallet key material lives in memory only while unlocked and is wiped on lock, and hardware-wallet keys never leave the device. It features full support for managing and using Safe multi-signature wallets.
+Callisto runs entirely on your machine, talks to an Ethereum node you choose, and keeps signing keys under your control — hot-wallet key material lives in memory only while unlocked and is wiped when lock or the application is closed. Hardware-wallet keys never leave the signing device. It features full support for managing and using Safe multi-signature wallets.
 
 Callisto can act as wallet middleware for any web3 application that supports [WalletConnect](https://walletconnect.network/), enabling you to easily switch between several different wallets and wallet types from one simple interface for use as a self-custody backend in the web3 ecosystem.
 

@@ -948,24 +948,44 @@ func (p *walletsPane) exportBackupSelected() {
 		return
 	}
 	src := filepath.Join(ksDir, desc.KeystoreID+".json")
-	save := dialog.NewFileSave(func(wc fyne.URIWriteCloser, err error) {
-		if err != nil || wc == nil {
-			return
-		}
-		defer wc.Close()
+	defaultName := "callisto-" + desc.KeystoreID + ".json"
+
+	writeTo := func(dest string) {
 		data, rerr := os.ReadFile(src)
 		if rerr != nil {
 			dialog.ShowError(rerr, p.app.window)
 			return
 		}
-		if _, werr := wc.Write(data); werr != nil {
+		if werr := os.WriteFile(dest, data, 0o600); werr != nil {
 			dialog.ShowError(werr, p.app.window)
 			return
 		}
 		dialog.ShowInformation("Backup exported",
 			"Encrypted keystore saved. It still needs this wallet's passphrase to unlock — keep both safe.", p.app.window)
+	}
+
+	// Prefer the OS-native save panel (macOS); fall back to Fyne's dialog elsewhere.
+	if nativeDialogsAvailable() {
+		go func() {
+			dest, err := nativeSavePath("Export encrypted keystore backup", defaultName)
+			fyne.Do(func() {
+				if err != nil || dest == "" { // cancelled → nothing
+					return
+				}
+				writeTo(dest)
+			})
+		}()
+		return
+	}
+	save := dialog.NewFileSave(func(wc fyne.URIWriteCloser, err error) {
+		if err != nil || wc == nil {
+			return
+		}
+		dest := wc.URI().Path()
+		_ = wc.Close()
+		writeTo(dest)
 	}, p.app.window)
-	save.SetFileName("callisto-" + desc.KeystoreID + ".json")
+	save.SetFileName(defaultName)
 	save.Show()
 }
 

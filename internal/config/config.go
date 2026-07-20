@@ -118,12 +118,12 @@ func ChainCatalog() []ChainOption {
 			{Name: GanymedeEndpointName, URL: GanymedeEndpointURL, AuthRef: GanymedeAuthRef},
 			{Name: DefaultEndpointName, URL: DefaultEndpointURL},
 		}},
-		{ChainID: 8453, Label: "Base", Endpoints: []rpc.Endpoint{{Name: "Base (drpc)", URL: "wss://base.drpc.org"}}},
-		{ChainID: 42161, Label: "Arbitrum One", Endpoints: []rpc.Endpoint{{Name: "Arbitrum One (drpc)", URL: "wss://arbitrum.drpc.org"}}},
-		{ChainID: 10, Label: "Optimism", Endpoints: []rpc.Endpoint{{Name: "Optimism (drpc)", URL: "wss://optimism.drpc.org"}}},
-		{ChainID: 137, Label: "Polygon", Endpoints: []rpc.Endpoint{{Name: "Polygon (drpc)", URL: "wss://polygon.drpc.org"}}},
-		{ChainID: 324, Label: "zkSync Era", Endpoints: []rpc.Endpoint{{Name: "ZkSync (drpc)", URL: "wss://zksync.drpc.org"}}},
-		{ChainID: 56, Label: "BNB Smart Chain", Endpoints: []rpc.Endpoint{{Name: "BSC (drpc)", URL: "wss://bsc.drpc.org"}}},
+		{ChainID: 8453, Label: "Base", Endpoints: []rpc.Endpoint{{Name: "Base (drpc)", URL: "https://base.drpc.org"}}},
+		{ChainID: 42161, Label: "Arbitrum One", Endpoints: []rpc.Endpoint{{Name: "Arbitrum One (drpc)", URL: "https://arbitrum.drpc.org"}}},
+		{ChainID: 10, Label: "Optimism", Endpoints: []rpc.Endpoint{{Name: "Optimism (drpc)", URL: "https://optimism.drpc.org"}}},
+		{ChainID: 137, Label: "Polygon", Endpoints: []rpc.Endpoint{{Name: "Polygon (drpc)", URL: "https://polygon.drpc.org"}}},
+		{ChainID: 324, Label: "zkSync Era", Endpoints: []rpc.Endpoint{{Name: "ZkSync (drpc)", URL: "https://zksync.drpc.org"}}},
+		{ChainID: 56, Label: "BNB Smart Chain", Endpoints: []rpc.Endpoint{{Name: "BSC (drpc)", URL: "https://bsc.drpc.org"}}},
 	}
 }
 

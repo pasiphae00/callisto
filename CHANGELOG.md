@@ -12,8 +12,8 @@ changes; `v1.0.0` marks the first stable, documented release.
 ### Added
 - **Switch chain — one-click networks with bundled default RPCs.** Settings now has a
   **Switch chain…** picker covering Ethereum plus **Base, Arbitrum One, Optimism,
-  Polygon, zkSync Era, and BNB Smart Chain**, each shipping a default public RPC (via
-  dRPC); Ethereum keeps its archive node + Flashbots fallback. Picking a network
+  Polygon, zkSync Era, and BNB Smart Chain**, each shipping a default public HTTPS RPC
+  (via dRPC); Ethereum keeps its archive node + Flashbots fallback. Picking a network
   connects to its RPC and remembers it across restarts. You can still change any chain's
   RPC or add your own under **Manage endpoints** ("Custom endpoint…" in the picker).
 - **Safe "Build" sub-tab — curated ecosystem actions as proposals.** Prepare common

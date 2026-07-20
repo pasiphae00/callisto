@@ -197,6 +197,10 @@ func (p *preparePane) fillEntries(params map[string]string) {
 	}
 }
 
+// prepareNoRPC is the disconnected status; kept as a const so reloadActions can tell a
+// stale disconnect message from a transient one (and clear it once connected).
+const prepareNoRPC = "Connect an RPC endpoint in Settings to prepare transactions."
+
 // reloadActions repopulates the action dropdown for the connected chain.
 func (p *preparePane) reloadActions() {
 	conn, ok := p.app.rpc.Active()
@@ -204,7 +208,7 @@ func (p *preparePane) reloadActions() {
 		p.acts = nil
 		p.actionSel.Options = nil
 		p.actionSel.Refresh()
-		p.status.SetText("Connect an RPC endpoint in Settings to prepare transactions.")
+		p.status.SetText(prepareNoRPC)
 		p.prepareBtn.Disable()
 		return
 	}
@@ -224,10 +228,14 @@ func (p *preparePane) reloadActions() {
 	if prev != "" {
 		p.actionSel.SetSelected(prev)
 	}
-	if len(names) == 0 {
-		p.status.SetText(fmt.Sprintf("No actions available on %s yet.", conn.ChainInfo.Name))
-	} else if p.status.Text == "" {
-		p.status.SetText(fmt.Sprintf("%d actions on %s", len(names), conn.ChainInfo.Name))
+	// Set the idle status only when it's empty or the stale disconnect message —
+	// don't clobber a transient status ("Interpreting…", "Submitted…", etc.).
+	if p.status.Text == "" || p.status.Text == prepareNoRPC {
+		if len(names) == 0 {
+			p.status.SetText(fmt.Sprintf("No actions available on %s yet.", conn.ChainInfo.Name))
+		} else {
+			p.status.SetText(fmt.Sprintf("%d actions on %s", len(names), conn.ChainInfo.Name))
+		}
 	}
 }
 

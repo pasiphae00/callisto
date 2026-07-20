@@ -95,10 +95,13 @@ the Approvals pane), plain transfers (reuse Send). These cover most DESIGN.md ex
 DESIGN.md mandates the DeFiSaver SDK + RecipeExecutor for multi-step transactions. Two
 hard facts from the research:
 
-1. **The DeFiSaver SDK is JavaScript/TypeScript.** Callisto is Go with a deliberately
-   minimal dependency set and no JS runtime. Using the SDK directly is out; we'd have to
-   **re-implement the recipe ABI-encoding in Go** (action structs + the RecipeExecutor
-   `executeRecipe` call), which is real, security-sensitive work.
+1. **The DeFiSaver SDK is JavaScript/TypeScript** (~77% TS, confirmed on the repo).
+   Callisto is Go with a deliberately minimal dependency set and no JS runtime. Using the
+   SDK directly is out; we'd have to **re-implement the recipe ABI-encoding in Go** (action
+   structs + the RecipeExecutor `executeRecipe` call), which is real, security-sensitive
+   work. For P4, mine the encoding from the contracts + SDK sources:
+   - Contracts: <https://github.com/defisaver/defisaver-v3-contracts>
+   - SDK (recipe/action encoding, `DEV.md` / `ACTIONS.md`): <https://github.com/defisaver/defisaver-sdk>
 2. **Recipes need parameter piping.** DeFiSaver's value is feeding one action's *output*
    into the next ("deposit the **full amount** received", "buy the **maximum**") via its
    subData/placeholder mechanism. Plain batching can't express that.

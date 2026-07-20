@@ -9,6 +9,26 @@ changes; `v1.0.0` marks the first stable, documented release.
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-07-19
+
+### Fixed
+- **Trezor no longer asks for the PIN twice.** Connecting a Trezor cleared the device
+  session on every open, which also drops the cached PIN — forcing a second PIN entry
+  before the passphrase step. The session is now cleared only when the device already
+  holds a cached passphrase (the stale-passphrase case that clear was meant to guard),
+  so a fresh connect keeps the PIN you just entered and goes straight to passphrase.
+- **Safe details no longer stick on "cached" when connected.** The Safe pane read
+  on-chain owners/threshold/nonce at selection time — before the asynchronous
+  auto-connect finished — and never retried, leaving "Showing cached Safe details" up
+  even while the RPC was connected. It now loads live info as soon as the connection is
+  up (guarded to run once per selection, not every block).
+
+### Changed
+- The "Hardware wallet added" and "Safe imported" dialogs render the address in the
+  monospace font.
+- The Safe transfer asset picker hides zero/dust-balance tokens and lists assets in a
+  stable order, matching the Assets and Send panes.
+
 ## [0.10.0] - 2026-07-19
 
 ### Added

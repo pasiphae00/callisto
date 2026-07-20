@@ -485,8 +485,7 @@ func (p *walletsPane) showAddHardwareWallet() {
 					return
 				}
 				p.refresh()
-				dialog.ShowInformation("Hardware wallet added",
-					fmt.Sprintf("%s\n%s", desc.Label, desc.Address), p.app.window)
+				showAddressInfo(p.app.window, "Hardware wallet added", desc.Label, desc.Address)
 			})
 		}()
 	}, p.app.window)

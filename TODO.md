@@ -1,5 +1,18 @@
 # To-do items for `callisto`
 
+## v0.11 — Safe / multisig deep dive (next major)
+
+User has ideas to scope here; captured items so far:
+
+- **Safe balances use auto-discovery.** The Safe transfer picker currently loads
+  only curated + user tokens (`safe_pane.go` → `Load(safeAddr, TokensForChain(...))`),
+  so a Safe that holds many tokens shows just ETH/USDC. Wire the EOA automatic-balance
+  machinery (`assets.DiscoverTokens` + `tokenDiscovery`, already account-keyed) onto the
+  Safe address: discover held tokens, persist per Safe, and decide UX — likely a proper
+  Safe **Assets view** (not just the transfer dropdown), with the same hide-spam / sort /
+  dust-hiding behavior. Consider whether the Safe gets its own hidden-set and refresh
+  cadence.
+
 ## v0.10 — hot-wallet key management (next major, user-approved 2026-07-19)
 
 All four areas approved. Key material is the #1 correctness/security concern

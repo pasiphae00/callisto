@@ -14,6 +14,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 
 	"codeberg.org/pasiphae/callisto/internal/address"
 	"codeberg.org/pasiphae/callisto/internal/assets"
@@ -39,6 +40,13 @@ type safePane struct {
 	status      *widget.Label
 
 	proposals []safe.Proposal
+
+	// liveLoaded is set once on-chain Safe info has been read for the current
+	// selection; liveLoading guards against overlapping reads. Together they let a
+	// new-head handler load live info as soon as the RPC connects (auto-connect
+	// finishes after the pane is first built), instead of being stuck on cached.
+	liveLoaded  bool
+	liveLoading bool
 }
 
 func newSafePane(a *App) *safePane {
@@ -72,6 +80,23 @@ func (p *safePane) build() fyne.CanvasObject {
 
 	p.content = container.NewVBox(p.detailsBox, widget.NewSeparator(), p.proposalBox, p.status)
 	body := container.NewVScroll(p.content)
+
+	// Auto-connect finishes asynchronously, often after this pane is first built,
+	// so refreshLiveInfo may have run while still disconnected and fallen back to
+	// cached details. Once a connection is up (new heads arrive), load live info
+	// for the selected Safe — guarded by liveLoaded so this runs once per
+	// selection, not on every block.
+	p.app.rpc.OnNewHead(func(*types.Header) {
+		fyne.Do(func() {
+			if p.liveLoaded || p.liveLoading {
+				return
+			}
+			if desc, ok := p.selectedSafe(); ok {
+				p.refreshLiveInfo(desc)
+			}
+		})
+	})
+
 	p.refreshSafeSelect()
 	return container.NewBorder(top, nil, nil, nil, body)
 }
@@ -134,6 +159,7 @@ func (p *safePane) onSafeSelected() {
 		p.app.cfg.ActiveSafe = desc.ID
 		_ = p.app.cfg.Save()
 	}
+	p.liveLoaded = false // new selection: live info not yet read
 	p.renderDetails(desc)
 	p.refreshProposals(desc)
 	p.refreshLiveInfo(desc)
@@ -220,10 +246,14 @@ func (p *safePane) refreshLiveInfo(desc safe.Descriptor) {
 		p.status.SetText("Showing cached Safe details. Connect an RPC in Settings for live owners, threshold, and nonce.")
 		return
 	}
+	if p.liveLoading {
+		return // a read is already in flight
+	}
 	safeAddr, err := address.Parse(desc.Address)
 	if err != nil {
 		return
 	}
+	p.liveLoading = true
 	p.status.SetText("Refreshing Safe from chain…")
 	client := conn.Client
 	go func() {
@@ -231,10 +261,12 @@ func (p *safePane) refreshLiveInfo(desc safe.Descriptor) {
 		defer cancel()
 		info, ierr := safe.ReadInfo(ctx, client, safeAddr)
 		fyne.Do(func() {
+			p.liveLoading = false
 			if ierr != nil {
 				p.status.SetText("Could not read Safe: " + ierr.Error())
 				return
 			}
+			p.liveLoaded = true
 			updated := mergeInfo(desc, info, conn.ChainID.Uint64())
 			_ = p.app.cfg.UpsertSafe(updated)
 			_ = p.app.cfg.Save()

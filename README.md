@@ -30,19 +30,19 @@ It manages hot wallets, Trezor and Ledger hardware wallets, and Safe multi-signa
 
 _Screenshots [here](./FEATURES.md)._
 
-> **Status: pre-1.0 (`v0.11.1`).** Distributed as a native, self-updating desktop app (see [Download](https://codeberg.org/pasiphae/callisto/releases)). The features below are in place and usable; the Claude-assisted complex-transaction pipeline is still planned — see [Roadmap](#roadmap).
+> **Status: pre-1.0 (`v0.12.0`).** Distributed as a native, self-updating desktop app (see [Download](https://codeberg.org/pasiphae/callisto/releases)). The features below are in place and usable; transaction simulation and multi-step Safe recipes are still planned — see [Roadmap](#roadmap).
 
 ## Features
 
-- **Bring your own node.** 
-  - Configure multiple RPC endpoints (`https://` or `wss://`, optional bearer auth); WebSocket gets live block updates, HTTP is polled. Out of the box Callisto connects to a maintainer-run **archive** node (so approval history and live subscriptions work immediately) and **falls over to [Flashbots Protect](https://protectrpc.flashbots.net/about)** if it's unreachable. Replace either, or use your own node, in Settings.
+- **Bring your own node — or switch chains in one click.** 
+  - **Switch chain** between Ethereum and the major L2s (Base, Arbitrum One, Optimism, Polygon, zkSync Era, BNB Smart Chain), each bundled with a default public RPC. Out of the box Callisto connects to a maintainer-run Ethereum **archive** node (so approval history and live subscriptions work immediately) and **falls over to [Flashbots Protect](https://protectrpc.flashbots.net/about)** if it's unreachable. Configure your own endpoints (`https://` or `wss://`, optional bearer auth) under Manage endpoints — WebSocket gets live block updates, HTTP is polled. Public L2 endpoints are rate-limited, so balances load via a single **Multicall3** call and only the visible pane refreshes.
 - **Multiple wallets, multiple signers.**
   - *Hot wallets* — import a BIP-39 seed **once**, pick the account(s) to add, and set an encryption passphrase; the seed is stored only as a scrypt+AES-GCM keystore and unlocked thereafter with just the passphrase. Keys live in memory only while unlocked and are wiped on lock. Full key management: change passphrase, reveal a private key, export an encrypted backup, derive more accounts, import a raw key / MetaMask JSON / watch-only address, idle auto-lock, and Touch ID unlock on macOS.
   - *Hardware wallets* — Ledger and Trezor over direct USB via a common signing interface; keys never leave the device. **No Trezor Suite or Bridge required** — Callisto talks to the Trezor directly over libusb (Bridge is kept only as a fallback). Trezor hidden wallets (passphrase-protected, incl. on-device entry) are supported.
 - **Chain-aware.** 
-  - Native asset and block explorer adapt to the connected chain (Ethereum, Sepolia, Holesky, OP, Base, Arbitrum, Polygon, Gnosis, …) with a safe fallback for unknown chains.
+  - Native asset and block explorer adapt to the connected chain (Ethereum, Base, Arbitrum, Optimism, Polygon, zkSync Era, BNB Smart Chain, Gnosis, Sepolia, Holesky, …) with a safe fallback for unknown chains.
 - **Balances.** 
-  - Held ETH and ERC-20 tokens are **discovered automatically** from on-chain transfer history (with name/symbol/decimals, incl. legacy `bytes32` tokens) and refresh each block — no manual refresh. Hide spam tokens (persisted), or add a token by address.
+  - Held ETH and ERC-20 tokens are **discovered automatically** from on-chain transfer history (with name/symbol/decimals, incl. legacy `bytes32` tokens) and refresh automatically — no manual refresh — batched into a single Multicall3 read to stay light on public endpoints. Hide spam tokens (persisted), or add a token by address.
 - **ENS everywhere.** 
   - Addresses display as their primary ENS name where set (forward-verified); recipient fields accept names or addresses with live resolution. All addresses are EIP-55 checksum-validated on entry.
 - **Transfers, broadcast & track.** 
@@ -50,7 +50,8 @@ _Screenshots [here](./FEATURES.md)._
 - **Approvals management.** 
   - See every outstanding token approval for the active wallet — direct ERC-20 *and* Uniswap Permit2 allowances — with spenders named where known and unlimited allowances flagged, and **revoke** any with a reviewed, tracked transaction. Discovery scans on-chain logs (needs an archive RPC for full history), bounded to the wallet's first tx; re-scans are incremental and update live over WSS.
 - **Safe multisig.** 
-  - Import an existing [Safe](https://safe.global) by address and work with it from a dedicated tab (`Overview | Proposals | Assets`): propose ETH/ERC-20 transfers or owner/threshold changes, collect owner signatures locally by switching unlocked wallets (hot, Ledger, or Trezor) until the threshold is met, then execute — or reject with a same-nonce cancellation. No external Safe service; everything is local until on-chain broadcast. (Primarily designed for personal Safes; org support is on the roadmap.)
+  - Import an existing [Safe](https://safe.global) by address and work with it from a dedicated tab (`Overview | Proposals | Assets | Build`): propose ETH/ERC-20 transfers or owner/threshold changes, collect owner signatures locally by switching unlocked wallets (hot, Ledger, or Trezor) until the threshold is met, then execute — or reject with a same-nonce cancellation. No external Safe service; everything is local until on-chain broadcast. (Primarily designed for personal Safes; org support is on the roadmap.)
+  - **Build** curated ecosystem actions as proposals — wrap/unwrap WETH, stake with Lido, wrap/unwrap wstETH, request/claim a Lido withdrawal — with any required token approval batched atomically into the same proposal. Callisto builds and decodes the call for review; it never signs raw calldata. (EOAs reach these via WalletConnect + the dApp's own UI; a Safe can't, so it gets curated on-Safe preparation.)
   - **Distributed signing** — owners on different machines can collaborate without a Safe transaction service: **Export** a proposal (copy-paste text or a file), a co-owner **Imports** it, reviews, and signs, then sends a signature envelope back. On import Callisto recomputes the `safeTxHash` from the transaction fields and verifies every signature recovers to a current owner — it never trusts the envelope's contents.
 - **WalletConnect.** 
   - Connect Callisto to web dApps (Uniswap, CoW Swap, …) as a wallet: paste the WC link, approve a session exposing your active wallet, then review and sign the dApp's `eth_sendTransaction` / `personal_sign` / `eth_signTypedData_v4` requests here. The WC v2 protocol is implemented from scratch (no Go SDK, no new dependencies); hot, Ledger, and Trezor (incl. native typed-data) are all supported.
@@ -89,7 +90,7 @@ Or build a binary (`go build -o callisto ./cmd/callisto`) or a native app bundle
 
 1. **Connect.** Callisto auto-connects to its default mainnet endpoint on first launch (status dot turns green). Replace it, disable auto-connect, or add your own endpoints in **Settings**.
 2. **Add a wallet.** **Wallets → Add hot wallet…** (use a *throwaway/test* seed to experiment): enter the phrase once, pick account(s), set a passphrase. Or **Add hardware…** for a Ledger/Trezor — plug in, unlock the device, confirm on-device (no extra software).
-3. **Assets** → view balances (refresh each block; spam hidden).
+3. **Assets** → view balances (refresh automatically; spam hidden).
 4. **Approvals** → manage ERC20 token approvals (one-click revoke).
 4. **Send** → pick an asset, enter recipient (address or ENS) and amount, **Prepare transfer**, review, **Sign & send**.
 5. **Safe** (optional) → **Import Safe…** by address, propose a transfer or owner/threshold change, collect signatures (unlock each owner in **Wallets** → **Sign**), then **Execute** at threshold.
@@ -157,10 +158,10 @@ Contributions follow the workflow in [`docs/RELEASING.md`](docs/RELEASING.md).
 
 Still to come (designed, pending implementation):
 
-- **Claude-assisted complex transactions**: natural-language requests ("deposit 10 ETH to Aave v3") resolved to reviewed calldata, with a growing on-chain contract address book and multi-step flows via the DeFiSaver SDK.
-- **Transaction simulation** against a fork before signing.
+- **Transaction simulation** before signing: `eth_call` + `debug_traceCall` state-diff, showing the before/after balance changes a transaction would make.
+- **More curated Safe actions** (e.g. Uniswap V3 trades, Aave v3) and **multi-step Safe recipes** (MultiSend for fixed sequences; DeFiSaver-style parameter piping later).
 - **OS keychain on more platforms**: Touch ID / macOS Keychain ships today; Linux Secret Service and Windows DPAPI backends to follow.
-- **More signer types**: support for more hardware signers (incl. GridPlus Lattice, pending a Go SDK) and richer multi-chain support.
+- **More signer types**: support for more hardware signers (incl. GridPlus Lattice, pending a Go SDK) and additional account types.
 
 ## Credits
 

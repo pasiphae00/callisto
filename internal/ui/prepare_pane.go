@@ -342,11 +342,11 @@ func (p *preparePane) prepare() {
 		return
 	}
 
-	// Parse inputs (18-decimal amounts → base units). Account is the acting account
-	// (the Safe when targeting a Safe), so owner/recipient params resolve correctly.
-	in := actions.Inputs{Amounts: map[string]*big.Int{}, Account: from}
+	// Parse inputs. Account is the acting account (the Safe when targeting a Safe), so
+	// owner/recipient params resolve correctly.
+	in := actions.Inputs{Amounts: map[string]*big.Int{}, Uints: map[string]*big.Int{}, Account: from}
 	for _, f := range p.current.Fields {
-		raw := p.entries[f.Key].Text
+		raw := strings.TrimSpace(p.entries[f.Key].Text)
 		switch f.Kind {
 		case actions.FieldAmount18:
 			v, perr := assets.ParseUnits(raw, 18)
@@ -355,6 +355,13 @@ func (p *preparePane) prepare() {
 				return
 			}
 			in.Amounts[f.Key] = v
+		case actions.FieldUint256:
+			v, okv := new(big.Int).SetString(raw, 10)
+			if !okv {
+				dialog.ShowError(fmt.Errorf("%s: enter a whole number", f.Label), p.app.window)
+				return
+			}
+			in.Uints[f.Key] = v
 		}
 	}
 

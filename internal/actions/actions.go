@@ -30,6 +30,8 @@ const (
 	// FieldAmount18 is an 18-decimal token amount (ETH, WETH, stETH, wstETH),
 	// entered in human units in the UI and parsed to base units.
 	FieldAmount18 FieldKind = iota
+	// FieldUint256 is a plain integer (no decimals), e.g. a withdrawal request id.
+	FieldUint256
 )
 
 // Field describes one action input.
@@ -41,9 +43,10 @@ type Field struct {
 }
 
 // Inputs carries parsed field values plus the acting account (owner/recipient for
-// actions that need it). Amounts are already in base units.
+// actions that need it). Amounts are already in base units; Uints are plain integers.
 type Inputs struct {
 	Amounts map[string]*big.Int
+	Uints   map[string]*big.Int
 	Account common.Address
 }
 
@@ -51,6 +54,14 @@ func (in Inputs) amount(key string) (*big.Int, error) {
 	v := in.Amounts[key]
 	if v == nil || v.Sign() <= 0 {
 		return nil, fmt.Errorf("enter a positive amount")
+	}
+	return v, nil
+}
+
+func (in Inputs) uint(key string) (*big.Int, error) {
+	v := in.Uints[key]
+	if v == nil || v.Sign() < 0 {
+		return nil, fmt.Errorf("enter a valid value")
 	}
 	return v, nil
 }
@@ -146,6 +157,7 @@ var (
 	wstethWrapABI   = mustABI(`[{"name":"wrap","type":"function","stateMutability":"nonpayable","inputs":[{"name":"_stETHAmount","type":"uint256"}],"outputs":[{"name":"","type":"uint256"}]}]`)
 	wstethUnwrapABI = mustABI(`[{"name":"unwrap","type":"function","stateMutability":"nonpayable","inputs":[{"name":"_wstETHAmount","type":"uint256"}],"outputs":[{"name":"","type":"uint256"}]}]`)
 	lidoWithdrawABI = mustABI(`[{"name":"requestWithdrawals","type":"function","stateMutability":"nonpayable","inputs":[{"name":"_amounts","type":"uint256[]"},{"name":"_owner","type":"address"}],"outputs":[{"name":"","type":"uint256[]"}]}]`)
+	lidoClaimABI    = mustABI(`[{"name":"claimWithdrawal","type":"function","stateMutability":"nonpayable","inputs":[{"name":"_requestId","type":"uint256"}],"outputs":[]}]`)
 )
 
 // Canonical mainnet contract addresses (verified). Add chains by adding vetted
@@ -273,6 +285,35 @@ var registry = []Action{
 					{"Function", "requestWithdrawals(uint256[], address)"},
 					{"Amount", eth18(amt) + " stETH"},
 					{"Owner", in.Account.Hex()},
+				},
+			}, nil
+		},
+	},
+	{
+		ID:          "lido.claim",
+		Name:        "Claim Lido withdrawal (get ETH)",
+		Description: "Claim the ETH from a finalized Lido withdrawal request (its NFT token id). Requesting a withdrawal creates the request; this claims it once processed.",
+		Fields:      []Field{{Key: "request_id", Label: "Request ID (NFT token id)", Kind: FieldUint256, Hint: "e.g. 12345"}},
+		contracts:   map[uint64]common.Address{1: lidoUnstMainnet},
+		build: func(a Action, chainID uint64, in Inputs) (Prepared, error) {
+			id, err := in.uint("request_id")
+			if err != nil {
+				return Prepared{}, err
+			}
+			to := a.contracts[chainID]
+			data, err := lidoClaimABI.Pack("claimWithdrawal", id)
+			if err != nil {
+				return Prepared{}, err
+			}
+			return Prepared{
+				Call:    tx.Call{To: to, Value: big.NewInt(0), Data: data},
+				Summary: fmt.Sprintf("Claim Lido withdrawal request #%s", id),
+				Note:    "Only claimable once the request is finalized (processed by Lido) and owned by this account; otherwise it will revert.",
+				Review: []ReviewRow{
+					{"Action", "Claim Lido withdrawal (get ETH)"},
+					{"Contract", "Lido Withdrawal Queue · " + to.Hex()},
+					{"Function", "claimWithdrawal(uint256)"},
+					{"Request ID", id.String()},
 				},
 			}, nil
 		},

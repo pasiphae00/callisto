@@ -494,6 +494,7 @@ func (p *safePane) refreshProposals(desc safe.Descriptor) {
 		}
 		p.proposalsTab.Text = label
 	}
+	p.app.updateSafeBadge() // keep the sidebar "Safe (n)" count in sync
 	p.relayout()
 }
 

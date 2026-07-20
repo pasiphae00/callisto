@@ -9,6 +9,7 @@ package ui
 
 import (
 	"context"
+	"fmt"
 	"image/color"
 	"net/url"
 	"sync"
@@ -58,6 +59,11 @@ type App struct {
 	// disc auto-discovers the tokens each wallet holds (Transfer-log scan) so
 	// balances populate without a curated list or a Refresh button.
 	disc *tokenDiscovery
+
+	// safeNavBtn is the sidebar "Safe" button; its label carries a live count of
+	// active proposals (e.g. "Safe (2)") so pending multisig work is visible from
+	// anywhere. Updated via updateSafeBadge.
+	safeNavBtn *widget.Button
 
 	// svc caches an assets.Service (token-metadata cache) per (chain, client) so
 	// per-head balance reloads don't re-fetch immutable metadata each block.
@@ -128,6 +134,29 @@ func (a *App) registerAssetsReloader(fn func()) {
 func (a *App) refreshAssets() {
 	for _, fn := range a.assetsReloaders {
 		fn()
+	}
+}
+
+// updateSafeBadge sets the sidebar "Safe" label to "Safe (n)" when n proposals are
+// awaiting action across all Safes, or plain "Safe" when none. Called on startup and
+// whenever proposals change (the Safe pane's refreshProposals). Must run on the UI
+// goroutine.
+func (a *App) updateSafeBadge() {
+	if a.safeNavBtn == nil {
+		return
+	}
+	n := 0
+	if a.safeProposals != nil {
+		if c, err := a.safeProposals.CountActive(); err == nil {
+			n = c
+		}
+	}
+	label := "Safe"
+	if n > 0 {
+		label = fmt.Sprintf("Safe (%d)", n)
+	}
+	if a.safeNavBtn.Text != label {
+		a.safeNavBtn.SetText(label)
 	}
 }
 
@@ -323,10 +352,14 @@ func (a *App) buildRoot() fyne.CanvasObject {
 		b := widget.NewButton(it.name, func() { selectItem(i) })
 		b.Alignment = widget.ButtonAlignLeading
 		buttons[i] = b
+		if it.name == "Safe" {
+			a.safeNavBtn = b
+		}
 		navObjs = append(navObjs, b)
 	}
 	nav := container.NewVBox(navObjs...)
 	selectItem(0)
+	a.updateSafeBadge() // reflect any pending proposals from a previous session
 
 	a.statusBarBox = container.NewHBox()
 	a.refreshStatusBar()

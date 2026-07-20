@@ -38,6 +38,7 @@ type assetsView struct {
 	loading  bool
 	selected int
 	hideBtn  *widget.Button
+	lastAddr common.Address // account the current items belong to (for switch detection)
 }
 
 func newAssetsView(app *App, emptyMsg string, target func() (common.Address, string, bool)) *assetsView {
@@ -127,11 +128,9 @@ func visibleAssets(all []assets.Asset) (visible []assets.Asset, hidden int) {
 // reload refreshes balances for the current target account/connection. It is a
 // no-op while a previous load is in flight.
 func (v *assetsView) reload() {
-	if v.loading {
-		return
-	}
 	addr, label, ok := v.target()
 	if !ok {
+		v.lastAddr = common.Address{}
 		v.setEmpty(v.emptyMsg)
 		return
 	}
@@ -141,6 +140,22 @@ func (v *assetsView) reload() {
 		return
 	}
 
+	// On an account switch, clear the previous wallet's balances immediately so the
+	// new account shows "Loading…" rather than lingering on stale numbers.
+	if addr != v.lastAddr {
+		v.lastAddr = addr
+		v.items = nil
+		v.selected = -1
+		if v.list != nil {
+			v.list.UnselectAll()
+			v.list.Refresh()
+		}
+		v.updateHideButton()
+	}
+
+	if v.loading {
+		return // a load is already in flight; its completion reconciles the state
+	}
 	v.loading = true
 	// Only show the "Loading…" text on the first (empty) load; on steady-state
 	// refreshes keep the current status so it doesn't flicker every block.
@@ -162,6 +177,12 @@ func (v *assetsView) reload() {
 
 		fyne.Do(func() {
 			v.loading = false
+			// If the account changed while this load ran, discard it and load the
+			// now-current account.
+			if addr != v.lastAddr {
+				v.reload()
+				return
+			}
 			if loadErr != nil {
 				v.status.SetText("Could not load balances: " + loadErr.Error())
 				return

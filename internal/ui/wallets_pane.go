@@ -249,6 +249,11 @@ func (p *walletsPane) refresh() {
 	p.list.Refresh()
 	p.updateButtons()
 	p.app.refreshStatusBar()
+	// A wallet action (activate/unlock/lock/import/remove) may have changed the
+	// active account, so reload the balance panes immediately instead of waiting
+	// for the next block. This runs only on actions, not on plain selection (a
+	// single click calls updateButtons, not refresh).
+	p.app.refreshAssets()
 }
 
 // showAddHotWallet runs the one-time hot-wallet import: enter the recovery phrase

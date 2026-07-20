@@ -9,6 +9,30 @@ changes; `v1.0.0` marks the first stable, documented release.
 
 ## [Unreleased]
 
+## [0.12.1] - 2026-07-20
+
+Security-hardening release from a pre-beta internal review
+([docs/security-review-2026-07.md](docs/security-review-2026-07.md)). The cryptographic
+core (keystore, HD derivation, signed updates) was reviewed and found sound; these are
+the fixes from that pass. **Callisto has not had a formal third-party audit** — treat it
+as pre-audit software (test networks / small amounts).
+
+### Security
+- **Untrusted display strings are sanitized** (`internal/textsafe`). On-chain token
+  names/symbols, ENS names, and dApp/proposal-supplied text are stripped of Unicode bidi
+  overrides, zero-width/format characters, and control characters before display — so a
+  scam token can't masquerade as a real one (e.g. a Cyrillic "USDC" or a right-to-left
+  override) and can't forge extra rows with embedded newlines.
+- **WalletConnect requests decode dangerous calls.** The review now decodes token
+  `approve`/`increaseAllowance`/`permit`/`setApprovalForAll`/`transfer`/`transferFrom`
+  into plain language and flags **UNLIMITED** approvals with a red warning, instead of
+  showing opaque calldata.
+- **Patched a vulnerable dependency.** `golang.org/x/image` bumped to v0.43.0, clearing 4
+  known image-decoder CVEs; `govulncheck` is now part of the release checklist.
+- **Private-key clipboard auto-clears.** Copying a revealed private key now clears the
+  clipboard after 45 seconds (if unchanged).
+- **Signed-update download is bounded** (500 MB cap) and the **local database is `0600`**.
+
 ## [0.12.0] - 2026-07-20
 
 ### Added

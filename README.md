@@ -30,7 +30,7 @@ It manages hot wallets, Trezor and Ledger hardware wallets, and Safe multi-signa
 
 _Screenshots [here](./FEATURES.md)._
 
-> **Status: pre-1.0 (`v0.12.0`).** Distributed as a native, self-updating desktop app (see [Download](https://codeberg.org/pasiphae/callisto/releases)). The features below are in place and usable; transaction simulation and multi-step Safe recipes are still planned — see [Roadmap](#roadmap).
+> **Status: pre-1.0 (`v0.12.1`).** Distributed as a native, self-updating desktop app (see [Download](https://codeberg.org/pasiphae/callisto/releases)). The features below are in place and usable; transaction simulation and multi-step Safe recipes are still planned — see [Roadmap](#roadmap).
 
 ## Features
 
@@ -105,8 +105,17 @@ Or build a binary (`go build -o callisto ./cmd/callisto`) or a native app bundle
 - **Hardware wallets** keep keys on the device; Callisto only requests signatures that you confirm there.
 - **No outbound connections except the RPC endpoint and services you use.** The default is a maintainer-run archive endpoint (with a Flashbots Protect RPC fallback), replaceable anytime. Its bearer token is a **shared access key** baked into release builds (rate-limited server-side), not a per-user secret. 
 - **No telemetry, user tracking, or metrics collection.** for maximum privacy, use your own node as the RPC, or Flashbots Protect (optional by default).
+- **Updates are signature-verified.** The in-app updater installs a release only after its `SHA256SUMS` verifies against an embedded ed25519 maintainer key **and** the artifact's hash matches — checked before anything is written.
+- **Untrusted input is sanitized.** On-chain token names/symbols, ENS names, and dApp-supplied text are stripped of bidi/zero-width/control characters before display, so a scam token can't spoof a legitimate one; the WalletConnect review decodes token approvals/transfers so an "approve unlimited" can't hide in raw calldata.
 
-_Treat Callisto as pre-1.0 software: review transactions on-device, and prefer test networks and throwaway keys while the project matures._
+> ### ⚠ Not yet formally audited
+>
+> Callisto has **not** had a professional third-party security audit. It has had an
+> internal, source-level review (**[docs/security-review-2026-07.md](docs/security-review-2026-07.md)**) —
+> the cryptographic core (keystore, HD derivation, signed updates) was reviewed and the
+> findings from that pass are fixed — but that is **not** a substitute for an independent
+> audit. Until one is done, treat this as pre-1.0, pre-audit software: **prefer test
+> networks and small amounts, use throwaway keys, and review every transaction on-screen.**
 
 ## Configuration & data
 

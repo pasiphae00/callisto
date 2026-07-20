@@ -55,20 +55,27 @@ first), but the Medium items are worth fixing before it.
 
 ## Findings
 
-| # | Severity | Area | Finding |
-|---|----------|------|---------|
-| 1 | Medium | Dependencies | `golang.org/x/image@v0.24.0` has 4 known CVEs (govulncheck-reachable); fixed ≥ v0.43.0 |
-| 2 | Medium | Untrusted input / display | On-chain token name/symbol are rendered without sanitization (spoofing via homoglyph / bidi / control chars) |
-| 3 | Medium | WalletConnect | The tx-request review shows raw calldata, not decoded — users can't spot a malicious `approve` |
-| 4 | Low | Secrets | "Reveal private key" copies the key to the system clipboard with no auto-clear |
-| 5 | Low | Untrusted input | ENS names are `ToLower/TrimSpace` only — not UTS-46/ENSIP-15 normalized; displayed reverse names unsanitized |
-| 6 | Low | Auth | Keystore passphrase soft-minimum is 8 chars, no strength feedback |
-| 7 | Low | Updater | No explicit anti-downgrade: a signed *older* release replayed as "latest" would install (needs API MITM/compromise) |
-| 8 | Low | Storage | `callisto.db` isn't explicitly `0600` — it relies on the 0700 parent dir |
-| 9 | Low | Updater | Update artifact download is unbounded (disk-fill DoS; hash-checked so not code-exec) |
-| 10 | Info | Language | Go `string` passphrases can't be zeroed; `zero()` could in theory be optimized away |
-| 11 | Info | Crypto | The from-scratch WalletConnect v2 crypto/session engine hasn't had a focused review |
-| 12 | Info | Platform | macOS Keychain shim uses the deprecated `kSecUseOperationPrompt` |
+| # | Severity | Area | Finding | Status |
+|---|----------|------|---------|--------|
+| 1 | Medium | Dependencies | `golang.org/x/image@v0.24.0` has 4 known CVEs (govulncheck-reachable); fixed ≥ v0.43.0 | ✅ Fixed v0.12.1 |
+| 2 | Medium | Untrusted input / display | On-chain token name/symbol are rendered without sanitization (spoofing via homoglyph / bidi / control chars) | ✅ Fixed v0.12.1 |
+| 3 | Medium | WalletConnect | The tx-request review shows raw calldata, not decoded — users can't spot a malicious `approve` | ✅ Fixed v0.12.1 |
+| 4 | Low | Secrets | "Reveal private key" copies the key to the system clipboard with no auto-clear | ✅ Fixed v0.12.1 |
+| 5 | Low | Untrusted input | ENS names are `ToLower/TrimSpace` only — not UTS-46/ENSIP-15 normalized; displayed reverse names unsanitized | ◐ Partial v0.12.1 (display sanitized; full ENSIP-15 deferred) |
+| 6 | Low | Auth | Keystore passphrase soft-minimum is 8 chars, no strength feedback | ○ Open |
+| 7 | Low | Updater | No explicit anti-downgrade: a signed *older* release replayed as "latest" would install (needs API MITM/compromise) | ○ Open |
+| 8 | Low | Storage | `callisto.db` isn't explicitly `0600` — it relies on the 0700 parent dir | ✅ Fixed v0.12.1 |
+| 9 | Low | Updater | Update artifact download is unbounded (disk-fill DoS; hash-checked so not code-exec) | ✅ Fixed v0.12.1 |
+| 10 | Info | Language | Go `string` passphrases can't be zeroed; `zero()` could in theory be optimized away | ○ Noted |
+| 11 | Info | Crypto | The from-scratch WalletConnect v2 crypto/session engine hasn't had a focused review | ○ For the formal audit |
+| 12 | Info | Platform | macOS Keychain shim uses the deprecated `kSecUseOperationPrompt` | ○ Open |
+
+> **Update (v0.12.1):** all Medium findings and most Low findings above were fixed in
+> v0.12.1 (see `CHANGELOG.md`). `internal/textsafe` now sanitizes untrusted display
+> strings, the WalletConnect review decodes dangerous calls, `x/image` is patched, and
+> `govulncheck` is part of the release checklist. Remaining open items (#6, #7, #12) are
+> Low/Informational; #11 (the bespoke WalletConnect crypto) is flagged for the eventual
+> professional audit.
 
 ### 1 — `golang.org/x/image` known CVEs *(Medium)*
 

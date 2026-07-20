@@ -53,8 +53,10 @@ Do these in order on `main` (replace `X.Y.Z` throughout). Steps 1–5 are one co
       changed. Commit steps 1–5: `git commit -m "release: vX.Y.Z"`.
 
 **Verify:**
-- [ ] 6. `go build ./... && go vet ./... && go test ./...` all green. (Test
-      `TestEmbeddedReleaseKeyConfigured` guards that a real signing key is embedded.)
+- [ ] 6. `go build ./... && go vet ./... && go test ./...` all green (Test
+      `TestEmbeddedReleaseKeyConfigured` guards that a real signing key is embedded), and
+      `go run golang.org/x/vuln/cmd/govulncheck@latest ./...` reports no reachable
+      vulnerabilities.
 
 **Tag & push:**
 - [ ] 7. `git tag -a vX.Y.Z -m "Callisto vX.Y.Z — <one-line summary>"`

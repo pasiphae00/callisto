@@ -77,6 +77,7 @@ type settingsPane struct {
 
 	list       *widget.List
 	statusLbl  *widget.Label
+	chainLbl   *widget.Label // monospace "Current chain: …" line in the Network box
 	connectBtn *widget.Button
 	removeBtn  *widget.Button
 	defaultBtn *widget.Button
@@ -91,6 +92,7 @@ func newSettingsPane(a *App) *settingsPane {
 func (p *settingsPane) build() fyne.CanvasObject {
 	p.statusLbl = widget.NewLabel("")
 	p.statusLbl.Wrapping = fyne.TextWrapWord
+	p.chainLbl = monoLabel("")
 	p.refreshStatus()
 
 	// The compact launcher shows the current connection and two actions: Switch chain
@@ -102,7 +104,7 @@ func (p *settingsPane) build() fyne.CanvasObject {
 	switchBtn := widget.NewButton("Switch chain…", p.showSwitchChain)
 	switchBtn.Importance = widget.HighImportance
 	manageBtn := widget.NewButton("Manage endpoints…", p.showRPCManager)
-	rpcBox := container.NewVBox(header, summary, p.statusLbl, indentToText(container.NewHBox(switchBtn, manageBtn)))
+	rpcBox := container.NewVBox(header, summary, p.chainLbl, p.statusLbl, indentToText(container.NewHBox(switchBtn, manageBtn)))
 
 	content := container.NewVBox(
 		rpcBox,
@@ -400,8 +402,14 @@ func (p *settingsPane) refreshStatus() {
 		if !conn.Known {
 			name = fmt.Sprintf("unknown chain %d", conn.ChainID)
 		}
+		if p.chainLbl != nil {
+			p.chainLbl.SetText(fmt.Sprintf("Current chain: %s (id %d)", name, conn.ChainID))
+		}
 		p.statusLbl.SetText(fmt.Sprintf("Connected to %s — %s (%s)", conn.Endpoint.Name, name, conn.Endpoint.Scheme()))
 	} else {
+		if p.chainLbl != nil {
+			p.chainLbl.SetText("Current chain: not connected")
+		}
 		p.statusLbl.SetText("Not connected.")
 	}
 }

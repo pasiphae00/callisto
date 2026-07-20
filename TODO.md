@@ -2,16 +2,40 @@
 
 ## v0.11 — Safe / multisig deep dive (next major)
 
-User has ideas to scope here; captured items so far:
+Scope + layout decided 2026-07-19. Safe tab becomes **inner sub-tabs**
+(`Overview | Assets | Activity`, Fyne `AppTabs`). Four phases, all in scope:
 
-- **Safe balances use auto-discovery.** The Safe transfer picker currently loads
-  only curated + user tokens (`safe_pane.go` → `Load(safeAddr, TokensForChain(...))`),
-  so a Safe that holds many tokens shows just ETH/USDC. Wire the EOA automatic-balance
-  machinery (`assets.DiscoverTokens` + `tokenDiscovery`, already account-keyed) onto the
-  Safe address: discover held tokens, persist per Safe, and decide UX — likely a proper
-  Safe **Assets view** (not just the transfer dropdown), with the same hide-spam / sort /
-  dust-hiding behavior. Consider whether the Safe gets its own hidden-set and refresh
-  cadence.
+**P1 — Assets + discovery + sub-tab restructure** (start here)
+- Restructure `safe_pane` into `AppTabs`: Overview (address/owners/threshold/version +
+  actions), Assets (balances), Activity (proposals).
+- Point the EOA auto-balance machinery (`tokenDiscovery` / `knownTokens` /
+  `displayAssets` / hidden-set — all account-keyed) at the Safe address, so discovery,
+  persistence, and a per-Safe hidden set come essentially free; refresh on new head. The
+  transfer picker uses the same set (fixes the ETH/USDC-only picker, `safe_pane.go`).
+- Extract a **reusable assets-list component** (address in; discovery/hide/sort built in)
+  so the EOA Assets pane and the Safe Assets sub-tab share one implementation.
+
+**P2 — Activity / proposal UX** (pairs with the restructure)
+- Split **Active** (collecting/ready) vs **History** (executed/rejected); status color
+  dots; rows show nonce, sig progress with owner labels/ENS, timestamp; explorer link on
+  executed; flag same-nonce conflicts. Bring the EOA History-detail treatment to Safe.
+
+**P3 — Distributed signing (export / import proposals + signatures)** — highest-value gap
+- Today signature collection needs every owner's key on one machine. Export a proposal +
+  collected sigs as a self-contained blob; a co-owner imports, Callisto **recomputes the
+  `safeTxHash` from the fields (never trusts the blob)**, they review + sign, export back,
+  merge (each sig verified to recover to a *current* owner) and execute.
+- Open decision at build time: transport format — file / copy-paste text / QR (lean
+  file + text first, QR later for air-gapped).
+
+**P4 — WalletConnect-for-Safe** (research first, may defer impl)
+- Feasibility writeup: EIP-1271 signatures from collected owner sigs; mapping a dApp
+  `eth_sendTransaction` → a Safe proposal and the async "what do we return to the dApp"
+  problem; personal_sign/typed-data via EIP-1271; what the Safe webapp actually does.
+  Then decide prototype vs defer. Can run in parallel.
+
+Deferred (own large features, not v0.11 core): tx simulation, Claude multi-step (see
+their sections below).
 
 ## v0.10 — hot-wallet key management (next major, user-approved 2026-07-19)
 

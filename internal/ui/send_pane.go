@@ -463,12 +463,16 @@ func (p *sendPane) trackInclusion(recID int64, client rpc.Client, hash common.Ha
 	})
 }
 
-// showBroadcastResult shows the submitted hash with a link to the explorer.
+// showBroadcastResult shows the submitted hash with a link to the explorer. Matches
+// the Safe execution dialog: the full hash in mono, then a "View on explorer" button.
 func (p *sendPane) showBroadcastResult(hash string, info chain.Info) {
 	body := container.NewVBox(
 		widget.NewLabel("Transaction submitted. Waiting for inclusion…"),
-		monoHyperlink(hash, info.TxURL(hash)),
+		monoLabel(hash),
 	)
+	if link := info.TxURL(hash); link != "" {
+		body.Add(widget.NewButton("View on explorer", func() { p.app.openURL(link) }))
+	}
 	dialog.ShowCustom("Broadcast", "Close", body, p.app.window)
 }
 

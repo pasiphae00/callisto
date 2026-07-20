@@ -361,24 +361,189 @@ func (p *preparePane) prepare() {
 		p.prepareSafeProposal(target.safe, prepared)
 		return
 	}
+	p.prepareEOA(from, conn.Client, new(big.Int).Set(conn.ChainID), conn.ChainInfo, prepared)
+}
 
+// prepareEOA checks approvals for an EOA target and either estimates + reviews the
+// single action, or (when an approval is missing) reviews an approve→action sequence.
+func (p *preparePane) prepareEOA(from common.Address, client rpc.Client, chainID *big.Int, info chain.Info, prepared actions.Prepared) {
 	p.prepareBtn.Disable()
-	p.status.SetText("Estimating gas…")
-	send := tx.Send{From: from, Call: prepared.Call}
-	client := conn.Client
-	chainID := new(big.Int).Set(conn.ChainID)
+	p.status.SetText("Checking approvals…")
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()
-		prep, prepErr := tx.Prepare(ctx, client, chainID, send)
-		fyne.Do(func() {
-			p.prepareBtn.Enable()
-			if prepErr != nil {
-				p.status.SetText("Ready")
-				dialog.ShowError(fmt.Errorf("could not prepare: %w", prepErr), p.app.window)
+		need, aerr := p.neededApprovals(ctx, client, from, prepared.Approvals)
+		if aerr != nil {
+			p.failPrepare(aerr)
+			return
+		}
+		if len(need) == 0 {
+			// Single transaction: estimate gas and show the normal review.
+			prep, err := tx.Prepare(ctx, client, chainID, tx.Send{From: from, Call: prepared.Call})
+			if err != nil {
+				p.failPrepare(fmt.Errorf("could not prepare: %w", err))
 				return
 			}
-			p.showReview(prepared, prep, conn.ChainInfo)
+			fyne.Do(func() {
+				p.prepareBtn.Enable()
+				p.status.SetText("Ready")
+				p.showReview(prepared, prep, info)
+			})
+			return
+		}
+		// Approvals needed: the action can't be gas-estimated until they land, so we
+		// review the sequence and estimate each transaction at send time.
+		var approveCalls []tx.Call
+		for _, ap := range need {
+			data, derr := assets.EncodeApprove(ap.Spender, ap.Amount)
+			if derr != nil {
+				p.failPrepare(derr)
+				return
+			}
+			approveCalls = append(approveCalls, tx.Call{To: ap.Token, Value: big.NewInt(0), Data: data})
+		}
+		fyne.Do(func() {
+			p.prepareBtn.Enable()
+			p.status.SetText("Ready")
+			p.showSequenceReview(from, prepared, need, approveCalls, info)
+		})
+	}()
+}
+
+// showSequenceReview reviews an approve(s)→action sequence, then runs it on confirm.
+func (p *preparePane) showSequenceReview(from common.Address, prepared actions.Prepared, need []actions.Approval, approveCalls []tx.Call, info chain.Info) {
+	grid := container.New(layout.NewFormLayout())
+	addRow := func(k, v string) {
+		grid.Add(widget.NewLabelWithStyle(k, fyne.TextAlignLeading, fyne.TextStyle{Bold: true}))
+		grid.Add(monoLabel(v))
+	}
+	for _, r := range prepared.Review {
+		addRow(r.Key, r.Value)
+	}
+	addRow("From", address.Format(from))
+	addRow("Network", info.Name)
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "Sends %d transactions in order (each is signed and confirmed on-chain before the next):", len(approveCalls)+1)
+	for i, ap := range need {
+		fmt.Fprintf(&b, "\n%d. approve %s of %s to %s", i+1, assets.FormatUnits(ap.Amount, 18), address.Short(ap.Token), address.Short(ap.Spender))
+	}
+	fmt.Fprintf(&b, "\n%d. %s", len(approveCalls)+1, prepared.Summary)
+
+	body := container.NewVBox(grid, cautionBox(b.String()))
+	if prepared.Note != "" {
+		body.Add(cautionBox(prepared.Note))
+	}
+	signReady, signMsg := p.signAvailability(from)
+	notice := widget.NewLabel(signMsg)
+	notice.Wrapping = fyne.TextWrapWord
+	body.Add(widget.NewSeparator())
+	body.Add(notice)
+
+	d := dialog.NewCustomConfirm("Review — "+prepared.Summary, "Sign & send all", "Cancel", body,
+		func(confirm bool) {
+			if confirm {
+				p.runSequence(from, prepared, approveCalls, info)
+			}
+		}, p.app.window)
+	d.Resize(fyne.NewSize(660, 560))
+	if !signReady {
+		d.SetConfirmText("Unlock to sign")
+	}
+	d.Show()
+}
+
+// runSequence sends each approval (waiting for inclusion) then the action, off the UI
+// thread. It records history for the action; approvals are intermediate.
+func (p *preparePane) runSequence(from common.Address, prepared actions.Prepared, approveCalls []tx.Call, info chain.Info) {
+	ready, msg := p.signAvailability(from)
+	if !ready {
+		dialog.ShowError(fmt.Errorf("%s", msg), p.app.window)
+		return
+	}
+	s, _, _ := p.app.currentSigner()
+	conn, ok := p.app.rpc.Active()
+	if !ok {
+		dialog.ShowError(fmt.Errorf("connection lost; reconnect and try again"), p.app.window)
+		return
+	}
+	client := conn.Client
+	chainID := new(big.Int).Set(conn.ChainID)
+
+	p.status.SetText("Sending approvals…")
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 12*time.Minute)
+		defer cancel()
+		for i, call := range approveCalls {
+			step := i + 1
+			fyne.Do(func() { p.status.SetText(fmt.Sprintf("Approving (%d/%d)…", step, len(approveCalls))) })
+			prep, err := tx.Prepare(ctx, client, chainID, tx.Send{From: from, Call: call})
+			if err != nil {
+				p.finishError(0, "prepare approval: "+err.Error())
+				return
+			}
+			signed, err := s.SignTx(ctx, prep.Tx, prep.ChainID)
+			if err != nil {
+				p.finishError(0, "sign approval: "+err.Error())
+				return
+			}
+			hash, err := tx.Broadcast(ctx, client, signed)
+			if err != nil {
+				p.finishError(0, "broadcast approval: "+err.Error())
+				return
+			}
+			fyne.Do(func() { p.status.SetText(fmt.Sprintf("Approval %d/%d submitted — waiting for inclusion…", step, len(approveCalls))) })
+			receipt, err := tx.WaitForReceipt(ctx, client, hash)
+			if err != nil {
+				p.finishError(0, "approval not confirmed: "+err.Error())
+				return
+			}
+			if !tx.Succeeded(receipt) {
+				p.finishError(0, "approval transaction reverted")
+				return
+			}
+		}
+
+		// Now the action, with the allowance in place.
+		fyne.Do(func() { p.status.SetText("Preparing the action…") })
+		prep, err := tx.Prepare(ctx, client, chainID, tx.Send{From: from, Call: prepared.Call})
+		if err != nil {
+			p.finishError(0, "prepare action: "+err.Error())
+			return
+		}
+		var recID int64
+		if p.app.history != nil {
+			id, _ := p.app.history.Insert(history.Record{
+				ChainID:       info.ID,
+				WalletAddress: address.Format(from),
+				Kind:          "prepare",
+				Instructions:  prepared.Summary,
+				ToAddress:     address.Format(prepared.Call.To),
+				ValueWei:      prepared.Call.Value.String(),
+				Status:        history.StatusPrepared,
+			})
+			recID = id
+		}
+		signed, err := s.SignTx(ctx, prep.Tx, prep.ChainID)
+		if err != nil {
+			p.finishError(recID, "sign: "+err.Error())
+			return
+		}
+		hash, err := tx.Broadcast(ctx, client, signed)
+		if err != nil {
+			p.finishError(recID, err.Error())
+			return
+		}
+		if p.app.history != nil && recID != 0 {
+			_ = p.app.history.MarkSubmitted(recID, hash.Hex())
+		}
+		fyne.Do(func() {
+			p.status.SetText("Submitted: " + hash.Hex())
+			resultLabel := p.showResult(hash.Hex(), info)
+			if p.app.historyReload != nil {
+				p.app.historyReload()
+			}
+			go p.trackInclusion(recID, client, hash, info, resultLabel)
 		})
 	}()
 }
@@ -407,7 +572,34 @@ func (p *preparePane) prepareSafeProposal(desc safe.Descriptor, prepared actions
 			p.failPrepare(fmt.Errorf("read Safe nonce: %w", nerr))
 			return
 		}
-		stx := safe.NewSafeTx(prepared.Call.To, prepared.Call.Value, prepared.Call.Data, nonce)
+		// Batch any required approvals with the action into one atomic MultiSend
+		// proposal, so owners sign+execute once instead of approving separately.
+		need, aerr := p.neededApprovals(ctx, client, safeAddr, prepared.Approvals)
+		if aerr != nil {
+			p.failPrepare(aerr)
+			return
+		}
+		var stx safe.SafeTx
+		batched := len(need) > 0
+		if batched {
+			var calls []safe.MultiSendCall
+			for _, ap := range need {
+				data, derr := assets.EncodeApprove(ap.Spender, ap.Amount)
+				if derr != nil {
+					p.failPrepare(derr)
+					return
+				}
+				calls = append(calls, safe.MultiSendCall{To: ap.Token, Value: big.NewInt(0), Data: data})
+			}
+			calls = append(calls, safe.MultiSendCall{To: prepared.Call.To, Value: prepared.Call.Value, Data: prepared.Call.Data})
+			var berr error
+			if stx, berr = safe.BuildMultiSend(calls, nonce); berr != nil {
+				p.failPrepare(berr)
+				return
+			}
+		} else {
+			stx = safe.NewSafeTx(prepared.Call.To, prepared.Call.Value, prepared.Call.Data, nonce)
+		}
 		hash, herr := stx.OnChainHash(ctx, client, safeAddr)
 		if herr != nil {
 			p.failPrepare(fmt.Errorf("compute safeTxHash: %w", herr))
@@ -416,7 +608,7 @@ func (p *preparePane) prepareSafeProposal(desc safe.Descriptor, prepared actions
 		fyne.Do(func() {
 			p.prepareBtn.Enable()
 			p.status.SetText("Ready")
-			p.showSafeReview(desc, prepared, nonce, hash)
+			p.showSafeReview(desc, prepared, need, stx, nonce, hash)
 		})
 	}()
 }
@@ -429,9 +621,26 @@ func (p *preparePane) failPrepare(err error) {
 	})
 }
 
-// showSafeReview presents the decoded action + Safe proposal details, then creates the
-// proposal on confirm.
-func (p *preparePane) showSafeReview(desc safe.Descriptor, prepared actions.Prepared, nonce uint64, hash common.Hash) {
+// neededApprovals returns the approvals whose live allowance (from owner) is below the
+// required amount, so the pipeline can prepend approves.
+func (p *preparePane) neededApprovals(ctx context.Context, client rpc.Client, owner common.Address, approvals []actions.Approval) ([]actions.Approval, error) {
+	var need []actions.Approval
+	for _, ap := range approvals {
+		allow, err := assets.Allowance(ctx, client, ap.Token, owner, ap.Spender)
+		if err != nil {
+			return nil, fmt.Errorf("check allowance: %w", err)
+		}
+		if allow.Cmp(ap.Amount) < 0 {
+			need = append(need, ap)
+		}
+	}
+	return need, nil
+}
+
+// showSafeReview presents the decoded action (+ any batched approvals) and the Safe
+// proposal details, then creates the proposal on confirm. stx is the SafeTx that will
+// be proposed (the action alone, or a MultiSend batch of approvals + the action).
+func (p *preparePane) showSafeReview(desc safe.Descriptor, prepared actions.Prepared, need []actions.Approval, stx safe.SafeTx, nonce uint64, hash common.Hash) {
 	grid := container.New(layout.NewFormLayout())
 	addRow := func(k, v string) {
 		grid.Add(widget.NewLabelWithStyle(k, fyne.TextAlignLeading, fyne.TextStyle{Bold: true}))
@@ -445,6 +654,14 @@ func (p *preparePane) showSafeReview(desc safe.Descriptor, prepared actions.Prep
 	addRow("safeTxHash", hash.Hex())
 
 	body := container.NewVBox(grid)
+	if len(need) > 0 {
+		var b strings.Builder
+		fmt.Fprintf(&b, "Batched atomically (MultiSend) with %d approval(s) so nothing is approved separately:", len(need))
+		for _, ap := range need {
+			fmt.Fprintf(&b, "\n• approve %s to %s", address.Short(ap.Token), address.Short(ap.Spender))
+		}
+		body.Add(cautionBox(b.String()))
+	}
 	if prepared.Note != "" {
 		body.Add(cautionBox(prepared.Note))
 	}
@@ -456,14 +673,14 @@ func (p *preparePane) showSafeReview(desc safe.Descriptor, prepared actions.Prep
 	d := dialog.NewCustomConfirm("Review proposal — "+prepared.Summary, "Create proposal", "Cancel", body,
 		func(confirm bool) {
 			if confirm {
-				p.createSafeProposal(desc, prepared, nonce, hash)
+				p.createSafeProposal(desc, prepared, stx, nonce, hash)
 			}
 		}, p.app.window)
 	d.Resize(fyne.NewSize(660, 520))
 	d.Show()
 }
 
-func (p *preparePane) createSafeProposal(desc safe.Descriptor, prepared actions.Prepared, nonce uint64, hash common.Hash) {
+func (p *preparePane) createSafeProposal(desc safe.Descriptor, prepared actions.Prepared, stx safe.SafeTx, nonce uint64, hash common.Hash) {
 	if p.app.safeProposals == nil {
 		dialog.ShowError(fmt.Errorf("proposal store unavailable"), p.app.window)
 		return
@@ -472,10 +689,10 @@ func (p *preparePane) createSafeProposal(desc safe.Descriptor, prepared actions.
 	_, err := p.app.safeProposals.Insert(safe.Proposal{
 		SafeAddress: safeAddr,
 		ChainID:     desc.ChainID,
-		To:          prepared.Call.To,
-		Value:       prepared.Call.Value,
-		Data:        prepared.Call.Data,
-		Operation:   safe.Call,
+		To:          stx.To,
+		Value:       stx.Value,
+		Data:        stx.Data,
+		Operation:   stx.Operation,
 		SafeNonce:   nonce,
 		SafeTxHash:  hash,
 		Kind:        safe.KindContractCall,

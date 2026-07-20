@@ -30,7 +30,7 @@ It manages hot wallets, Trezor and Ledger hardware wallets, and Safe multi-signa
 
 _Screenshots [here](./FEATURES.md)._
 
-> **Status: pre-1.0 (`v0.10.1`).** Distributed as a native, self-updating desktop app (see [Download](https://codeberg.org/pasiphae/callisto/releases)). The features below are in place and usable; the Claude-assisted complex-transaction pipeline is still planned — see [Roadmap](#roadmap).
+> **Status: pre-1.0 (`v0.11.1`).** Distributed as a native, self-updating desktop app (see [Download](https://codeberg.org/pasiphae/callisto/releases)). The features below are in place and usable; the Claude-assisted complex-transaction pipeline is still planned — see [Roadmap](#roadmap).
 
 ## Features
 

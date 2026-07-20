@@ -9,6 +9,23 @@ changes; `v1.0.0` marks the first stable, documented release.
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-07-20
+
+### Fixed
+- **macOS arm64 downloads no longer show "damaged."** Release `.app` bundles are now
+  **ad-hoc code-signed** during packaging. Apple silicon requires native arm64 binaries
+  to carry a valid signature, so an unsigned, quarantined (downloaded) v0.11.0 arm64
+  build was rejected as "damaged and can't be opened" — the amd64 build slipped through
+  under Rosetta. The normal first-launch step still applies: right-click → **Open**, or
+  `xattr -dr com.apple.quarantine /Applications/Callisto.app`. (Developer-ID signing +
+  notarization, which removes the prompt entirely, is on the roadmap.)
+- **Switching wallets reloads balances immediately** instead of lagging until the next
+  block; the Assets/Send panes clear and show "Loading…" on an account change rather
+  than briefly showing the previous wallet's numbers.
+
+### Changed
+- Tidied the default RPC endpoint labels/URLs.
+
 ## [0.11.0] - 2026-07-20
 
 Safe / multisig deep dive.
@@ -47,18 +64,10 @@ Safe / multisig deep dive.
   included/failed with the block and time, and pops a result dialog with the outcome
   and an explorer link (matching the Send flow) — previously the record stayed
   "submitted" and the static "Execution submitted" dialog never updated.
-- **Switching wallets reloads balances immediately** instead of lagging until the next
-  block; the Assets/Send panes clear and show "Loading…" on an account change rather
-  than briefly showing the previous wallet's numbers.
 
 ### Changed
 - The Send broadcast confirmation matches the Safe execution dialog (full hash in mono
   + a "View on explorer" button).
-- macOS `.app` bundles are **ad-hoc code-signed** during packaging, so a downloaded
-  (quarantined) Apple-silicon build shows the normal first-launch prompt instead of a
-  "damaged and can't be opened" error. (Developer-ID signing + notarization, which
-  removes the prompt entirely, remains on the roadmap.)
-- Tidied the default RPC endpoint labels/URLs.
 
 ## [0.10.1] - 2026-07-19
 

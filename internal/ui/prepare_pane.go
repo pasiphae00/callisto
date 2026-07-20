@@ -21,8 +21,18 @@ import (
 	"codeberg.org/pasiphae/callisto/internal/chain"
 	"codeberg.org/pasiphae/callisto/internal/history"
 	"codeberg.org/pasiphae/callisto/internal/rpc"
+	"codeberg.org/pasiphae/callisto/internal/safe"
 	"codeberg.org/pasiphae/callisto/internal/tx"
 )
+
+// prepareTarget is an account an action can be prepared for: the active EOA (signed
+// and sent) or an imported Safe (saved as a proposal).
+type prepareTarget struct {
+	label   string
+	address common.Address
+	isSafe  bool
+	safe    safe.Descriptor
+}
 
 // preparePane builds "advanced" single-step transactions from the curated action
 // registry (internal/actions): pick an action, fill its parameters, review the
@@ -31,6 +41,7 @@ import (
 type preparePane struct {
 	app *App
 
+	fromSel    *widget.Select
 	actionSel  *widget.Select
 	fieldsBox  *fyne.Container
 	entries    map[string]*widget.Entry
@@ -39,6 +50,7 @@ type preparePane struct {
 
 	acts    []actions.Action
 	current *actions.Action
+	targets []prepareTarget
 }
 
 func newPreparePane(a *App) *preparePane {
@@ -49,6 +61,8 @@ func (p *preparePane) build() fyne.CanvasObject {
 	p.status = widget.NewLabel("")
 	p.status.Wrapping = fyne.TextWrapWord
 
+	p.fromSel = widget.NewSelect(nil, nil)
+	p.fromSel.PlaceHolder = "Select an account"
 	p.actionSel = widget.NewSelect(nil, func(string) { p.onActionSelected() })
 	p.actionSel.PlaceHolder = "Select an action"
 	p.fieldsBox = container.NewVBox()
@@ -65,7 +79,9 @@ func (p *preparePane) build() fyne.CanvasObject {
 
 	top := container.NewVBox(
 		header, help,
-		container.New(layout.NewFormLayout(), widget.NewLabelWithStyle("Action", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}), p.actionSel),
+		container.New(layout.NewFormLayout(),
+			widget.NewLabelWithStyle("From", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}), p.fromSel,
+			widget.NewLabelWithStyle("Action", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}), p.actionSel),
 		p.fieldsBox,
 		indentToText(container.NewHBox(p.prepareBtn)),
 		p.status,
@@ -85,6 +101,7 @@ func (p *preparePane) reloadActions() {
 		p.prepareBtn.Disable()
 		return
 	}
+	p.reloadTargets(conn.ChainID.Uint64())
 	p.acts = actions.All(conn.ChainID.Uint64())
 	names := make([]string, len(p.acts))
 	for i, a := range p.acts {
@@ -105,6 +122,54 @@ func (p *preparePane) reloadActions() {
 	} else if p.status.Text == "" {
 		p.status.SetText(fmt.Sprintf("%d actions on %s", len(names), conn.ChainInfo.Name))
 	}
+}
+
+// reloadTargets repopulates the From dropdown: the active EOA plus any imported Safes
+// on the connected chain, preserving the current selection.
+func (p *preparePane) reloadTargets(chainID uint64) {
+	p.targets = nil
+	if desc, ok := p.app.cfg.WalletByID(p.app.cfg.ActiveWallet); ok {
+		if addr, err := address.Parse(desc.Address); err == nil {
+			p.targets = append(p.targets, prepareTarget{
+				label:   "Wallet · " + firstNonEmpty(desc.Label, "(unnamed)") + " · " + address.Short(addr),
+				address: addr,
+			})
+		}
+	}
+	for _, sd := range p.app.cfg.Safes {
+		if sd.ChainID != chainID {
+			continue
+		}
+		if addr, err := address.Parse(sd.Address); err == nil {
+			p.targets = append(p.targets, prepareTarget{
+				label:   fmt.Sprintf("Safe · %s · %s (%d-of-%d)", firstNonEmpty(sd.Label, "(unnamed)"), address.Short(addr), sd.Threshold, len(sd.Owners)),
+				address: addr,
+				isSafe:  true,
+				safe:    sd,
+			})
+		}
+	}
+	prev := p.fromSel.Selected
+	names := make([]string, len(p.targets))
+	for i, t := range p.targets {
+		names[i] = t.label
+	}
+	p.fromSel.Options = names
+	p.fromSel.Refresh()
+	if prev != "" {
+		p.fromSel.SetSelected(prev)
+	}
+	if p.fromSel.SelectedIndex() < 0 && len(names) > 0 {
+		p.fromSel.SetSelectedIndex(0)
+	}
+}
+
+func (p *preparePane) selectedTarget() (prepareTarget, bool) {
+	i := p.fromSel.SelectedIndex()
+	if i < 0 || i >= len(p.targets) {
+		return prepareTarget{}, false
+	}
+	return p.targets[i], true
 }
 
 func (p *preparePane) onActionSelected() {
@@ -142,23 +207,20 @@ func (p *preparePane) prepare() {
 	if p.current == nil {
 		return
 	}
-	desc, ok := p.app.cfg.WalletByID(p.app.cfg.ActiveWallet)
+	target, ok := p.selectedTarget()
 	if !ok {
-		dialog.ShowError(fmt.Errorf("select a wallet in the Wallets tab first"), p.app.window)
+		dialog.ShowError(fmt.Errorf("select an account under From"), p.app.window)
 		return
 	}
-	from, err := address.Parse(desc.Address)
-	if err != nil {
-		dialog.ShowError(err, p.app.window)
-		return
-	}
+	from := target.address
 	conn, ok := p.app.rpc.Active()
 	if !ok {
 		dialog.ShowError(fmt.Errorf("connect an RPC endpoint first"), p.app.window)
 		return
 	}
 
-	// Parse inputs (18-decimal amounts → base units).
+	// Parse inputs (18-decimal amounts → base units). Account is the acting account
+	// (the Safe when targeting a Safe), so owner/recipient params resolve correctly.
 	in := actions.Inputs{Amounts: map[string]*big.Int{}, Account: from}
 	for _, f := range p.current.Fields {
 		raw := p.entries[f.Key].Text
@@ -176,6 +238,12 @@ func (p *preparePane) prepare() {
 	prepared, err := p.current.Build(conn.ChainID.Uint64(), in)
 	if err != nil {
 		dialog.ShowError(err, p.app.window)
+		return
+	}
+
+	// A Safe target becomes a proposal, not a direct send.
+	if target.isSafe {
+		p.prepareSafeProposal(target.safe, prepared)
 		return
 	}
 
@@ -198,6 +266,116 @@ func (p *preparePane) prepare() {
 			p.showReview(prepared, prep, conn.ChainInfo)
 		})
 	}()
+}
+
+// prepareSafeProposal reads the Safe nonce, computes the safeTxHash for the action's
+// inner call, and shows a proposal review.
+func (p *preparePane) prepareSafeProposal(desc safe.Descriptor, prepared actions.Prepared) {
+	conn, ok := p.app.rpc.Active()
+	if !ok {
+		dialog.ShowError(fmt.Errorf("connect an RPC endpoint first"), p.app.window)
+		return
+	}
+	safeAddr, err := address.Parse(desc.Address)
+	if err != nil {
+		dialog.ShowError(err, p.app.window)
+		return
+	}
+	client := conn.Client
+	p.prepareBtn.Disable()
+	p.status.SetText("Reading Safe nonce…")
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		nonce, nerr := safe.Nonce(ctx, client, safeAddr)
+		if nerr != nil {
+			p.failPrepare(fmt.Errorf("read Safe nonce: %w", nerr))
+			return
+		}
+		stx := safe.NewSafeTx(prepared.Call.To, prepared.Call.Value, prepared.Call.Data, nonce)
+		hash, herr := stx.OnChainHash(ctx, client, safeAddr)
+		if herr != nil {
+			p.failPrepare(fmt.Errorf("compute safeTxHash: %w", herr))
+			return
+		}
+		fyne.Do(func() {
+			p.prepareBtn.Enable()
+			p.status.SetText("Ready")
+			p.showSafeReview(desc, prepared, nonce, hash)
+		})
+	}()
+}
+
+func (p *preparePane) failPrepare(err error) {
+	fyne.Do(func() {
+		p.prepareBtn.Enable()
+		p.status.SetText("Ready")
+		dialog.ShowError(err, p.app.window)
+	})
+}
+
+// showSafeReview presents the decoded action + Safe proposal details, then creates the
+// proposal on confirm.
+func (p *preparePane) showSafeReview(desc safe.Descriptor, prepared actions.Prepared, nonce uint64, hash common.Hash) {
+	grid := container.New(layout.NewFormLayout())
+	addRow := func(k, v string) {
+		grid.Add(widget.NewLabelWithStyle(k, fyne.TextAlignLeading, fyne.TextStyle{Bold: true}))
+		grid.Add(monoLabel(v))
+	}
+	for _, r := range prepared.Review {
+		addRow(r.Key, r.Value)
+	}
+	addRow("Safe", desc.Address)
+	addRow("Safe nonce", fmt.Sprintf("%d", nonce))
+	addRow("safeTxHash", hash.Hex())
+
+	body := container.NewVBox(grid)
+	if prepared.Note != "" {
+		body.Add(cautionBox(prepared.Note))
+	}
+	body.Add(widget.NewSeparator())
+	info := widget.NewLabel("This creates a Safe proposal — collect owner signatures and execute it in the Safe tab.")
+	info.Wrapping = fyne.TextWrapWord
+	body.Add(info)
+
+	d := dialog.NewCustomConfirm("Review proposal — "+prepared.Summary, "Create proposal", "Cancel", body,
+		func(confirm bool) {
+			if confirm {
+				p.createSafeProposal(desc, prepared, nonce, hash)
+			}
+		}, p.app.window)
+	d.Resize(fyne.NewSize(660, 520))
+	d.Show()
+}
+
+func (p *preparePane) createSafeProposal(desc safe.Descriptor, prepared actions.Prepared, nonce uint64, hash common.Hash) {
+	if p.app.safeProposals == nil {
+		dialog.ShowError(fmt.Errorf("proposal store unavailable"), p.app.window)
+		return
+	}
+	safeAddr, _ := address.Parse(desc.Address)
+	_, err := p.app.safeProposals.Insert(safe.Proposal{
+		SafeAddress: safeAddr,
+		ChainID:     desc.ChainID,
+		To:          prepared.Call.To,
+		Value:       prepared.Call.Value,
+		Data:        prepared.Call.Data,
+		Operation:   safe.Call,
+		SafeNonce:   nonce,
+		SafeTxHash:  hash,
+		Kind:        safe.KindContractCall,
+		Description: prepared.Summary,
+		Status:      safe.StatusCollecting,
+	})
+	if err != nil {
+		dialog.ShowError(fmt.Errorf("save proposal: %w", err), p.app.window)
+		return
+	}
+	p.app.updateSafeBadge()
+	p.status.SetText(fmt.Sprintf("Safe proposal created (nonce %d) — sign & execute it in the Safe tab", nonce))
+	dialog.ShowInformation("Proposal created",
+		fmt.Sprintf("%s\n\nNonce %d. Open the Safe tab to collect owner signatures and execute.", prepared.Summary, nonce),
+		p.app.window)
 }
 
 // showReview shows the decoded action, the fees, and a Sign & send action.

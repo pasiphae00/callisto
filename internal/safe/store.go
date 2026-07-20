@@ -31,6 +31,7 @@ const (
 	KindSwapOwner       ProposalKind = "swap-owner"
 	KindChangeThreshold ProposalKind = "change-threshold"
 	KindReject          ProposalKind = "reject"
+	KindContractCall    ProposalKind = "contract-call" // a prepared/advanced action
 )
 
 // Signature is one owner's collected signature over a proposal's safeTxHash.

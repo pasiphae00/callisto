@@ -301,51 +301,66 @@ func (p *preparePane) signAndSend(prepared actions.Prepared, prep tx.Prepared, i
 		}
 		fyne.Do(func() {
 			p.status.SetText("Submitted: " + hash.Hex())
-			p.showResult(hash.Hex(), info)
+			resultLabel := p.showResult(hash.Hex(), info)
 			if p.app.historyReload != nil {
 				p.app.historyReload()
 			}
+			go p.trackInclusion(recID, client, hash, info, resultLabel)
 		})
-		go p.trackInclusion(recID, client, hash, info)
 	}()
 }
 
-func (p *preparePane) trackInclusion(recID int64, client rpc.Client, hash common.Hash, info chain.Info) {
+// trackInclusion waits for the receipt and updates the (still-open) result dialog's
+// status line in place, plus the pane status and history — so inclusion is visible
+// rather than the dialog appearing stuck on "waiting".
+func (p *preparePane) trackInclusion(recID int64, client rpc.Client, hash common.Hash, info chain.Info, resultLabel *widget.Label) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 	receipt, err := tx.WaitForReceipt(ctx, client, hash)
 	if err != nil {
+		fyne.Do(func() {
+			p.status.SetText("Could not confirm inclusion: " + err.Error())
+			if resultLabel != nil {
+				resultLabel.SetText("Still pending — could not confirm inclusion. Check the explorer.")
+			}
+		})
 		return
 	}
 	success := tx.Succeeded(receipt)
+	blockNum := receipt.BlockNumber.Int64()
 	var blockTime int64
 	if head, herr := client.HeaderByNumber(ctx, receipt.BlockNumber); herr == nil && head != nil {
 		blockTime = int64(head.Time)
 	}
 	if p.app.history != nil && recID != 0 {
-		_ = p.app.history.MarkIncluded(recID, receipt.BlockNumber.Int64(), blockTime, success)
+		_ = p.app.history.MarkIncluded(recID, blockNum, blockTime, success)
 	}
 	fyne.Do(func() {
-		outcome := "succeeded"
+		outcome := "succeeded ✓"
 		if !success {
-			outcome = "failed"
+			outcome = "reverted ✗"
 		}
-		p.status.SetText(fmt.Sprintf("Tx %s in block %d", outcome, receipt.BlockNumber.Int64()))
+		p.status.SetText(fmt.Sprintf("Included in block %d — %s", blockNum, outcome))
+		if resultLabel != nil {
+			resultLabel.SetText(fmt.Sprintf("Included in block %d — %s", blockNum, outcome))
+		}
 		if p.app.historyReload != nil {
 			p.app.historyReload()
 		}
 	})
 }
 
-func (p *preparePane) showResult(hash string, info chain.Info) {
-	body := container.NewVBox(
-		widget.NewLabel("Transaction submitted. Waiting for inclusion…"),
-		monoLabel(hash),
-	)
+// showResult opens the submitted-transaction dialog and returns its status label so
+// trackInclusion can update it in place when the receipt lands.
+func (p *preparePane) showResult(hash string, info chain.Info) *widget.Label {
+	status := widget.NewLabel("Transaction submitted. Waiting for inclusion…")
+	status.Wrapping = fyne.TextWrapWord
+	body := container.NewVBox(status, monoLabel(hash))
 	if link := info.TxURL(hash); link != "" {
 		body.Add(widget.NewButton("View on explorer", func() { p.app.openURL(link) }))
 	}
 	dialog.ShowCustom("Prepared transaction", "Close", body, p.app.window)
+	return status
 }
 
 func (p *preparePane) finishError(recID int64, msg string) {

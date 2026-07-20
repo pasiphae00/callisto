@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -1078,9 +1079,24 @@ func (p *walletsPane) showPrivateKey(desc wallet.Descriptor, pk string) {
 			field.SetText(pk)
 		}
 	}
-	copyBtn := widget.NewButton("Copy", func() { p.app.fyneApp.Clipboard().SetContent(pk) })
+	// Copying a private key to the shared clipboard is risky (other apps and clipboard
+	// managers can read it), so auto-clear it after a short delay — but only if it's
+	// still the key, so we don't wipe something the user copied afterwards.
+	const clipboardClearAfter = 45 * time.Second
+	copyBtn := widget.NewButton("Copy (clears in 45s)", func() {
+		cb := p.app.fyneApp.Clipboard()
+		cb.SetContent(pk)
+		go func() {
+			time.Sleep(clipboardClearAfter)
+			fyne.Do(func() {
+				if cb.Content() == pk {
+					cb.SetContent("")
+				}
+			})
+		}()
+	})
 	body := container.NewVBox(
-		dangerBox("Private key for "+displayName(desc)+". Anyone with it controls the funds — never share it, screenshot it, or paste it into a website. Close this window as soon as you're done."),
+		dangerBox("Private key for "+displayName(desc)+". Anyone with it controls the funds — never share it, screenshot it, or paste it into a website. Close this window as soon as you're done. Copying puts it on the system clipboard; Callisto clears it after 45 seconds."),
 		field, copyBtn,
 	)
 	d := dialog.NewCustom("Private key", "Close", body, p.app.window)

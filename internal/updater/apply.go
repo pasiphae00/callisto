@@ -127,8 +127,18 @@ func (u *Updater) downloadFile(ctx context.Context, url, dest string) error {
 		return err
 	}
 	defer f.Close()
-	_, err = io.Copy(f, body)
-	return err
+	// Bound the download so a compromised/hostile host can't fill the disk. The app
+	// bundle is tens of MB; 500 MB is a generous ceiling. (Integrity is still enforced
+	// by the SHA256SUMS check after download — this only caps size.)
+	const maxArtifactBytes = 500 << 20
+	n, err := io.Copy(f, io.LimitReader(body, maxArtifactBytes))
+	if err != nil {
+		return err
+	}
+	if n == maxArtifactBytes {
+		return fmt.Errorf("update artifact exceeds %d bytes; refusing", maxArtifactBytes)
+	}
+	return nil
 }
 
 func (u *Updater) downloadBytes(ctx context.Context, url string) ([]byte, error) {

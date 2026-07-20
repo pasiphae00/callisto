@@ -10,6 +10,7 @@ package store
 import (
 	"database/sql"
 	"fmt"
+	"os"
 	"path/filepath"
 
 	_ "modernc.org/sqlite" // registers the "sqlite" driver
@@ -50,6 +51,13 @@ func OpenAt(path string) (*Store, error) {
 	if err := db.Ping(); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("ping sqlite: %w", err)
+	}
+	// The DB holds tx history + the address book (privacy-sensitive, not key material).
+	// It lives inside the 0700 config dir, but tighten the file itself to 0600 too so a
+	// stray dir-perm change or a copied-out file doesn't expose it. Best-effort; skip
+	// the in-memory DB.
+	if path != ":memory:" {
+		_ = os.Chmod(path, 0o600)
 	}
 	s := &Store{db: db}
 	if err := s.migrate(); err != nil {

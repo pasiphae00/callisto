@@ -410,11 +410,27 @@ platform/CGo Keychain last):
     unverified/tampered artifact. User data lives in the OS config dir (outside the
     bundle), so updates preserve it automatically. Signing key via
     `make gen-release-key` / `cmd/callisto-release`.
-  - **Deferred follow-ups:** Apple Developer-ID signing + notarization (drops the
-    one-time right-click→Open); Windows packaging; Linux AppImage/`.deb`; a `.dmg`
-    cosmetic installer; delta updates. Full auto-update verified headlessly (unit
-    tests) + local packaging; the live download→install→relaunch is verified on the
-    user's machine once the first signed release is published.
+  - **macOS code signing — ⭐ prioritize:**
+    - **Shipped (v0.11.0):** the Makefile now **ad-hoc** signs the `.app`
+      (`codesign --force --deep --sign -`) as the last packaging step. This was
+      essential, not cosmetic: Apple silicon *requires* native arm64 binaries to carry
+      a valid signature to run, so an unsigned, quarantined (downloaded) arm64 build
+      showed **"'Callisto.app' is damaged and can't be opened"** — while the amd64
+      build slipped through under Rosetta. Ad-hoc signing downgrades that to the normal
+      "unidentified developer" prompt (right-click → Open, or
+      `xattr -dr com.apple.quarantine`).
+    - **Next (real fix): Apple Developer-ID signing + notarization.** Removes the
+      first-launch prompt entirely — now the top distribution priority, since download
+      is the primary install path. Needs a paid Apple Developer account, a
+      "Developer ID Application" cert, `codesign` with that identity + `--options
+      runtime` (hardened runtime), then `notarytool submit --wait` + `stapler staple`.
+      Wire into the Makefile behind an optional identity var (fall back to ad-hoc when
+      unset, so token-less/dev builds still work). Pairs naturally with the CI/CD item
+      (store the cert + notarization creds as CI secrets).
+  - **Other deferred follow-ups:** Windows packaging (+ Authenticode signing); Linux
+    AppImage/`.deb`; a `.dmg` cosmetic installer; delta updates. Full auto-update
+    verified headlessly (unit tests) + local packaging; the live
+    download→install→relaunch is verified on the user's machine.
 
 ### CI/CD: automate releases on tag push (user, 2026-07-19)
 - **Goal:** pushing a `vX.Y.Z` tag triggers CI to build, package, checksum, **sign**,

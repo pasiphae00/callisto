@@ -166,14 +166,35 @@ func (p *preparePane) applyResolution(res ai.Resolution) {
 		dialog.ShowError(fmt.Errorf("unknown action: %s", res.ActionID), p.app.window)
 		return
 	}
-	p.actionSel.SetSelected(a.Name) // fires onActionSelected → (re)builds the fields
-	p.onActionSelected()            // ensure fields are built even if selection was unchanged
-	for k, v := range res.Params {
+	// Set the value directly (not SetSelected, whose OnChanged would asynchronously
+	// rebuild the entries and wipe what we fill below), then build the fields once.
+	p.actionSel.Selected = a.Name
+	p.actionSel.Refresh()
+	p.onActionSelected()
+	p.fillEntries(res.Params)
+	p.status.SetText("Interpreted — review the filled form, then Prepare.")
+}
+
+// fillEntries populates the action's inputs from the resolved params: an exact key
+// match first, then a fallback for the (common) single-field action so a key the model
+// named slightly differently still lands.
+func (p *preparePane) fillEntries(params map[string]string) {
+	for k, v := range params {
 		if e, ok := p.entries[k]; ok {
 			e.SetText(v)
 		}
 	}
-	p.status.SetText("Interpreted — review the filled form, then Prepare.")
+	if p.current != nil && len(p.current.Fields) == 1 {
+		key := p.current.Fields[0].Key
+		if e, ok := p.entries[key]; ok && e.Text == "" {
+			for _, v := range params {
+				if strings.TrimSpace(v) != "" {
+					e.SetText(v)
+					break
+				}
+			}
+		}
+	}
 }
 
 // reloadActions repopulates the action dropdown for the connected chain.

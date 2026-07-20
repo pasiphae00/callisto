@@ -3,11 +3,14 @@ package ui
 import (
 	"context"
 	"fmt"
+	"image/color"
 	"math/big"
+	"sort"
 	"strconv"
 	"time"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/layout"
@@ -428,17 +431,87 @@ func (p *safePane) refreshProposals(desc safe.Descriptor) {
 			}
 		}
 	}
-	head := widget.NewLabelWithStyle("Proposals", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
-	rows := container.NewVBox()
+	// Split live proposals (still actionable) from terminal ones (history), and
+	// detect same-nonce conflicts among the active ones — only one proposal per
+	// nonce can ultimately execute, so sharing a nonce is worth flagging.
+	var active, hist []safe.Proposal
+	nonceCount := map[uint64]int{}
+	for _, pr := range p.proposals {
+		switch pr.Status {
+		case safe.StatusCollecting, safe.StatusReady:
+			active = append(active, pr)
+			nonceCount[pr.SafeNonce]++
+		default:
+			hist = append(hist, pr)
+		}
+	}
+	sort.SliceStable(active, func(i, j int) bool {
+		if active[i].SafeNonce != active[j].SafeNonce {
+			return active[i].SafeNonce < active[j].SafeNonce
+		}
+		return active[i].CreatedAt < active[j].CreatedAt
+	})
+	sort.SliceStable(hist, func(i, j int) bool { return hist[i].CreatedAt > hist[j].CreatedAt })
+
+	sectionHead := func(s string) fyne.CanvasObject {
+		return widget.NewLabelWithStyle(s, fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+	}
+	box := container.NewVBox()
 	if len(p.proposals) == 0 {
-		rows.Add(widget.NewLabel("No proposals yet."))
+		box.Add(widget.NewLabel("No proposals yet."))
+	} else {
+		box.Add(sectionHead(fmt.Sprintf("Active (%d)", len(active))))
+		if len(active) == 0 {
+			box.Add(widget.NewLabel("No active proposals."))
+		}
+		for _, pr := range active {
+			box.Add(p.proposalRow(desc, pr, nonceCount[pr.SafeNonce] > 1))
+		}
+		if len(hist) > 0 {
+			box.Add(widget.NewSeparator())
+			box.Add(sectionHead(fmt.Sprintf("History (%d)", len(hist))))
+			for _, pr := range hist {
+				box.Add(p.proposalRow(desc, pr, false))
+			}
+		}
 	}
-	for i := range p.proposals {
-		rows.Add(p.proposalRow(desc, p.proposals[i]))
-	}
-	p.proposalBox.Objects = []fyne.CanvasObject{head, rows}
+	p.proposalBox.Objects = []fyne.CanvasObject{box}
 	p.proposalBox.Refresh()
 	p.relayout()
+}
+
+// proposalStatusColor maps a proposal status to a status dot color: amber while
+// collecting, green when ready to execute, gray once executed (done), red for a
+// rejected/failed one.
+func proposalStatusColor(s safe.ProposalStatus) color.Color {
+	switch s {
+	case safe.StatusCollecting:
+		return statusAmber
+	case safe.StatusReady:
+		return statusGreen
+	case safe.StatusRejected, safe.StatusFailed:
+		return statusRed
+	default: // executed
+		return statusGray
+	}
+}
+
+// proposalStatusWord is a capitalized label for a proposal status.
+func proposalStatusWord(s safe.ProposalStatus) string {
+	switch s {
+	case safe.StatusCollecting:
+		return "Collecting"
+	case safe.StatusReady:
+		return "Ready"
+	case safe.StatusExecuted:
+		return "Executed"
+	case safe.StatusRejected:
+		return "Rejected"
+	case safe.StatusFailed:
+		return "Failed"
+	default:
+		return string(s)
+	}
 }
 
 // relayout re-runs the parent VBox's layout so that resized detail/proposal
@@ -451,11 +524,21 @@ func (p *safePane) relayout() {
 	}
 }
 
-func (p *safePane) proposalRow(desc safe.Descriptor, prop safe.Proposal) fyne.CanvasObject {
-	summary := fmt.Sprintf("[%s] %s — %d/%d sigs · %s",
-		prop.Status, prop.Description, len(prop.Signatures), desc.Threshold, prop.Kind)
+// proposalRow renders one proposal: a status-colored dot, a summary line (status,
+// nonce, description, signature progress, kind — with a same-nonce conflict flag),
+// and an Open button into the review dialog.
+func (p *safePane) proposalRow(desc safe.Descriptor, prop safe.Proposal, conflict bool) fyne.CanvasObject {
+	dot := canvas.NewText("●", proposalStatusColor(prop.Status))
+	text := fmt.Sprintf("%s · nonce %d · %s · %d/%d sigs · %s",
+		proposalStatusWord(prop.Status), prop.SafeNonce, prop.Description,
+		len(prop.Signatures), desc.Threshold, prop.Kind)
+	if conflict {
+		text += "  · ⚠ same-nonce conflict"
+	}
+	lbl := widget.NewLabel(text)
+	lbl.Wrapping = fyne.TextWrapWord
 	open := widget.NewButton("Open", func() { p.showProposalReview(desc, prop) })
-	return container.NewBorder(nil, nil, nil, open, widget.NewLabel(summary))
+	return container.NewBorder(nil, nil, dot, open, lbl)
 }
 
 // --- create proposals -------------------------------------------------------
@@ -756,7 +839,7 @@ func (p *safePane) showProposalReview(desc safe.Descriptor, prop safe.Proposal) 
 func (p *safePane) reviewObjects(desc safe.Descriptor, prop safe.Proposal, render func()) []fyne.CanvasObject {
 	rows := [][2]string{
 		{"Action", prop.Description},
-		{"Status", string(prop.Status)},
+		{"Status", proposalStatusWord(prop.Status)},
 		{"Signatures", fmt.Sprintf("%d of %d", len(prop.Signatures), desc.Threshold)},
 		{"Safe nonce", fmt.Sprintf("%d", prop.SafeNonce)},
 		{"safeTxHash", prop.SafeTxHash.Hex()},
@@ -765,20 +848,49 @@ func (p *safePane) reviewObjects(desc safe.Descriptor, prop safe.Proposal, rende
 	if prop.Value != nil && prop.Value.Sign() > 0 {
 		rows = append(rows, [2]string{"Value", assets.FormatUnits(prop.Value, 18)})
 	}
+	if prop.CreatedAt > 0 {
+		rows = append(rows, [2]string{"Created", time.Unix(prop.CreatedAt, 0).Local().Format("2006-01-02 15:04")})
+	}
 	grid := container.New(layout.NewFormLayout())
 	for _, r := range rows {
 		grid.Add(widget.NewLabelWithStyle(r[0], fyne.TextAlignLeading, fyne.TextStyle{Bold: true}))
 		grid.Add(monoLabel(r[1]))
 	}
 
+	// Signatures, showing the owner's label where one is set.
 	signers := container.NewVBox()
 	for _, s := range prop.Signatures {
-		signers.Add(monoLabel("✓ " + address.Short(s.Signer)))
+		hex := address.Format(s.Signer)
+		who := address.Short(s.Signer)
+		if lbl := desc.OwnerLabelFor(hex); lbl != "" {
+			who = lbl + " (" + address.Short(s.Signer) + ")"
+		}
+		signers.Add(monoLabel("✓ " + who))
 	}
+
+	objs := []fyne.CanvasObject{grid, widget.NewSeparator(), signers}
+
+	// For an executed proposal, link the execution tx; for a failed one, show why.
+	if prop.ExecutedTxHash != "" {
+		info, _ := chain.Lookup(prop.ChainID)
+		if url := info.TxURL(prop.ExecutedTxHash); url != "" {
+			objs = append(objs, container.NewHBox(
+				widget.NewLabelWithStyle("Executed tx", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
+				monoHyperlink(prop.ExecutedTxHash, url)))
+		} else {
+			objs = append(objs, monoLabel("Executed tx: "+prop.ExecutedTxHash))
+		}
+	}
+	if prop.Error != "" {
+		errLbl := widget.NewLabel("Error: " + prop.Error)
+		errLbl.Wrapping = fyne.TextWrapWord
+		objs = append(objs, errLbl)
+	}
+
 	signMsg := widget.NewLabel(p.signGuidance(desc, prop))
 	signMsg.Wrapping = fyne.TextWrapWord
-
-	return []fyne.CanvasObject{grid, widget.NewSeparator(), signers, signMsg, p.reviewButtons(desc, prop, render)}
+	objs = append(objs, signMsg, p.reviewButtons(desc, prop, render))
+	return objs
 }
 
 // reviewButtons builds the action row for a proposal's current state:

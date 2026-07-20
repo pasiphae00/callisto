@@ -355,6 +355,7 @@ var (
 	statusGreen = color.NRGBA{R: 0x2e, G: 0x7d, B: 0x32, A: 0xff}
 	statusAmber = color.NRGBA{R: 0xef, G: 0x6c, B: 0x00, A: 0xff}
 	statusGray  = color.NRGBA{R: 0x9e, G: 0x9e, B: 0x9e, A: 0xff}
+	statusRed   = color.NRGBA{R: 0xc6, G: 0x28, B: 0x28, A: 0xff}
 	// colorTransparent hides a status glyph while preserving its layout space.
 	colorTransparent = color.NRGBA{}
 )

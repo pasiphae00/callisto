@@ -1,171 +1,94 @@
-# Advanced (Claude-assisted) transaction preparation — research & plan
+# Advanced transaction preparation — design & scope
 
-Design work for the DESIGN.md "Complex transaction preparation" phase: let a user type
-an intent ("deposit 10 ether to Aave v3", "stake 15.75 ether with Lido") and have
-Callisto prepare a reviewed, signable transaction — with an **optional, default-off**
-Claude integration doing the natural-language interpretation. Nothing is built yet.
+Callisto's take on DESIGN.md's "Complex transaction preparation" phase: let a Safe reach
+common ecosystem actions (wrap ETH, stake with Lido, wrap/unwrap wstETH, request/claim a
+Lido withdrawal) as reviewed, signable **proposals**, built from a curated in-code
+registry.
 
-## Non-negotiable safety principle
+## Scope decision (2026-07)
 
-**Claude proposes; Callisto verifies and builds.** Claude never emits raw calldata that
-gets signed. Its job is to map an intent onto a **curated, in-code action** and extract
-parameters. Callisto owns the deterministic calldata builder for each supported action,
-decodes the result back to a human-readable review, optionally simulates it, and the
-**user gives final confirmation**. This bounds the blast radius: only pre-vetted
-contracts/functions are ever executable, and a wrong Claude answer produces a *wrong
-review the user can reject*, never a silent malicious call. It also satisfies DESIGN.md's
-"validate if the request is possible with available tools, or gracefully say it can't."
+**This is a Safe-only feature.** EOAs interact with the ecosystem by linking the active
+account to a dApp over **WalletConnect** and using the dApp's native flows — that's
+strictly better than re-implementing each protocol's UX in Callisto. A Safe *can't* drive
+a synchronous dApp handshake (see `docs/safe-walletconnect-research.md`: a dApp expects a
+tx hash back from `eth_sendTransaction`, but a Safe tx is propose → collect M signatures →
+execute, which doesn't exist yet at request time — n-of-M is impossible synchronously).
+So curated on-Safe preparation is how a Safe reaches the same actions.
 
-The alternative — letting Claude emit arbitrary `to`/`data` — is rejected: it makes an
-LLM a signing authority over a wallet, which is unacceptable for this project's threat
-model.
+Consequences:
+- The standalone "Prepare" pane and the **optional Claude/AI resolver were removed.** With
+  the feature scoped to a small, discoverable curated set on a Safe, a natural-language
+  front end wasn't earning its complexity. The registry (`internal/actions`) stays; it's
+  reachable from the Safe pane's **Build** sub-tab. If NL intent ever returns, it plugs in
+  above the registry without changing the trust model.
 
-## Architecture
+## Safety principle (unchanged)
+
+Only pre-vetted contracts/functions are ever executable. Each action is a **curated Go
+builder** — per-chain address, ABI, deterministic `encode()`, and a human-readable
+`describe()` — so the review shows the decoded contract/function/params, never raw
+calldata, and the user gives final confirmation. Adding a protocol = adding a
+code-reviewed registry entry.
+
+## Architecture (shipped)
 
 ```
-intent text
-   │
+Safe pane → Build tab
+   │  pick a curated action + fill params
    ▼
-[intent resolver]  ── optional Claude (tool-use) OR a manual action/param form
-   │  picks: action id + params (from the curated registry only)
+[action registry]  internal/actions — per-chain address, ABI, encode(), describe(),
+   │                and a declared approval requirement (token, spender, amount)
    ▼
-[action registry]  ── curated Go builders: per-chain address, ABI, encode(), describe()
-   │  produces: tx.Send (to, value, calldata) + a human-readable decode
+[approval check]  read live allowance from the Safe; batch any needed approve()s
+   │               atomically with the action via MultiSendCallOnly (one proposal)
    ▼
-[review]  ── decoded contract/function/params (never raw calldata)
-   │
+[review]  decoded action (+ batched approvals) + Safe nonce + safeTxHash
    ▼
-[simulate]  (optional) ── eth_call + debug_traceCall state diff → before/after
-   │
-   ▼
-[sign & broadcast]  ── existing pipeline (EOA send, or a Safe proposal)
+[Safe proposal]  collect owner signatures, execute — existing Safe pipeline
 ```
 
-### 1. Action registry (the heart of it)
-A curated set of **supported actions** in Go, each with:
-- a stable `id` (e.g. `weth.wrap`, `lido.stake`, `aavev3.supply`, `erc20.approve`),
-- per-chain contract address(es) (verified, bundled — not fetched blind),
-- the function ABI + a deterministic `encode(params) → calldata`,
-- a `describe(params) → human-readable` for the review,
-- a param schema (types, which are amounts/addresses/token symbols) for validation.
+Actions today (mainnet): `weth.wrap`/`unwrap`, `lido.deposit`, `wsteth.wrap`/`unwrap`,
+`lido.withdraw` (request), `lido.claim`. Each declaring its approval need lets the
+pipeline batch `approve` + action into one atomic MultiSend, so owners never approve
+separately.
 
-This *is* the "growing address book" DESIGN.md calls for, backed by the existing
-`contracts` / `selectors` store tables. Claude (or a form) can only select from this set;
-adding a protocol = adding a vetted registry entry (code-reviewed), not trusting an LLM.
+## Next
 
-Phase-1 candidate actions (all single-step, direct calls): `weth.wrap`/`unwrap`,
-`lido.stake`, `aavev3.supply`/`borrow`/`repay`/`withdraw`, `erc20.approve`/revoke (reuse
-the Approvals pane), plain transfers (reuse Send). These cover most DESIGN.md examples.
+- **More ecosystem actions** (Uniswap V3 trade, Aave v3 supply/borrow/repay/withdraw) as
+  curated registry entries — same Build→proposal path.
+- **Simulation** (its own phase): `eth_call` at the pending block for revert/return
+  decoding, plus `debug_traceCall` prestate diff (the Ganymede archive supports it) for a
+  before/after balance view — surfaced behind a **Simulate** button before signing. Falls
+  back to explicit balance `eth_call`s where tracing is unavailable.
+- **Multi-step (Safe-only)** — see the DeFiSaver note below; a later, separate effort.
 
-### 2. Claude integration (optional, default-OFF)
-- **Settings:** an "AI features" section — a master toggle (off by default), an API-key
-  field (persisted, with a delete button), and clear copy that enabling it sends the
-  intent text (and resolved on-chain context) to Anthropic.
-- **Cold path:** when the toggle is off, no Claude client is constructed and no key is
-  read — the code path is inert (a `internal/ai` package that's only wired up when
-  enabled). Matches the WalletConnect/relay "lazy client" pattern.
-- **No SDK:** implement the Anthropic **Messages API** directly over HTTPS (a small
-  `internal/ai` package), same ethos as the from-scratch WalletConnect client — no new
-  heavy dependency, full control over what's sent.
-- **Tool-use loop:** Claude is given tools that mirror the registry — `list_actions`,
-  `resolve_token`, `get_balance`, `propose_action(id, params)` — and Callisto executes
-  them. The final `propose_action` is validated against the registry, built, and shown.
-  Claude reasons over on-chain facts Callisto supplies; it doesn't invent addresses.
-- **Privacy/cost:** the intent text and minimal context leave the machine only when
-  enabled; make that explicit. Bring-your-own-key, so cost is the user's.
-
-### 3. Simulation (in-house, no external service)
-- **Revert + outcome check:** `eth_call` the prepared tx from the account at the pending
-  block — catches reverts and decodes return values before signing.
-- **Before/after state:** `debug_traceCall` with the prestate tracer (erigon/the default
-  Ganymede archive supports it) to diff touched balances/storage, surfaced as
-  human-readable "ETH: 10 → 0, stETH: 0 → 9.998" style rows. Falls back to explicit
-  balance `eth_call`s (native + relevant ERC-20s) when tracing is unavailable.
-- A **Simulate** button beside Sign (for both EOA and Safe), then a continue/reject
-  prompt — as the TODO's simulation section specifies. Usable independently of Claude.
-
-### 4. Single-step vs multi-step
-- **Phase 1 — single-step**, EOA **and** Safe. One action → one `tx.Send` → EOA send or a
-  Safe proposal. No DeFiSaver needed; covers the bulk of the examples.
-- **Phase 2 — multi-step (Safe-only)** is where DESIGN.md mandates DeFiSaver. Key finding
-  below; likely a later, separate effort.
-
-## The DeFiSaver problem (multi-step)
+## The DeFiSaver / multi-step problem
 
 DESIGN.md mandates the DeFiSaver SDK + RecipeExecutor for multi-step transactions. Two
-hard facts from the research:
+hard facts:
 
-1. **The DeFiSaver SDK is JavaScript/TypeScript** (~77% TS, confirmed on the repo).
-   Callisto is Go with a deliberately minimal dependency set and no JS runtime. Using the
-   SDK directly is out; we'd have to **re-implement the recipe ABI-encoding in Go** (action
-   structs + the RecipeExecutor `executeRecipe` call), which is real, security-sensitive
-   work. For P4, mine the encoding from the contracts + SDK sources:
+1. **The SDK is JavaScript/TypeScript** (~77% TS). Callisto is Go with a minimal
+   dependency set and no JS runtime — using the SDK directly is out; we'd re-implement the
+   recipe ABI-encoding in Go (action structs + `executeRecipe`), which is real,
+   security-sensitive work. Sources to mine for P-multi:
    - Contracts: <https://github.com/defisaver/defisaver-v3-contracts>
-   - SDK (recipe/action encoding, `DEV.md` / `ACTIONS.md`): <https://github.com/defisaver/defisaver-sdk>
-2. **Recipes need parameter piping.** DeFiSaver's value is feeding one action's *output*
-   into the next ("deposit the **full amount** received", "buy the **maximum**") via its
-   subData/placeholder mechanism. Plain batching can't express that.
+   - SDK encoding (`DEV.md` / `ACTIONS.md`): <https://github.com/defisaver/defisaver-sdk>
+2. **Recipes need parameter piping** — feeding one action's *output* into the next ("deposit
+   the **full amount** received") via subData placeholders. Plain batching can't express it.
 
-Options for multi-step, roughly increasing effort:
-- **A. Safe MultiSend (no piping).** Batch several fixed-amount actions atomically in one
-  Safe tx using the MultiSend contract. Simple, no new deps, reuses our Safe pipeline —
-  but can't do "the full amount" piping. Covers fixed-sequence recipes only.
-- **B. Hand-encode DeFiSaver recipes in Go.** Honor the DESIGN mandate: encode the
-  RecipeExecutor call + action structs ourselves, executed via the Safe. Full piping,
-  battle-tested contracts — but the encoding is intricate and must be exhaustively tested
-  and verified against the JS SDK's output.
-- **C. Alternatives** (Enso, Furucombo, etc.) — similar JS-first tooling; no clear Go win.
+Options, increasing effort: **A. Safe MultiSend** (atomic, fixed amounts, no piping — what
+we already use for approve+action); **B. hand-encode DeFiSaver recipes in Go** (full
+piping, honors the mandate, intricate + must be verified against the JS SDK's output);
+**C. alternatives** (Enso, Furucombo — similarly JS-first, no clear Go win).
 
-**Recommendation:** ship Phase 1 (single-step) first — it's most of the value and has no
-DeFiSaver dependency. Treat multi-step as its own project, starting with **A (MultiSend
-batching)** for fixed sequences and evaluating **B** for true piping later. Revisit the
-DESIGN.md "MUST use DeFiSaver" clause as a documented deviation if MultiSend/hand-encoding
-proves the better fit (it's a MUST worth re-examining given the Go/JS mismatch).
+**Recommendation:** MultiSend (A) covers fixed sequences now; evaluate B for true piping
+later, and record a documented DESIGN.md deviation if hand-encoding proves the better fit
+than the mandated SDK (a MUST worth re-examining given the Go/JS mismatch).
 
-## Approvals (must be good UX by P4)
+## Approvals (done)
 
-Several actions need a prior ERC-20 approval (e.g. `wstETH.wrap`, the Lido withdrawal
-request). Single-step P1 surfaces this as a caution note and lets the gas estimate
-revert if unapproved — acceptable for now, but P4 must make "approve + action" seamless.
-Options, by mechanism:
-
-- **Safe → MultiSend.** Bundle `approve` + the action atomically in one Safe tx via the
-  MultiSend contract. The clean path for Safes; no new deps, reuses our Safe pipeline.
-- **EOA → EIP-7702 (Pectra, live 2025-05-07).** A type-`0x04` transaction lets an EOA
-  delegate to a batching contract for one tx, so `approve` + action execute atomically
-  from a plain EOA. The modern answer — but needs 7702 tx construction (authorization
-  list), a trusted batcher contract, and signer support (hardware-wallet firmware
-  varies). See `docs/account-abstraction-research.md`.
-- **Permit2 / EIP-2612.** One-time approval to Permit2 + per-action off-chain signatures,
-  or gasless `permit()` — but only where the *target contract integrates them* (many DEXs
-  do; Lido's basic wrap/withdraw do not). Opportunistic, not general.
-- **Fallback (any account): detect-and-prompt.** Read the current allowance; if
-  insufficient, offer a one-click `approve` tx first, then the action. Two txs, but
-  clear. This is the minimum P4 baseline; batching (MultiSend / 7702) is the upgrade.
-
-Design the action registry so an action can *declare* its approval requirement (token,
-spender, amount), letting the pipeline check allowance and choose batch-vs-prompt.
-
-## Phasing
-- **P1 — Foundation + single-step, AI-off:** the Prepare pane, the action registry with a
-  handful of vetted actions, a **manual** action/param path (no Claude), review + sign
-  (EOA + Safe). Proves the builder/review/registry with zero AI surface.
-- **P2 — Claude intent resolver:** the `internal/ai` Messages-API client, settings
-  (toggle/key/cold-path), the tool-use loop mapping NL → a registry action. Default off.
-- **P3 — Simulation:** in-house eth_call + trace state-diff, Simulate button, before/after
-  review. Independent of Claude.
-- **P4 — Multi-step (Safe-only):** MultiSend batching first; DeFiSaver piping evaluated
-  as a follow-on.
-
-## Open decisions (for review)
-1. **Action model:** curated registry (recommended) vs open Claude calldata (rejected on
-   safety) — confirm the curated approach.
-2. **AI-off value:** should P1 ship a manual action/param form (feature works with AI
-   off), or is the Prepare pane AI-only (empty until a key is set)?
-3. **Phase-1 protocol set:** confirm the starting actions (WETH wrap/unwrap, Lido stake,
-   Aave v3 supply/borrow/repay/withdraw, approve/revoke, transfer).
-4. **Multi-step path:** accept "MultiSend first, DeFiSaver later" and record the DESIGN.md
-   deviation, or commit to hand-encoding DeFiSaver recipes up front.
-5. **Simulation timing:** in P1 alongside single-step, or its own phase after the AI
-   resolver.
-```
+An action *declares* its approval requirement (token, spender, amount). The pipeline reads
+the Safe's live allowance and, if short, bundles the `approve` with the action atomically
+in one MultiSend proposal — so nothing is approved as a separate step. (The EOA path —
+EIP-7702 atomic batching from a plain EOA, live since Pectra — is moot now that EOAs use
+WalletConnect; see `docs/account-abstraction-research.md`.)

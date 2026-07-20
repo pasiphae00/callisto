@@ -39,12 +39,13 @@ type safePane struct {
 	app *App
 
 	safeSelect   *widget.Select
-	tabs         *container.AppTabs // Overview | Proposals | Assets
+	tabs         *container.AppTabs // Overview | Proposals | Assets | Build
 	proposalsTab *container.TabItem // kept to update its label with the active count
 	detailsBox   *fyne.Container    // Overview tab body
 	proposalBox  *fyne.Container    // Proposals tab body
 	status       *widget.Label
-	assetsView   *assetsView // Assets tab: balances for the selected Safe
+	assetsView   *assetsView     // Assets tab: balances for the selected Safe
+	buildView    *safeBuildView  // Build tab: curated ecosystem actions as proposals
 
 	proposals []safe.Proposal
 
@@ -76,6 +77,7 @@ func newSafePane(a *App) *safePane {
 			}
 			return addr, label, true
 		})
+	p.buildView = newSafeBuildView(p)
 	return p
 }
 
@@ -117,10 +119,14 @@ func (p *safePane) build() fyne.CanvasObject {
 		container.NewTabItem("Overview", overview),
 		p.proposalsTab,
 		container.NewTabItem("Assets", assetsTab),
+		container.NewTabItem("Build", p.buildView.build()),
 	)
 	p.tabs.OnSelected = func(ti *container.TabItem) {
-		if ti.Text == "Assets" {
+		switch ti.Text {
+		case "Assets":
 			p.assetsView.reload() // refresh balances when the tab is shown
+		case "Build":
+			p.buildView.reloadActions() // refresh the chain-scoped action list
 		}
 	}
 
@@ -139,15 +145,6 @@ func (p *safePane) build() fyne.CanvasObject {
 			}
 		})
 	})
-
-	// Let other panes (e.g. Prepare) refresh the proposal list after creating one.
-	p.app.safeReload = func() {
-		fyne.Do(func() {
-			if desc, ok := p.selectedSafe(); ok {
-				p.refreshProposals(desc)
-			}
-		})
-	}
 
 	p.refreshSafeSelect()
 	return container.NewBorder(top, p.status, nil, nil, p.tabs)

@@ -102,7 +102,6 @@ func (p *settingsPane) build() fyne.CanvasObject {
 	content := container.NewVBox(
 		rpcBox,
 		p.buildSecurityBox(),
-		p.buildAIBox(),
 		p.buildUpdatesBox(),
 	)
 	return container.NewVScroll(content)

@@ -9,6 +9,21 @@ changes; `v1.0.0` marks the first stable, documented release.
 
 ## [Unreleased]
 
+### Added
+- **Safe "Build" sub-tab — curated ecosystem actions as proposals.** Prepare common
+  actions (wrap/unwrap WETH, stake with Lido, wrap/unwrap wstETH, request/claim a Lido
+  withdrawal) for a Safe: pick an action, fill in the amounts, and Callisto builds and
+  decodes the call for you to review, then creates a Safe proposal to sign and execute.
+  Any ERC-20 approval an action needs is **batched atomically** into the same proposal
+  (via MultiSend), so nothing is approved as a separate step.
+
+### Changed
+- **Advanced transaction preparation is now Safe-only.** EOAs are best served by linking
+  the active account to a dApp over WalletConnect and using the dApp's native flows, so
+  the standalone **Prepare** pane and the optional Claude/AI integration were removed;
+  curated preparation now lives in the Safe tab, where it's genuinely needed (a Safe
+  can't drive a synchronous dApp session).
+
 ## [0.11.1] - 2026-07-20
 
 ### Fixed

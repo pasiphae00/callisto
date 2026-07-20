@@ -52,10 +52,6 @@ type App struct {
 	// historyReload, if set by the History pane, refreshes it after a send.
 	historyReload func()
 
-	// safeReload, if set by the Safe pane, refreshes its proposal list after a
-	// proposal is created elsewhere (e.g. the Prepare pane).
-	safeReload func()
-
 	// assetsReloaders are pane reload callbacks (Assets, Send) invoked together so
 	// refreshing balances on one pane refreshes the other too.
 	assetsReloaders []func()
@@ -321,7 +317,6 @@ func (a *App) buildRoot() fyne.CanvasObject {
 		{name: "Assets", content: newAssetsPane(a).build()},
 		{name: "Approvals", content: approvals.build(), onShow: approvals.onShow},
 		{name: "Send", content: newSendPane(a).build()},
-		{name: "Prepare", content: newPreparePane(a).build()},
 		{name: "Safe", content: newSafePane(a).build()},
 		{name: "WalletConnect", content: newWalletConnectPane(a).build()},
 		{name: "History", content: newHistoryPane(a).build()},

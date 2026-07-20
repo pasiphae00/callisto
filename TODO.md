@@ -544,3 +544,17 @@ the original design document specifies usage of the existing defisaver v3 contra
 please research any alternatives. this was specified because i've used them extensively and they work well. 
 
 if there are alternatives to consider, we should when we get there.
+
+- **Started (v0.12 planning):** `docs/advanced-transactions.md`. Key finding: DeFiSaver
+  SDK is JS/TS + recipes need parameter piping → multi-step is a later, separate effort
+  (Safe MultiSend for fixed batches first; DeFiSaver hand-encoding for piping later).
+
+### account abstraction & new wallet types — research (future version)
+
+Research only (own version, later). Should Callisto support smart-account wallet types,
+and what changed with recent upgrades? Writeup in `docs/account-abstraction-research.md`.
+Headline: **EIP-7702** (Pectra, live 2025-05-07) lets a plain EOA batch `approve` + action
+in one tx — the modern fix for the advanced-tx approval UX (only Safes can batch today via
+MultiSend). Plus **ERC-4337** smart accounts as a possible new wallet type. Open questions:
+7702 tx (type 0x04) construction + a trusted delegate contract + hardware-wallet signer
+support; whether to support 4337 (bundler/paymaster surface); the changed EOA trust model.

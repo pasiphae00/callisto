@@ -122,6 +122,30 @@ batching)** for fixed sequences and evaluating **B** for true piping later. Revi
 DESIGN.md "MUST use DeFiSaver" clause as a documented deviation if MultiSend/hand-encoding
 proves the better fit (it's a MUST worth re-examining given the Go/JS mismatch).
 
+## Approvals (must be good UX by P4)
+
+Several actions need a prior ERC-20 approval (e.g. `wstETH.wrap`, the Lido withdrawal
+request). Single-step P1 surfaces this as a caution note and lets the gas estimate
+revert if unapproved — acceptable for now, but P4 must make "approve + action" seamless.
+Options, by mechanism:
+
+- **Safe → MultiSend.** Bundle `approve` + the action atomically in one Safe tx via the
+  MultiSend contract. The clean path for Safes; no new deps, reuses our Safe pipeline.
+- **EOA → EIP-7702 (Pectra, live 2025-05-07).** A type-`0x04` transaction lets an EOA
+  delegate to a batching contract for one tx, so `approve` + action execute atomically
+  from a plain EOA. The modern answer — but needs 7702 tx construction (authorization
+  list), a trusted batcher contract, and signer support (hardware-wallet firmware
+  varies). See `docs/account-abstraction-research.md`.
+- **Permit2 / EIP-2612.** One-time approval to Permit2 + per-action off-chain signatures,
+  or gasless `permit()` — but only where the *target contract integrates them* (many DEXs
+  do; Lido's basic wrap/withdraw do not). Opportunistic, not general.
+- **Fallback (any account): detect-and-prompt.** Read the current allowance; if
+  insufficient, offer a one-click `approve` tx first, then the action. Two txs, but
+  clear. This is the minimum P4 baseline; batching (MultiSend / 7702) is the upgrade.
+
+Design the action registry so an action can *declare* its approval requirement (token,
+spender, amount), letting the pipeline check allowance and choose batch-vs-prompt.
+
 ## Phasing
 - **P1 — Foundation + single-step, AI-off:** the Prepare pane, the action registry with a
   handful of vetted actions, a **manual** action/param path (no Claude), review + sign

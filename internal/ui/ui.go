@@ -325,6 +325,7 @@ func (a *App) buildRoot() fyne.CanvasObject {
 		onShow  func() // optional: called each time the pane is selected
 	}
 	approvals := newApprovalsPane(a)
+	settings := newSettingsPane(a)
 	items := []navItem{
 		{name: "Wallets", content: newWalletsPane(a).build()},
 		{name: "Assets", content: newAssetsPane(a).build()},
@@ -333,7 +334,7 @@ func (a *App) buildRoot() fyne.CanvasObject {
 		{name: "Safe", content: newSafePane(a).build()},
 		{name: "WalletConnect", content: newWalletConnectPane(a).build()},
 		{name: "History", content: newHistoryPane(a).build()},
-		{name: "Settings", content: newSettingsPane(a).build()},
+		{name: "Settings", content: settings.build(), onShow: settings.refreshStatus},
 	}
 
 	content := container.NewStack()

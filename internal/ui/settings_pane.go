@@ -12,6 +12,8 @@ import (
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
 
+	"github.com/ethereum/go-ethereum/core/types"
+
 	"codeberg.org/pasiphae/callisto/internal/chain"
 	"codeberg.org/pasiphae/callisto/internal/config"
 	"codeberg.org/pasiphae/callisto/internal/rpc"
@@ -111,6 +113,13 @@ func (p *settingsPane) build() fyne.CanvasObject {
 		p.buildSecurityBox(),
 		p.buildUpdatesBox(),
 	)
+
+	// build() runs at startup, before auto-connect finishes, so the initial
+	// refreshStatus above reads "not connected". Keep the network line live by
+	// refreshing on each new head (arrives while connected) — the pane is also
+	// refreshed on show via the nav's onShow hook.
+	p.app.rpc.OnNewHead(func(*types.Header) { fyne.Do(p.refreshStatus) })
+
 	return container.NewVScroll(content)
 }
 

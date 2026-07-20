@@ -372,6 +372,9 @@ func (p *preparePane) createSafeProposal(desc safe.Descriptor, prepared actions.
 		return
 	}
 	p.app.updateSafeBadge()
+	if p.app.safeReload != nil {
+		p.app.safeReload() // refresh the Safe pane's proposal list
+	}
 	p.status.SetText(fmt.Sprintf("Safe proposal created (nonce %d) — sign & execute it in the Safe tab", nonce))
 	dialog.ShowInformation("Proposal created",
 		fmt.Sprintf("%s\n\nNonce %d. Open the Safe tab to collect owner signatures and execute.", prepared.Summary, nonce),

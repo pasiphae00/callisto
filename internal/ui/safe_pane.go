@@ -140,6 +140,15 @@ func (p *safePane) build() fyne.CanvasObject {
 		})
 	})
 
+	// Let other panes (e.g. Prepare) refresh the proposal list after creating one.
+	p.app.safeReload = func() {
+		fyne.Do(func() {
+			if desc, ok := p.selectedSafe(); ok {
+				p.refreshProposals(desc)
+			}
+		})
+	}
+
 	p.refreshSafeSelect()
 	return container.NewBorder(top, p.status, nil, nil, p.tabs)
 }

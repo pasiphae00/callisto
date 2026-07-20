@@ -31,10 +31,17 @@ func newAssetsPane(a *App) *assetsPane {
 		}
 		return addr, label, true
 	}
-	return &assetsPane{view: newAssetsView(a, "Select a wallet in the Wallets tab to view its balances.", target)}
+	v := newAssetsView(a, "Select a wallet in the Wallets tab to view its balances.", target)
+	// Only auto-refresh on new heads while the Assets pane is the one shown.
+	v.headVisible = func() bool { return a.navShown("Assets") }
+	return &assetsPane{view: v}
 }
 
 func (p *assetsPane) build() fyne.CanvasObject {
 	return p.view.build("Assets",
 		"Balances update automatically on each new block detection; tokens held automatically populate.\n\nSelect a token and Hide it to remove spam and dust from the list. Add a token manually if it isn't detected.")
 }
+
+// onShow refreshes balances immediately when the pane is navigated to (bypassing the
+// head-reload throttle), so it never sits stale waiting for the next allowed refresh.
+func (p *assetsPane) onShow() { p.view.reload() }

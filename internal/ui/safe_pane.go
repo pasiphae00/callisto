@@ -77,6 +77,11 @@ func newSafePane(a *App) *safePane {
 			}
 			return addr, label, true
 		})
+	// The Safe balances refresh on new heads only while the Safe pane is shown and its
+	// Assets sub-tab is the active one — not on every block behind other tabs/panes.
+	p.assetsView.headVisible = func() bool {
+		return p.app.navShown("Safe") && p.tabs != nil && p.tabs.Selected() != nil && p.tabs.Selected().Text == "Assets"
+	}
 	p.buildView = newSafeBuildView(p)
 	return p
 }

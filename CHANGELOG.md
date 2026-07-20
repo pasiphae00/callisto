@@ -26,6 +26,12 @@ changes; `v1.0.0` marks the first stable, documented release.
   (via MultiSend), so nothing is approved as a separate step.
 
 ### Changed
+- **Far fewer RPC calls — works within public-endpoint rate limits.** Balances now load
+  in a single **Multicall3** `aggregate3` call (native + every token at once) instead of
+  one call per token, and token metadata is batched the same way on first load. Only the
+  **currently-visible pane** refreshes on new blocks, throttled to at most once every 30s
+  (navigating to a pane still refreshes immediately). Together these cut idle RPC traffic
+  by roughly an order of magnitude, so public L2 endpoints stop rate-limiting normal use.
 - **Advanced transaction preparation is now Safe-only.** EOAs are best served by linking
   the active account to a dApp over WalletConnect and using the dApp's native flows, so
   the standalone **Prepare** pane and the optional Claude/AI integration were removed;

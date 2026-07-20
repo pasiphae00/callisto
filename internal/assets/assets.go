@@ -57,8 +57,44 @@ func NewService(client rpc.Client, chainID uint64) *Service {
 // rather than failing the whole load, so one bad contract can't hide the rest.
 func (s *Service) Load(ctx context.Context, account common.Address, userTokens []common.Address) ([]Asset, error) {
 	info, _ := chain.Lookup(s.chainID)
+	tokens := s.tokenSet(userTokens)
 
-	// Native asset first (hard requirement: ether/native shown first).
+	// Fast path: read the native balance and every token balance in a single
+	// Multicall3 eth_call (metadata is primed once, in one more batched call). This is
+	// what keeps public L2 endpoints from rate-limiting us — 1–2 calls per refresh
+	// instead of 1+N. Chains without Multicall3 fall through to the per-call path.
+	s.ensureMetadata(ctx, tokens)
+	if bals, ok := s.batchBalances(ctx, account, tokens); ok {
+		out := []Asset{{
+			Kind:     Native,
+			Name:     info.Native.Name,
+			Symbol:   info.Native.Symbol,
+			Decimals: info.Native.Decimals,
+			Balance:  bals[0],
+		}}
+		for i, token := range tokens {
+			bal := bals[i+1]
+			if bal == nil {
+				continue // this token's balance read failed
+			}
+			meta, mok := s.metadata(ctx, token)
+			if !mok {
+				continue // not a usable ERC-20
+			}
+			out = append(out, Asset{
+				Kind:     Token,
+				Contract: token,
+				Name:     meta.Name,
+				Symbol:   meta.Symbol,
+				Decimals: meta.Decimals,
+				Balance:  bal,
+				LogoURI:  logoFor(s.chainID, token),
+			})
+		}
+		return out, nil
+	}
+
+	// Fallback: per-call reads (native + one balanceOf per token).
 	nativeBal, err := s.client.BalanceAt(ctx, account, nil)
 	if err != nil {
 		return nil, err
@@ -70,14 +106,40 @@ func (s *Service) Load(ctx context.Context, account common.Address, userTokens [
 		Decimals: info.Native.Decimals,
 		Balance:  nativeBal,
 	}}
-
-	for _, token := range s.tokenSet(userTokens) {
+	for _, token := range tokens {
 		asset, ok := s.loadToken(ctx, account, token)
 		if ok {
 			out = append(out, asset)
 		}
 	}
 	return out, nil
+}
+
+// ensureMetadata primes the metadata cache for any not-yet-cached tokens in one
+// batched Multicall3 call, so a first load of a wallet with many tokens doesn't fan out
+// into 3 calls per token. Best-effort: on failure the per-token metadata path still
+// fills the cache lazily.
+func (s *Service) ensureMetadata(ctx context.Context, tokens []common.Address) {
+	var missing []common.Address
+	s.mu.Lock()
+	for _, t := range tokens {
+		if _, ok := s.cache[t]; !ok {
+			missing = append(missing, t)
+		}
+	}
+	s.mu.Unlock()
+	if len(missing) == 0 {
+		return
+	}
+	got, ok := s.batchMetadata(ctx, missing)
+	if !ok {
+		return
+	}
+	s.mu.Lock()
+	for t, m := range got {
+		s.cache[t] = m
+	}
+	s.mu.Unlock()
 }
 
 // tokenSet merges curated + user tokens for this chain, deduplicated, preserving

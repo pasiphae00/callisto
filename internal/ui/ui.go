@@ -52,6 +52,10 @@ type App struct {
 	// historyReload, if set by the History pane, refreshes it after a send.
 	historyReload func()
 
+	// currentNav is the name of the nav pane currently shown; used to gate
+	// head-driven balance refreshes so only the visible pane hits the RPC.
+	currentNav string
+
 	// assetsReloaders are pane reload callbacks (Assets, Send) invoked together so
 	// refreshing balances on one pane refreshes the other too.
 	assetsReloaders []func()
@@ -326,11 +330,13 @@ func (a *App) buildRoot() fyne.CanvasObject {
 	}
 	approvals := newApprovalsPane(a)
 	settings := newSettingsPane(a)
+	assetsP := newAssetsPane(a)
+	sendP := newSendPane(a)
 	items := []navItem{
 		{name: "Wallets", content: newWalletsPane(a).build()},
-		{name: "Assets", content: newAssetsPane(a).build()},
+		{name: "Assets", content: assetsP.build(), onShow: assetsP.onShow},
 		{name: "Approvals", content: approvals.build(), onShow: approvals.onShow},
-		{name: "Send", content: newSendPane(a).build()},
+		{name: "Send", content: sendP.build(), onShow: sendP.onShow},
 		{name: "Safe", content: newSafePane(a).build()},
 		{name: "WalletConnect", content: newWalletConnectPane(a).build()},
 		{name: "History", content: newHistoryPane(a).build()},
@@ -341,6 +347,7 @@ func (a *App) buildRoot() fyne.CanvasObject {
 	buttons := make([]*widget.Button, len(items))
 	selectItem := func(i int) {
 		a.touchActivity() // switching panes counts as activity
+		a.currentNav = items[i].name // gates head-driven refreshes to the visible pane
 		content.Objects = []fyne.CanvasObject{items[i].content}
 		content.Refresh()
 		if items[i].onShow != nil {
@@ -384,6 +391,14 @@ func (a *App) buildRoot() fyne.CanvasObject {
 	navCol := container.NewBorder(nil, nil, nil, widget.NewSeparator(), container.NewVScroll(nav))
 	return container.NewBorder(nil, a.statusBarBox, navCol, nil, container.NewPadded(content))
 }
+
+// headReloadInterval throttles head-driven balance refreshes: balances rarely change
+// faster than this for a watched account, and every-block reloads burn public-endpoint
+// rate limits. Explicit refreshes (pane show, wallet switch, post-send) bypass it.
+const headReloadInterval = 30 * time.Second
+
+// navShown reports whether the named nav pane is the one currently displayed.
+func (a *App) navShown(name string) bool { return a.currentNav == name }
 
 // placeholder is a temporary pane body used until a phase provides the real one.
 func (a *App) placeholder(title, subtitle string) fyne.CanvasObject {

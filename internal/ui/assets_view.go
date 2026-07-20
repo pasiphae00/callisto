@@ -39,6 +39,24 @@ type assetsView struct {
 	selected int
 	hideBtn  *widget.Button
 	lastAddr common.Address // account the current items belong to (for switch detection)
+
+	// headVisible gates head-driven reloads so a hidden view doesn't hit the RPC every
+	// block (nil = always reload). lastHeadReload throttles them to headReloadInterval.
+	headVisible    func() bool
+	lastHeadReload time.Time
+}
+
+// onHead is the new-head handler: reload only when this view is visible and not more
+// often than headReloadInterval. Explicit reloads (show, switch, post-send) bypass this.
+func (v *assetsView) onHead() {
+	if v.headVisible != nil && !v.headVisible() {
+		return
+	}
+	if time.Since(v.lastHeadReload) < headReloadInterval {
+		return
+	}
+	v.lastHeadReload = time.Now()
+	v.reload()
 }
 
 func newAssetsView(app *App, emptyMsg string, target func() (common.Address, string, bool)) *assetsView {
@@ -68,10 +86,10 @@ func (v *assetsView) build(header, hint string) fyne.CanvasObject {
 
 	// Reload when balances are refreshed from anywhere (any assets view or Send).
 	v.app.registerAssetsReloader(v.reload)
-	// Auto-refresh on each new head (fires only while connected). Balances update
-	// and any newly-received token is discovered without a manual refresh.
+	// Auto-refresh on each new head (fires only while connected), gated to the visible
+	// view and throttled so we don't reload every block on every pane.
 	v.app.rpc.OnNewHead(func(*types.Header) {
-		fyne.Do(func() { v.reload() })
+		fyne.Do(v.onHead)
 	})
 
 	var topObjs []fyne.CanvasObject

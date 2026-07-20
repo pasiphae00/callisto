@@ -37,12 +37,30 @@ type sendPane struct {
 	prepareBtn  *widget.Button
 	status      *widget.Label
 
-	items []assets.Asset
+	items          []assets.Asset
+	lastHeadReload time.Time // throttles head-driven reloads (see onHead)
 }
 
 func newSendPane(a *App) *sendPane {
 	return &sendPane{app: a}
 }
+
+// onHead reloads assets on a new head, but only while the Send pane is shown and no
+// more often than headReloadInterval — every-block reloads on a hidden pane are wasted
+// RPC calls. onShow does an immediate, unthrottled reload on navigation.
+func (p *sendPane) onHead() {
+	if !p.app.navShown("Send") {
+		return
+	}
+	if time.Since(p.lastHeadReload) < headReloadInterval {
+		return
+	}
+	p.lastHeadReload = time.Now()
+	p.reload()
+}
+
+// onShow refreshes immediately when the pane is navigated to (bypassing the throttle).
+func (p *sendPane) onShow() { p.reload() }
 
 func (p *sendPane) build() fyne.CanvasObject {
 	p.status = widget.NewLabel("")
@@ -69,7 +87,7 @@ func (p *sendPane) build() fyne.CanvasObject {
 	// "connect an RPC" state, since discovery only fires refreshAssets when it finds
 	// new tokens (and won't on a later launch where the token set is already cached).
 	p.app.rpc.OnNewHead(func(*types.Header) {
-		fyne.Do(func() { p.reload() })
+		fyne.Do(p.onHead)
 	})
 
 	amountRow := container.NewBorder(nil, nil, nil, p.maxBtn, p.amount)

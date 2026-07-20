@@ -1,6 +1,21 @@
 # To-do items for `callisto`
 
-## v0.11 — Safe / multisig deep dive (next major)
+## v0.11 — Safe / multisig deep dive — ✅ shipped v0.11.0
+
+P1–P3 built; P4 delivered as a research doc. Final layout: `Overview | Proposals |
+Assets` (Proposals 2nd, with a live active-count on the tab label).
+
+- ✅ **P1** assets + discovery + sub-tab restructure (shared `assetsView`).
+- ✅ **P2** Activity/proposal UX (Active vs History, status dots, conflict flags).
+- ✅ **P3** distributed signing (export/import; `internal/safe/envelope.go`, hash
+  recomputed + every signature owner-verified on import). Follow-ups still open: QR +
+  optional secure relay link (see below).
+- ✅ **P4** WalletConnect-for-Safe feasibility → `docs/safe-walletconnect-research.md`
+  (implementation deferred: execute-now for threshold-met Safes + EIP-1271 signing).
+- ⚠️ **Open:** confirm live inclusion detection end-to-end (node serves receipts over
+  WSS + HTTPS — verified; fixed transient-error bail + Safe history marking; re-test).
+
+Original scope notes retained below.
 
 Scope + layout decided 2026-07-19. Safe tab becomes **inner sub-tabs**
 (`Overview | Assets | Activity`, Fyne `AppTabs`). Four phases, all in scope:

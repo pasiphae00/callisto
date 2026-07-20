@@ -16,6 +16,13 @@ type txMock struct {
 	tip         *big.Int
 	baseFee     *big.Int
 	nonce       uint64
+
+	// Receipt-polling control (WaitForReceipt tests): TransactionReceipt returns
+	// receiptErr for the first receiptOKAfter calls, then (receipt, nil).
+	receipt        *types.Receipt
+	receiptErr     error
+	receiptOKAfter int
+	receiptCalls   int
 }
 
 func (m *txMock) EstimateGas(context.Context, ethereum.CallMsg) (uint64, error) {
@@ -43,7 +50,11 @@ func (m *txMock) CallContract(context.Context, ethereum.CallMsg, *big.Int) ([]by
 }
 func (m *txMock) SendTransaction(context.Context, *types.Transaction) error { return nil }
 func (m *txMock) TransactionReceipt(context.Context, common.Hash) (*types.Receipt, error) {
-	return nil, nil
+	m.receiptCalls++
+	if m.receiptCalls <= m.receiptOKAfter {
+		return nil, m.receiptErr
+	}
+	return m.receipt, nil
 }
 func (m *txMock) SubscribeFilterLogs(context.Context, ethereum.FilterQuery, chan<- types.Log) (ethereum.Subscription, error) {
 	return nil, nil

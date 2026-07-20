@@ -34,10 +34,11 @@ type safePane struct {
 	app *App
 
 	safeSelect  *widget.Select
-	content     *fyne.Container // inner VBox holding details/proposals/status
-	detailsBox  *fyne.Container
-	proposalBox *fyne.Container
+	tabs        *container.AppTabs // Overview | Assets | Activity
+	detailsBox  *fyne.Container    // Overview tab body
+	proposalBox *fyne.Container    // Activity tab body
 	status      *widget.Label
+	assetsView  *assetsView // Assets tab: balances for the selected Safe
 
 	proposals []safe.Proposal
 
@@ -50,7 +51,26 @@ type safePane struct {
 }
 
 func newSafePane(a *App) *safePane {
-	return &safePane{app: a}
+	p := &safePane{app: a}
+	// The Assets sub-tab reuses the shared assetsView, keyed on the selected Safe's
+	// address — so discovery, persistence, hide/sort all work exactly as for EOAs.
+	p.assetsView = newAssetsView(a, "Select a Safe to view its balances.",
+		func() (common.Address, string, bool) {
+			desc, ok := p.selectedSafe()
+			if !ok {
+				return common.Address{}, "", false
+			}
+			addr, err := address.Parse(desc.Address)
+			if err != nil {
+				return common.Address{}, "", false
+			}
+			label := desc.Label
+			if label == "" {
+				label = "Safe"
+			}
+			return addr, label, true
+		})
+	return p
 }
 
 func (p *safePane) build() fyne.CanvasObject {
@@ -68,7 +88,7 @@ func (p *safePane) build() fyne.CanvasObject {
 	p.proposalBox = container.NewVBox()
 
 	header := widget.NewLabelWithStyle("Safe multisig", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
-	help := widget.NewLabel("Import an existing Safe by address. Propose a transfer or an owner/threshold change, then collect owner signatures — unlock each owner in the Wallets tab and click Sign — until the threshold is met, then execute.")
+	help := widget.NewLabel("Import an existing Safe by address to use Callisto to prepare and execute Safe transactions.\n\nYou can Propose a transaction or an owner/threshold change, then collect owner signatures until the threshold is met.\n\nTo sign a Proposal, unlock and switch to owner accounts in the Wallets tab and click Sign.")
 	help.Wrapping = fyne.TextWrapWord
 
 	top := container.NewVBox(
@@ -78,8 +98,22 @@ func (p *safePane) build() fyne.CanvasObject {
 		widget.NewSeparator(),
 	)
 
-	p.content = container.NewVBox(p.detailsBox, widget.NewSeparator(), p.proposalBox, p.status)
-	body := container.NewVScroll(p.content)
+	// Overview | Assets | Activity sub-tabs. Overview holds the details/owners/
+	// actions, Assets the (shared) balances view, Activity the proposal list.
+	overview := container.NewVScroll(p.detailsBox)
+	assetsTab := p.assetsView.build("",
+		"Tokens held by this Safe, detected automatically on each block. Hide spam to keep the list clean.")
+	activity := container.NewVScroll(p.proposalBox)
+	p.tabs = container.NewAppTabs(
+		container.NewTabItem("Overview", overview),
+		container.NewTabItem("Assets", assetsTab),
+		container.NewTabItem("Activity", activity),
+	)
+	p.tabs.OnSelected = func(ti *container.TabItem) {
+		if ti.Text == "Assets" {
+			p.assetsView.reload() // refresh balances when the tab is shown
+		}
+	}
 
 	// Auto-connect finishes asynchronously, often after this pane is first built,
 	// so refreshLiveInfo may have run while still disconnected and fallen back to
@@ -98,7 +132,7 @@ func (p *safePane) build() fyne.CanvasObject {
 	})
 
 	p.refreshSafeSelect()
-	return container.NewBorder(top, nil, nil, nil, body)
+	return container.NewBorder(top, p.status, nil, nil, p.tabs)
 }
 
 // refreshSafeSelect repopulates the Safe dropdown from config and restores the
@@ -152,6 +186,7 @@ func (p *safePane) onSafeSelected() {
 		p.proposalBox.Objects = nil
 		p.proposalBox.Refresh()
 		p.status.SetText("No Safe selected. Import one to begin.")
+		p.assetsView.reload()
 		p.relayout()
 		return
 	}
@@ -163,6 +198,7 @@ func (p *safePane) onSafeSelected() {
 	p.renderDetails(desc)
 	p.refreshProposals(desc)
 	p.refreshLiveInfo(desc)
+	p.assetsView.reload() // load the selected Safe's balances into the Assets tab
 }
 
 // renderDetails draws the Safe details from the (possibly cached) descriptor.
@@ -410,8 +446,8 @@ func (p *safePane) refreshProposals(desc safe.Descriptor) {
 // it (not just a child) is refreshed, so mutating a child's Objects needs an
 // explicit parent refresh.
 func (p *safePane) relayout() {
-	if p.content != nil {
-		p.content.Refresh()
+	if p.tabs != nil {
+		p.tabs.Refresh()
 	}
 }
 
@@ -443,21 +479,26 @@ func (p *safePane) showNewTransfer(desc safe.Descriptor) {
 	amount := widget.NewEntry()
 	amount.SetPlaceHolder("0.0")
 
-	// Load the Safe's balances to populate the asset picker.
+	// Load the Safe's balances to populate the asset picker, using the same
+	// auto-discovered + hidden-filtered token set as the Assets sub-tab (so tokens
+	// the Safe holds beyond the curated list appear here too).
+	chainID := conn.ChainID.Uint64()
+	tokens := p.app.knownTokens(chainID, safeAddr)
+	p.app.disc.ensure(chainID, safeAddr, conn.Client)
 	var items []assets.Asset
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()
-		got, lerr := assets.NewService(conn.Client, conn.ChainID.Uint64()).Load(ctx, safeAddr, p.app.cfg.TokensForChain(conn.ChainID.Uint64()))
+		got, lerr := p.app.assetService(chainID, conn.Client).Load(ctx, safeAddr, tokens)
 		fyne.Do(func() {
 			if lerr != nil {
 				assetSel.PlaceHolder = "Could not load assets"
 				assetSel.Refresh()
 				return
 			}
-			// Only offer assets the Safe actually holds — hide zero/dust tokens
-			// (native is always kept) — and show them in a stable order.
-			assets.Sort(got)
+			// Only offer assets the Safe actually holds — drop hidden + zero/dust
+			// tokens (native always kept) — and show them in a stable order.
+			got = p.app.displayAssets(chainID, safeAddr, got)
 			got, _ = visibleAssets(got)
 			items = got
 			opts := make([]string, len(got))

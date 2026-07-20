@@ -13,6 +13,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 
 	"codeberg.org/pasiphae/callisto/internal/address"
 	"codeberg.org/pasiphae/callisto/internal/assets"
@@ -63,6 +64,13 @@ func (p *sendPane) build() fyne.CanvasObject {
 	// Reload when balances are refreshed from anywhere (this pane or Assets). The
 	// asset list updates automatically on each new block, so there is no Refresh.
 	p.app.registerAssetsReloader(p.reload)
+	// Also reload on each new head so the pane recovers once the RPC connects
+	// (auto-connect finishes after build) — otherwise it can stay stuck on the
+	// "connect an RPC" state, since discovery only fires refreshAssets when it finds
+	// new tokens (and won't on a later launch where the token set is already cached).
+	p.app.rpc.OnNewHead(func(*types.Header) {
+		fyne.Do(func() { p.reload() })
+	})
 
 	amountRow := container.NewBorder(nil, nil, nil, p.maxBtn, p.amount)
 	form := widget.NewForm(
@@ -130,7 +138,13 @@ func (p *sendPane) reload() {
 			}
 			p.assetSelect.Options = opts
 			p.assetSelect.Refresh()
-			p.status.SetText(fmt.Sprintf("Ready · %s · %s", desc.Label, conn.ChainInfo.Name))
+			status := fmt.Sprintf("Ready · %s · %s", desc.Label, conn.ChainInfo.Name)
+			// You can prepare a transfer while locked, but signing needs the wallet
+			// unlocked — say so here instead of silently disabling at the sign step.
+			if _, id, unlocked := p.app.currentSigner(); !desc.IsWatchOnly() && !(unlocked && id == desc.ID) {
+				status += " · locked — unlock in Wallets to sign"
+			}
+			p.status.SetText(status)
 			p.updatePrepareState()
 		})
 	}()

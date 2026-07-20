@@ -82,7 +82,8 @@ func (p *approvalsPane) build() fyne.CanvasObject {
 	p.autoChk.Checked = p.app.cfg.AutoDetectApprovals // set field directly; don't fire OnChanged at build
 
 	header := widget.NewLabelWithStyle("Approvals", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
-	help := widget.NewLabel("Every outstanding token approval for the active wallet — direct ERC-20 allowances and Uniswap Permit2 grants. Unlimited approvals to a compromised contract are a common drain vector; revoke anything you don't recognise.\n\nDiscovery scans on-chain logs, so it needs an archive endpoint to see approvals older than a pruned node keeps. The first scan of an old wallet can take a while; later scans are incremental (only new blocks since the last scan) and, over a WSS endpoint, live.")
+	help := widget.NewLabel("View and revoke outstanding ERC20 approvals and Uniswap Permit2 grants for the active wallet here.\n\nUnlimited approvals can be risky; revoke anything you don't recognize.\n\nApproval detection requires an archive endpoint for deep historical log scanning.\n\nThe first scan of an old wallet may be slow, later scans are incremental. Live updates are supported over WS/S.")
+
 	help.Wrapping = fyne.TextWrapWord
 
 	controls := indentToText(container.NewHBox(p.scanBtn, p.autoChk))

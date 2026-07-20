@@ -317,6 +317,7 @@ func (a *App) buildRoot() fyne.CanvasObject {
 		{name: "Assets", content: newAssetsPane(a).build()},
 		{name: "Approvals", content: approvals.build(), onShow: approvals.onShow},
 		{name: "Send", content: newSendPane(a).build()},
+		{name: "Prepare", content: newPreparePane(a).build()},
 		{name: "Safe", content: newSafePane(a).build()},
 		{name: "WalletConnect", content: newWalletConnectPane(a).build()},
 		{name: "History", content: newHistoryPane(a).build()},

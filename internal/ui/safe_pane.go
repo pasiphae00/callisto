@@ -325,8 +325,8 @@ func (p *safePane) doImport(chainID uint64, safeAddr common.Address, label strin
 				return
 			}
 			p.refreshSafeSelect()
-			dialog.ShowInformation("Safe imported",
-				fmt.Sprintf("%s\n%s\n%d of %d owners", desc.Label, desc.Address, desc.Threshold, len(desc.Owners)), p.app.window)
+			showAddressInfo(p.app.window, "Safe imported", desc.Label, desc.Address,
+				fmt.Sprintf("%d of %d owners", desc.Threshold, len(desc.Owners)))
 		})
 	}()
 }
@@ -423,6 +423,10 @@ func (p *safePane) showNewTransfer(desc safe.Descriptor) {
 				assetSel.Refresh()
 				return
 			}
+			// Only offer assets the Safe actually holds — hide zero/dust tokens
+			// (native is always kept) — and show them in a stable order.
+			assets.Sort(got)
+			got, _ = visibleAssets(got)
 			items = got
 			opts := make([]string, len(got))
 			for i, a := range got {

@@ -10,6 +10,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
@@ -43,6 +44,23 @@ func monoLabel(text string) *widget.Label {
 	l := widget.NewLabel(text)
 	l.TextStyle = fyne.TextStyle{Monospace: true}
 	return l
+}
+
+// showAddressInfo shows an informational dialog whose address line is rendered in
+// the monospace font (so it reads cleanly and matches how addresses appear
+// everywhere else), with an optional name above and extra lines below — a
+// mono-aware replacement for dialog.ShowInformation when the body contains an
+// address.
+func showAddressInfo(win fyne.Window, title, name, addr string, extra ...string) {
+	items := []fyne.CanvasObject{}
+	if name != "" {
+		items = append(items, container.NewCenter(widget.NewLabel(name)))
+	}
+	items = append(items, container.NewCenter(monoLabel(addr)))
+	for _, e := range extra {
+		items = append(items, container.NewCenter(widget.NewLabel(e)))
+	}
+	dialog.ShowCustom(title, "OK", container.NewVBox(items...), win)
 }
 
 // monoHyperlink returns a clickable, monospace hyperlink that opens rawURL in the

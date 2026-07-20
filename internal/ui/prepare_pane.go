@@ -48,6 +48,7 @@ type preparePane struct {
 	fromSel      *widget.Select
 	actionSel    *widget.Select
 	fieldsBox    *fyne.Container
+	content      *fyne.Container // the top VBox, refreshed when fields change
 	entries      map[string]*widget.Entry
 	prepareBtn   *widget.Button
 	status       *widget.Label
@@ -97,6 +98,7 @@ func (p *preparePane) build() fyne.CanvasObject {
 		indentToText(container.NewHBox(p.prepareBtn)),
 		p.status,
 	)
+	p.content = top
 	p.reloadActions()
 	return container.NewVScroll(top)
 }
@@ -262,6 +264,9 @@ func (p *preparePane) onActionSelected() {
 		p.current = nil
 		p.fieldsBox.Objects = nil
 		p.fieldsBox.Refresh()
+		if p.content != nil {
+			p.content.Refresh()
+		}
 		p.prepareBtn.Disable()
 		return
 	}
@@ -283,6 +288,11 @@ func (p *preparePane) onActionSelected() {
 	}
 	p.fieldsBox.Objects = []fyne.CanvasObject{form}
 	p.fieldsBox.Refresh()
+	// Re-lay-out the parent so subsequent rows (Prepare, status) reposition instead
+	// of overlapping the newly-sized fields.
+	if p.content != nil {
+		p.content.Refresh()
+	}
 	p.prepareBtn.Enable()
 }
 

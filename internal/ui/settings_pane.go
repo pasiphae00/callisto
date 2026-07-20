@@ -91,6 +91,28 @@ func (p *settingsPane) build() fyne.CanvasObject {
 	p.statusLbl.Wrapping = fyne.TextWrapWord
 	p.refreshStatus()
 
+	// RPC management lives in a pop-out to keep this pane uncluttered; the compact
+	// launcher shows the current connection + a "Manage endpoints…" button.
+	header := widget.NewLabelWithStyle("RPC endpoints", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+	summary := widget.NewLabel("The Ethereum nodes Callisto connects to. Manage them — add, connect, rename, set default, remove — in the endpoints window.")
+	summary.Wrapping = fyne.TextWrapWord
+	manageBtn := widget.NewButton("Manage endpoints…", p.showRPCManager)
+	rpcBox := container.NewVBox(header, summary, p.statusLbl, indentToText(container.NewHBox(manageBtn)))
+
+	content := container.NewVBox(
+		rpcBox,
+		p.buildSecurityBox(),
+		p.buildAIBox(),
+		p.buildUpdatesBox(),
+	)
+	return container.NewVScroll(content)
+}
+
+// buildRPCManager creates the full endpoint-management UI (list + Add/Connect/Set
+// Default/Remove + help), shown in the pop-out. It (re)assigns the list/button fields
+// each time it opens, so its transient selection state resets — fine for a dialog.
+func (p *settingsPane) buildRPCManager() fyne.CanvasObject {
+	p.selected = -1
 	p.list = widget.NewList(
 		func() int { return len(p.app.cfg.Endpoints) },
 		func() fyne.CanvasObject { return newEndpointRow() },
@@ -131,13 +153,33 @@ func (p *settingsPane) build() fyne.CanvasObject {
 	p.updateButtons()
 
 	buttons := container.NewHBox(addBtn, p.connectBtn, p.defaultBtn, p.removeBtn)
-	header := widget.NewLabelWithStyle("RPC endpoints", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
 	help := widget.NewLabel(rpcHelpText)
 	help.Wrapping = fyne.TextWrapWord
 
-	top := container.NewVBox(header, help, indentToText(buttons), p.statusLbl, widget.NewSeparator())
-	bottom := container.NewVBox(p.buildSecurityBox(), p.buildAIBox(), p.buildUpdatesBox())
-	return container.NewBorder(top, bottom, nil, nil, p.list)
+	top := container.NewVBox(help, indentToText(buttons), widget.NewSeparator())
+	return container.NewBorder(top, nil, nil, nil, p.list)
+}
+
+// showRPCManager opens the endpoint-management pop-out.
+func (p *settingsPane) showRPCManager() {
+	d := dialog.NewCustom("RPC endpoints", "Close", p.buildRPCManager(), p.app.window)
+	d.Resize(fyne.NewSize(720, 560))
+	d.SetOnClosed(func() { p.refreshStatus() }) // reflect any connection change in the launcher
+	d.Show()
+}
+
+// refreshList / unselectList are nil-safe: the endpoint list only exists while the
+// RPC-manager pop-out is open, but the mutating methods can also run from tests.
+func (p *settingsPane) refreshList() {
+	if p.list != nil {
+		p.list.Refresh()
+	}
+}
+
+func (p *settingsPane) unselectList() {
+	if p.list != nil {
+		p.list.UnselectAll()
+	}
 }
 
 func (p *settingsPane) updateButtons() {
@@ -166,7 +208,7 @@ func (p *settingsPane) setDefaultSelected() {
 		dialog.ShowError(err, p.app.window)
 		return
 	}
-	p.list.Refresh()
+	p.refreshList()
 }
 
 // showEditDialog opens an editor for the endpoint at idx: change its label and
@@ -190,7 +232,7 @@ func (p *settingsPane) showEditDialog(idx int) {
 			dialog.ShowError(err, p.app.window)
 			return
 		}
-		p.list.Refresh()
+		p.refreshList()
 		d.Hide()
 	})
 	removeBtn := widget.NewButton("Remove", func() {
@@ -199,9 +241,9 @@ func (p *settingsPane) showEditDialog(idx int) {
 			dialog.ShowError(err, p.app.window)
 		}
 		p.selected = -1
-		p.list.UnselectAll()
+		p.unselectList()
 		p.updateButtons()
-		p.list.Refresh()
+		p.refreshList()
 		p.app.refreshStatusBar()
 		d.Hide()
 	})
@@ -250,7 +292,7 @@ func (p *settingsPane) saveEdit(oldName, newLabel, newURL string, wasDefault boo
 		dialog.ShowError(err, p.app.window)
 		return
 	}
-	p.list.Refresh()
+	p.refreshList()
 	p.app.refreshStatusBar()
 }
 
@@ -296,7 +338,7 @@ func (p *settingsPane) showAddDialog() {
 			dialog.ShowError(err, p.app.window)
 			return
 		}
-		p.list.Refresh()
+		p.refreshList()
 	}, p.app.window)
 	d.Resize(fyne.NewSize(480, 240))
 	d.Show()
@@ -330,7 +372,7 @@ func (p *settingsPane) connectSelected() {
 			if err := p.app.cfg.Save(); err != nil {
 				dialog.ShowError(err, p.app.window)
 			}
-			p.list.Refresh()
+			p.refreshList()
 			p.refreshStatus()
 			p.app.refreshStatusBar()
 		})
@@ -355,8 +397,8 @@ func (p *settingsPane) removeSelected() {
 			dialog.ShowError(err, p.app.window)
 		}
 		p.selected = -1
-		p.list.UnselectAll()
-		p.list.Refresh()
+		p.unselectList()
+		p.refreshList()
 		p.updateButtons()
 		p.refreshStatus()
 		p.app.refreshStatusBar()

@@ -69,6 +69,8 @@ Get the latest build from the **[releases page](https://codeberg.org/pasiphae/ca
 
 macOS builds aren't yet Apple-notarized, so the **first** launch needs one step: right-click the app → **Open** (once), or `xattr -dr com.apple.quarantine /Applications/Callisto.app`.
 
+**Linux** runs with near-complete feature parity — the same wallets, Safe, WalletConnect, and self-updater. Two differences: hardware wallets need the usual `udev` rules for non-root device access, and the Touch-ID/Keychain unlock is macOS-only (Linux uses the passphrase, which always works). Native OS keychain backends for Linux/Windows are on the roadmap.
+
 **Updating:** Settings → **Check for updates** — Callisto pulls the newest release, verifies it against the maintainer key, installs it, and restarts. Your wallets, RPC config, and history are preserved (they live in your OS config directory, outside the app bundle).
 
 ### Build from source

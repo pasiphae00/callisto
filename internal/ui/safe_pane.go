@@ -941,26 +941,46 @@ func (p *safePane) showExportProposal(desc safe.Descriptor, prop safe.Proposal) 
 	blob.SetText(text)
 	blob.Wrapping = fyne.TextWrapBreak
 
-	copyBtn := widget.NewButton("Copy", func() { p.app.fyneApp.Clipboard().SetContent(text) })
-	actions := container.NewHBox(copyBtn)
-	if nativeDialogsAvailable() {
-		actions.Add(widget.NewButton("Save to file…", func() {
-			path, perr := nativeSavePath("Save proposal envelope", fmt.Sprintf("safe-proposal-nonce-%d.json", prop.SafeNonce))
-			if perr != nil {
-				return // cancelled
-			}
-			jsonBytes, jerr := env.EncodeJSON()
-			if jerr != nil {
-				dialog.ShowError(jerr, p.app.window)
-				return
-			}
-			if werr := os.WriteFile(path, jsonBytes, 0o600); werr != nil {
-				dialog.ShowError(werr, p.app.window)
-				return
-			}
-			dialog.ShowInformation("Saved", "Proposal envelope written to:\n"+path, p.app.window)
-		}))
+	writeEnvelope := func(path string) {
+		jsonBytes, jerr := env.EncodeJSON()
+		if jerr != nil {
+			dialog.ShowError(jerr, p.app.window)
+			return
+		}
+		if werr := os.WriteFile(path, jsonBytes, 0o600); werr != nil {
+			dialog.ShowError(werr, p.app.window)
+			return
+		}
+		dialog.ShowInformation("Saved", "Proposal envelope written to:\n"+path, p.app.window)
 	}
+	defaultName := fmt.Sprintf("safe-proposal-nonce-%d.json", prop.SafeNonce)
+	copyBtn := widget.NewButton("Copy", func() { p.app.fyneApp.Clipboard().SetContent(text) })
+	// Native save panel on macOS; Fyne's dialog elsewhere (so file save works on Linux).
+	saveBtn := widget.NewButton("Save to file…", func() {
+		if nativeDialogsAvailable() {
+			go func() {
+				path, perr := nativeSavePath("Save proposal envelope", defaultName)
+				fyne.Do(func() {
+					if perr != nil || path == "" {
+						return
+					}
+					writeEnvelope(path)
+				})
+			}()
+			return
+		}
+		fs := dialog.NewFileSave(func(wc fyne.URIWriteCloser, err error) {
+			if err != nil || wc == nil {
+				return
+			}
+			path := wc.URI().Path()
+			_ = wc.Close()
+			writeEnvelope(path)
+		}, p.app.window)
+		fs.SetFileName(defaultName)
+		fs.Show()
+	})
+	actions := container.NewHBox(copyBtn, saveBtn)
 
 	content := container.NewBorder(info, actions, nil, nil, container.NewVScroll(blob))
 	d := dialog.NewCustom("Export proposal", "Close", content, p.app.window)
@@ -976,21 +996,41 @@ func (p *safePane) showImportProposal(desc safe.Descriptor) {
 
 	info := widget.NewLabel("Paste an envelope shared by a co-owner, or load it from a file. Callisto recomputes the safeTxHash from the details and verifies every signature against this Safe's current owners before accepting anything.")
 	info.Wrapping = fyne.TextWrapWord
-	top := container.NewVBox(info)
-	if nativeDialogsAvailable() {
-		top.Add(widget.NewButton("Load from file…", func() {
-			path, perr := nativeOpenPath("Open proposal envelope")
-			if perr != nil {
-				return // cancelled
+	// Native open panel on macOS; Fyne's dialog elsewhere (so file load works on Linux).
+	loadBtn := widget.NewButton("Load from file…", func() {
+		if nativeDialogsAvailable() {
+			go func() {
+				path, perr := nativeOpenPath("Open proposal envelope")
+				if perr != nil || path == "" {
+					return
+				}
+				data, rerr := os.ReadFile(path)
+				fyne.Do(func() {
+					if rerr != nil {
+						dialog.ShowError(rerr, p.app.window)
+						return
+					}
+					entry.SetText(string(data))
+				})
+			}()
+			return
+		}
+		fo := dialog.NewFileOpen(func(rc fyne.URIReadCloser, err error) {
+			if err != nil || rc == nil {
+				return
 			}
+			path := rc.URI().Path()
+			_ = rc.Close()
 			data, rerr := os.ReadFile(path)
 			if rerr != nil {
 				dialog.ShowError(rerr, p.app.window)
 				return
 			}
 			entry.SetText(string(data))
-		}))
-	}
+		}, p.app.window)
+		fo.Show()
+	})
+	top := container.NewVBox(info, loadBtn)
 
 	content := container.NewBorder(top, nil, nil, nil, container.NewVScroll(entry))
 	d := dialog.NewCustomConfirm("Import proposal / signatures", "Import", "Cancel", content,

@@ -3,11 +3,16 @@ package ui
 import (
 	"context"
 	"fmt"
+	"image/color"
 	"math/big"
+	"os"
+	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/layout"
@@ -33,11 +38,13 @@ import (
 type safePane struct {
 	app *App
 
-	safeSelect  *widget.Select
-	content     *fyne.Container // inner VBox holding details/proposals/status
-	detailsBox  *fyne.Container
-	proposalBox *fyne.Container
-	status      *widget.Label
+	safeSelect   *widget.Select
+	tabs         *container.AppTabs // Overview | Proposals | Assets
+	proposalsTab *container.TabItem // kept to update its label with the active count
+	detailsBox   *fyne.Container    // Overview tab body
+	proposalBox  *fyne.Container    // Proposals tab body
+	status       *widget.Label
+	assetsView   *assetsView // Assets tab: balances for the selected Safe
 
 	proposals []safe.Proposal
 
@@ -50,7 +57,26 @@ type safePane struct {
 }
 
 func newSafePane(a *App) *safePane {
-	return &safePane{app: a}
+	p := &safePane{app: a}
+	// The Assets sub-tab reuses the shared assetsView, keyed on the selected Safe's
+	// address — so discovery, persistence, hide/sort all work exactly as for EOAs.
+	p.assetsView = newAssetsView(a, "Select a Safe to view its balances.",
+		func() (common.Address, string, bool) {
+			desc, ok := p.selectedSafe()
+			if !ok {
+				return common.Address{}, "", false
+			}
+			addr, err := address.Parse(desc.Address)
+			if err != nil {
+				return common.Address{}, "", false
+			}
+			label := desc.Label
+			if label == "" {
+				label = "Safe"
+			}
+			return addr, label, true
+		})
+	return p
 }
 
 func (p *safePane) build() fyne.CanvasObject {
@@ -68,7 +94,7 @@ func (p *safePane) build() fyne.CanvasObject {
 	p.proposalBox = container.NewVBox()
 
 	header := widget.NewLabelWithStyle("Safe multisig", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
-	help := widget.NewLabel("Import an existing Safe by address. Propose a transfer or an owner/threshold change, then collect owner signatures — unlock each owner in the Wallets tab and click Sign — until the threshold is met, then execute.")
+	help := widget.NewLabel("Import an existing Safe by address to use Callisto to prepare and execute Safe transactions. You can Propose a transaction or an owner/threshold change, then collect owner signatures until the threshold is met.\n\nTo sign a Proposal, unlock and switch to owner accounts in the Wallets tab and click Sign.")
 	help.Wrapping = fyne.TextWrapWord
 
 	top := container.NewVBox(
@@ -78,8 +104,25 @@ func (p *safePane) build() fyne.CanvasObject {
 		widget.NewSeparator(),
 	)
 
-	p.content = container.NewVBox(p.detailsBox, widget.NewSeparator(), p.proposalBox, p.status)
-	body := container.NewVScroll(p.content)
+	// Overview | Proposals | Assets sub-tabs. Proposals is second and named for the
+	// primary action (propose / sign / execute), and its label carries a live count
+	// of active proposals so it's obvious where to go. Overview holds the
+	// details/owners/actions; Assets the (shared) balances view.
+	overview := container.NewVScroll(p.detailsBox)
+	proposals := container.NewVScroll(p.proposalBox)
+	assetsTab := p.assetsView.build("",
+		"Tokens held by this Safe, detected automatically on each block. Hide spam to keep the list clean.")
+	p.proposalsTab = container.NewTabItem("Proposals", proposals)
+	p.tabs = container.NewAppTabs(
+		container.NewTabItem("Overview", overview),
+		p.proposalsTab,
+		container.NewTabItem("Assets", assetsTab),
+	)
+	p.tabs.OnSelected = func(ti *container.TabItem) {
+		if ti.Text == "Assets" {
+			p.assetsView.reload() // refresh balances when the tab is shown
+		}
+	}
 
 	// Auto-connect finishes asynchronously, often after this pane is first built,
 	// so refreshLiveInfo may have run while still disconnected and fallen back to
@@ -98,7 +141,7 @@ func (p *safePane) build() fyne.CanvasObject {
 	})
 
 	p.refreshSafeSelect()
-	return container.NewBorder(top, nil, nil, nil, body)
+	return container.NewBorder(top, p.status, nil, nil, p.tabs)
 }
 
 // refreshSafeSelect repopulates the Safe dropdown from config and restores the
@@ -152,6 +195,7 @@ func (p *safePane) onSafeSelected() {
 		p.proposalBox.Objects = nil
 		p.proposalBox.Refresh()
 		p.status.SetText("No Safe selected. Import one to begin.")
+		p.assetsView.reload()
 		p.relayout()
 		return
 	}
@@ -163,6 +207,7 @@ func (p *safePane) onSafeSelected() {
 	p.renderDetails(desc)
 	p.refreshProposals(desc)
 	p.refreshLiveInfo(desc)
+	p.assetsView.reload() // load the selected Safe's balances into the Assets tab
 }
 
 // renderDetails draws the Safe details from the (possibly cached) descriptor.
@@ -392,17 +437,99 @@ func (p *safePane) refreshProposals(desc safe.Descriptor) {
 			}
 		}
 	}
-	head := widget.NewLabelWithStyle("Proposals", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
-	rows := container.NewVBox()
+	// Split live proposals (still actionable) from terminal ones (history), and
+	// detect same-nonce conflicts among the active ones — only one proposal per
+	// nonce can ultimately execute, so sharing a nonce is worth flagging.
+	var active, hist []safe.Proposal
+	nonceCount := map[uint64]int{}
+	for _, pr := range p.proposals {
+		switch pr.Status {
+		case safe.StatusCollecting, safe.StatusReady:
+			active = append(active, pr)
+			nonceCount[pr.SafeNonce]++
+		default:
+			hist = append(hist, pr)
+		}
+	}
+	sort.SliceStable(active, func(i, j int) bool {
+		if active[i].SafeNonce != active[j].SafeNonce {
+			return active[i].SafeNonce < active[j].SafeNonce
+		}
+		return active[i].CreatedAt < active[j].CreatedAt
+	})
+	sort.SliceStable(hist, func(i, j int) bool { return hist[i].CreatedAt > hist[j].CreatedAt })
+
+	sectionHead := func(s string) fyne.CanvasObject {
+		return widget.NewLabelWithStyle(s, fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+	}
+	importBtn := indentToText(container.NewHBox(
+		widget.NewButton("Import proposal / signatures…", func() { p.showImportProposal(desc) })))
+	box := container.NewVBox(importBtn, widget.NewSeparator())
 	if len(p.proposals) == 0 {
-		rows.Add(widget.NewLabel("No proposals yet."))
+		box.Add(widget.NewLabel("No proposals yet."))
+	} else {
+		box.Add(sectionHead(fmt.Sprintf("Active (%d)", len(active))))
+		if len(active) == 0 {
+			box.Add(widget.NewLabel("No active proposals."))
+		}
+		for _, pr := range active {
+			box.Add(p.proposalRow(desc, pr, nonceCount[pr.SafeNonce] > 1))
+		}
+		if len(hist) > 0 {
+			box.Add(widget.NewSeparator())
+			box.Add(sectionHead(fmt.Sprintf("History (%d)", len(hist))))
+			for _, pr := range hist {
+				box.Add(p.proposalRow(desc, pr, false))
+			}
+		}
 	}
-	for i := range p.proposals {
-		rows.Add(p.proposalRow(desc, p.proposals[i]))
-	}
-	p.proposalBox.Objects = []fyne.CanvasObject{head, rows}
+	p.proposalBox.Objects = []fyne.CanvasObject{box}
 	p.proposalBox.Refresh()
+
+	// Surface the active count on the tab label so it's obvious where to act.
+	if p.proposalsTab != nil {
+		label := "Proposals"
+		if len(active) > 0 {
+			label = fmt.Sprintf("Proposals (%d)", len(active))
+		}
+		p.proposalsTab.Text = label
+	}
+	p.app.updateSafeBadge() // keep the sidebar "Safe (n)" count in sync
 	p.relayout()
+}
+
+// proposalStatusColor maps a proposal status to a status dot color: amber while
+// collecting, green when ready to execute, gray once executed (done), red for a
+// rejected/failed one.
+func proposalStatusColor(s safe.ProposalStatus) color.Color {
+	switch s {
+	case safe.StatusCollecting:
+		return statusAmber
+	case safe.StatusReady:
+		return statusGreen
+	case safe.StatusRejected, safe.StatusFailed:
+		return statusRed
+	default: // executed
+		return statusGray
+	}
+}
+
+// proposalStatusWord is a capitalized label for a proposal status.
+func proposalStatusWord(s safe.ProposalStatus) string {
+	switch s {
+	case safe.StatusCollecting:
+		return "Collecting"
+	case safe.StatusReady:
+		return "Ready"
+	case safe.StatusExecuted:
+		return "Executed"
+	case safe.StatusRejected:
+		return "Rejected"
+	case safe.StatusFailed:
+		return "Failed"
+	default:
+		return string(s)
+	}
 }
 
 // relayout re-runs the parent VBox's layout so that resized detail/proposal
@@ -410,16 +537,26 @@ func (p *safePane) refreshProposals(desc safe.Descriptor) {
 // it (not just a child) is refreshed, so mutating a child's Objects needs an
 // explicit parent refresh.
 func (p *safePane) relayout() {
-	if p.content != nil {
-		p.content.Refresh()
+	if p.tabs != nil {
+		p.tabs.Refresh()
 	}
 }
 
-func (p *safePane) proposalRow(desc safe.Descriptor, prop safe.Proposal) fyne.CanvasObject {
-	summary := fmt.Sprintf("[%s] %s — %d/%d sigs · %s",
-		prop.Status, prop.Description, len(prop.Signatures), desc.Threshold, prop.Kind)
+// proposalRow renders one proposal: a status-colored dot, a summary line (status,
+// nonce, description, signature progress, kind — with a same-nonce conflict flag),
+// and an Open button into the review dialog.
+func (p *safePane) proposalRow(desc safe.Descriptor, prop safe.Proposal, conflict bool) fyne.CanvasObject {
+	dot := canvas.NewText("●", proposalStatusColor(prop.Status))
+	text := fmt.Sprintf("%s · nonce %d · %s · %d/%d sigs · %s",
+		proposalStatusWord(prop.Status), prop.SafeNonce, prop.Description,
+		len(prop.Signatures), desc.Threshold, prop.Kind)
+	if conflict {
+		text += "  · ⚠ same-nonce conflict"
+	}
+	lbl := widget.NewLabel(text)
+	lbl.Wrapping = fyne.TextWrapWord
 	open := widget.NewButton("Open", func() { p.showProposalReview(desc, prop) })
-	return container.NewBorder(nil, nil, nil, open, widget.NewLabel(summary))
+	return container.NewBorder(nil, nil, dot, open, lbl)
 }
 
 // --- create proposals -------------------------------------------------------
@@ -443,21 +580,26 @@ func (p *safePane) showNewTransfer(desc safe.Descriptor) {
 	amount := widget.NewEntry()
 	amount.SetPlaceHolder("0.0")
 
-	// Load the Safe's balances to populate the asset picker.
+	// Load the Safe's balances to populate the asset picker, using the same
+	// auto-discovered + hidden-filtered token set as the Assets sub-tab (so tokens
+	// the Safe holds beyond the curated list appear here too).
+	chainID := conn.ChainID.Uint64()
+	tokens := p.app.knownTokens(chainID, safeAddr)
+	p.app.disc.ensure(chainID, safeAddr, conn.Client)
 	var items []assets.Asset
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()
-		got, lerr := assets.NewService(conn.Client, conn.ChainID.Uint64()).Load(ctx, safeAddr, p.app.cfg.TokensForChain(conn.ChainID.Uint64()))
+		got, lerr := p.app.assetService(chainID, conn.Client).Load(ctx, safeAddr, tokens)
 		fyne.Do(func() {
 			if lerr != nil {
 				assetSel.PlaceHolder = "Could not load assets"
 				assetSel.Refresh()
 				return
 			}
-			// Only offer assets the Safe actually holds — hide zero/dust tokens
-			// (native is always kept) — and show them in a stable order.
-			assets.Sort(got)
+			// Only offer assets the Safe actually holds — drop hidden + zero/dust
+			// tokens (native always kept) — and show them in a stable order.
+			got = p.app.displayAssets(chainID, safeAddr, got)
 			got, _ = visibleAssets(got)
 			items = got
 			opts := make([]string, len(got))
@@ -715,7 +857,7 @@ func (p *safePane) showProposalReview(desc safe.Descriptor, prop safe.Proposal) 
 func (p *safePane) reviewObjects(desc safe.Descriptor, prop safe.Proposal, render func()) []fyne.CanvasObject {
 	rows := [][2]string{
 		{"Action", prop.Description},
-		{"Status", string(prop.Status)},
+		{"Status", proposalStatusWord(prop.Status)},
 		{"Signatures", fmt.Sprintf("%d of %d", len(prop.Signatures), desc.Threshold)},
 		{"Safe nonce", fmt.Sprintf("%d", prop.SafeNonce)},
 		{"safeTxHash", prop.SafeTxHash.Hex()},
@@ -724,20 +866,293 @@ func (p *safePane) reviewObjects(desc safe.Descriptor, prop safe.Proposal, rende
 	if prop.Value != nil && prop.Value.Sign() > 0 {
 		rows = append(rows, [2]string{"Value", assets.FormatUnits(prop.Value, 18)})
 	}
+	if prop.CreatedAt > 0 {
+		rows = append(rows, [2]string{"Created", time.Unix(prop.CreatedAt, 0).Local().Format("2006-01-02 15:04")})
+	}
 	grid := container.New(layout.NewFormLayout())
 	for _, r := range rows {
 		grid.Add(widget.NewLabelWithStyle(r[0], fyne.TextAlignLeading, fyne.TextStyle{Bold: true}))
 		grid.Add(monoLabel(r[1]))
 	}
 
+	// Signatures, showing the owner's label where one is set.
 	signers := container.NewVBox()
 	for _, s := range prop.Signatures {
-		signers.Add(monoLabel("✓ " + address.Short(s.Signer)))
+		hex := address.Format(s.Signer)
+		who := address.Short(s.Signer)
+		if lbl := desc.OwnerLabelFor(hex); lbl != "" {
+			who = lbl + " (" + address.Short(s.Signer) + ")"
+		}
+		signers.Add(monoLabel("✓ " + who))
 	}
+
+	objs := []fyne.CanvasObject{grid, widget.NewSeparator(), signers}
+
+	// For an executed proposal, link the execution tx; for a failed one, show why.
+	if prop.ExecutedTxHash != "" {
+		info, _ := chain.Lookup(prop.ChainID)
+		if url := info.TxURL(prop.ExecutedTxHash); url != "" {
+			objs = append(objs, container.NewHBox(
+				widget.NewLabelWithStyle("Executed tx", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
+				monoHyperlink(prop.ExecutedTxHash, url)))
+		} else {
+			objs = append(objs, monoLabel("Executed tx: "+prop.ExecutedTxHash))
+		}
+	}
+	if prop.Error != "" {
+		errLbl := widget.NewLabel("Error: " + prop.Error)
+		errLbl.Wrapping = fyne.TextWrapWord
+		objs = append(objs, errLbl)
+	}
+
 	signMsg := widget.NewLabel(p.signGuidance(desc, prop))
 	signMsg.Wrapping = fyne.TextWrapWord
+	objs = append(objs, signMsg, p.reviewButtons(desc, prop, render))
+	return objs
+}
 
-	return []fyne.CanvasObject{grid, widget.NewSeparator(), signers, signMsg, p.reviewButtons(desc, prop, render)}
+// --- distributed signing: export / import proposals + signatures ------------
+
+// ownerAddresses returns the Safe's current owner addresses.
+func ownerAddresses(desc safe.Descriptor) []common.Address {
+	out := make([]common.Address, 0, len(desc.Owners))
+	for _, o := range desc.Owners {
+		if a, err := address.Parse(o.Address); err == nil {
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
+// showExportProposal presents a shareable envelope (copy-paste text + save-to-file)
+// for a proposal, so a co-owner on another machine can import, review, and sign it.
+// The envelope carries the transaction details and any signatures collected so far —
+// no keys or secrets.
+func (p *safePane) showExportProposal(desc safe.Descriptor, prop safe.Proposal) {
+	env := safe.ExportEnvelope(prop)
+	text, err := env.EncodeText()
+	if err != nil {
+		dialog.ShowError(err, p.app.window)
+		return
+	}
+
+	info := widget.NewLabel("Send this to a co-owner. They import it in Callisto, review, sign as an owner, then send a signature envelope back to you. It contains the transaction details and the signatures collected so far — no keys or secrets.")
+	info.Wrapping = fyne.TextWrapWord
+	blob := widget.NewMultiLineEntry()
+	blob.SetText(text)
+	blob.Wrapping = fyne.TextWrapBreak
+
+	writeEnvelope := func(path string) {
+		jsonBytes, jerr := env.EncodeJSON()
+		if jerr != nil {
+			dialog.ShowError(jerr, p.app.window)
+			return
+		}
+		if werr := os.WriteFile(path, jsonBytes, 0o600); werr != nil {
+			dialog.ShowError(werr, p.app.window)
+			return
+		}
+		dialog.ShowInformation("Saved", "Proposal envelope written to:\n"+path, p.app.window)
+	}
+	defaultName := fmt.Sprintf("safe-proposal-nonce-%d.json", prop.SafeNonce)
+	copyBtn := widget.NewButton("Copy", func() { p.app.fyneApp.Clipboard().SetContent(text) })
+	// Native save panel on macOS; Fyne's dialog elsewhere (so file save works on Linux).
+	saveBtn := widget.NewButton("Save to file…", func() {
+		if nativeDialogsAvailable() {
+			go func() {
+				path, perr := nativeSavePath("Save proposal envelope", defaultName)
+				fyne.Do(func() {
+					if perr != nil || path == "" {
+						return
+					}
+					writeEnvelope(path)
+				})
+			}()
+			return
+		}
+		fs := dialog.NewFileSave(func(wc fyne.URIWriteCloser, err error) {
+			if err != nil || wc == nil {
+				return
+			}
+			path := wc.URI().Path()
+			_ = wc.Close()
+			writeEnvelope(path)
+		}, p.app.window)
+		fs.SetFileName(defaultName)
+		fs.Show()
+	})
+	actions := container.NewHBox(copyBtn, saveBtn)
+
+	content := container.NewBorder(info, actions, nil, nil, container.NewVScroll(blob))
+	d := dialog.NewCustom("Export proposal", "Close", content, p.app.window)
+	d.Resize(fyne.NewSize(660, 480))
+	d.Show()
+}
+
+// showImportProposal prompts for an envelope (paste or file) and imports it.
+func (p *safePane) showImportProposal(desc safe.Descriptor) {
+	entry := widget.NewMultiLineEntry()
+	entry.SetPlaceHolder("Paste a proposal or signature envelope here…")
+	entry.Wrapping = fyne.TextWrapBreak
+
+	info := widget.NewLabel("Paste an envelope shared by a co-owner, or load it from a file. Callisto recomputes the safeTxHash from the details and verifies every signature against this Safe's current owners before accepting anything.")
+	info.Wrapping = fyne.TextWrapWord
+	// Native open panel on macOS; Fyne's dialog elsewhere (so file load works on Linux).
+	loadBtn := widget.NewButton("Load from file…", func() {
+		if nativeDialogsAvailable() {
+			go func() {
+				path, perr := nativeOpenPath("Open proposal envelope")
+				if perr != nil || path == "" {
+					return
+				}
+				data, rerr := os.ReadFile(path)
+				fyne.Do(func() {
+					if rerr != nil {
+						dialog.ShowError(rerr, p.app.window)
+						return
+					}
+					entry.SetText(string(data))
+				})
+			}()
+			return
+		}
+		fo := dialog.NewFileOpen(func(rc fyne.URIReadCloser, err error) {
+			if err != nil || rc == nil {
+				return
+			}
+			path := rc.URI().Path()
+			_ = rc.Close()
+			data, rerr := os.ReadFile(path)
+			if rerr != nil {
+				dialog.ShowError(rerr, p.app.window)
+				return
+			}
+			entry.SetText(string(data))
+		}, p.app.window)
+		fo.Show()
+	})
+	top := container.NewVBox(info, loadBtn)
+
+	content := container.NewBorder(top, nil, nil, nil, container.NewVScroll(entry))
+	d := dialog.NewCustomConfirm("Import proposal / signatures", "Import", "Cancel", content,
+		func(ok bool) {
+			if ok {
+				p.doImportEnvelope(desc, entry.Text)
+			}
+		}, p.app.window)
+	d.Resize(fyne.NewSize(660, 480))
+	d.Show()
+}
+
+// doImportEnvelope decodes an envelope, recomputes the safeTxHash from its fields,
+// verifies every signature against the Safe's current owners, and merges the result
+// into a matching local proposal (or creates one). Nothing from the envelope is
+// trusted: the hash is re-derived and each signer re-recovered.
+func (p *safePane) doImportEnvelope(desc safe.Descriptor, raw string) {
+	if strings.TrimSpace(raw) == "" {
+		return
+	}
+	env, err := safe.DecodeEnvelope([]byte(raw))
+	if err != nil {
+		dialog.ShowError(err, p.app.window)
+		return
+	}
+	if !addrEqual(env.SafeAddr(), desc.Address) {
+		dialog.ShowError(fmt.Errorf("this envelope is for a different Safe (%s)", address.Short(env.SafeAddr())), p.app.window)
+		return
+	}
+	if env.ChainID != desc.ChainID {
+		dialog.ShowError(fmt.Errorf("this envelope is for chain %d, but the Safe is on chain %d", env.ChainID, desc.ChainID), p.app.window)
+		return
+	}
+	tx, err := env.SafeTx()
+	if err != nil {
+		dialog.ShowError(err, p.app.window)
+		return
+	}
+	safeAddr, err := address.Parse(desc.Address)
+	if err != nil {
+		dialog.ShowError(err, p.app.window)
+		return
+	}
+
+	// Authoritative safeTxHash: on-chain when connected (exactly what owners signed),
+	// local EIP-712 otherwise.
+	var hash common.Hash
+	if conn, ok := p.app.rpc.Active(); ok {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		if h, herr := tx.OnChainHash(ctx, conn.Client, safeAddr); herr == nil {
+			hash = h
+		}
+		cancel()
+	}
+	if (hash == common.Hash{}) {
+		hash = tx.LocalHash(new(big.Int).SetUint64(desc.ChainID), safeAddr)
+	}
+
+	valid, rejected := env.Verify(hash, ownerAddresses(desc))
+	p.mergeImported(desc, env, hash, valid, rejected)
+}
+
+// mergeImported folds verified signatures into an existing local proposal with the
+// same safeTxHash, or inserts a new one, then reports what was accepted.
+func (p *safePane) mergeImported(desc safe.Descriptor, env safe.Envelope, hash common.Hash, valid []safe.Signature, rejected int) {
+	if p.app.safeProposals == nil {
+		dialog.ShowError(fmt.Errorf("proposal store unavailable"), p.app.window)
+		return
+	}
+
+	var target int64
+	existingSigners := map[common.Address]bool{}
+	for _, pr := range p.proposals {
+		if pr.SafeTxHash == hash {
+			target = pr.ID
+			for _, s := range pr.Signatures {
+				existingSigners[s.Signer] = true
+			}
+			break
+		}
+	}
+	newProposal := target == 0
+	if newProposal {
+		prop, perr := env.Proposal(hash, nil)
+		if perr != nil {
+			dialog.ShowError(perr, p.app.window)
+			return
+		}
+		id, ierr := p.app.safeProposals.Insert(prop)
+		if ierr != nil {
+			dialog.ShowError(ierr, p.app.window)
+			return
+		}
+		target = id
+	}
+
+	added := 0
+	for _, s := range valid {
+		if !existingSigners[s.Signer] {
+			added++
+		}
+		_ = p.app.safeProposals.AddSignature(target, s.Signer, s.Sig)
+	}
+	p.maybeMarkReady(target, desc.Threshold)
+	p.refreshProposals(desc)
+
+	msg := fmt.Sprintf("Nonce %d · %s\n\n", env.SafeNonce, env.Description)
+	if newProposal {
+		msg += "Imported as a new proposal.\n"
+	} else {
+		msg += "Merged into the existing proposal.\n"
+	}
+	msg += fmt.Sprintf("%d owner signature(s) accepted", len(valid))
+	if added != len(valid) {
+		msg += fmt.Sprintf(" (%d new)", added)
+	}
+	msg += "."
+	if rejected > 0 {
+		msg += fmt.Sprintf("\n%d signature(s) rejected — not a current owner, duplicate, or malformed.", rejected)
+	}
+	dialog.ShowInformation("Import complete", msg, p.app.window)
 }
 
 // reviewButtons builds the action row for a proposal's current state:
@@ -777,6 +1192,7 @@ func (p *safePane) reviewButtons(desc safe.Descriptor, prop safe.Proposal, rende
 			buttons.Add(widget.NewButton("Reject…", func() { p.rejectProposal(desc, prop) }))
 		}
 	}
+	buttons.Add(widget.NewButton("Export…", func() { p.showExportProposal(desc, prop) }))
 	buttons.Add(widget.NewButton("Refresh", render))
 	return buttons
 }
@@ -966,7 +1382,7 @@ func (p *safePane) executeProposal(desc safe.Descriptor, prop safe.Proposal, aft
 			p.finishProposalError(prop.ID, berr.Error())
 			return
 		}
-		p.recordExecHistory(prop, info, from, hash.Hex())
+		recID := p.recordExecHistory(prop, info, from, hash.Hex())
 		if p.app.safeProposals != nil {
 			_ = p.app.safeProposals.SetStatus(prop.ID, safe.StatusExecuted, hash.Hex(), "")
 			if prop.Kind == safe.KindReject {
@@ -982,12 +1398,15 @@ func (p *safePane) executeProposal(desc safe.Descriptor, prop safe.Proposal, aft
 				after()
 			}
 		})
-		go p.trackExecInclusion(desc, prop, hash, info)
+		go p.trackExecInclusion(desc, prop, recID, hash, info)
 	}()
 }
 
-// trackExecInclusion waits for the execution receipt and reflects the outcome.
-func (p *safePane) trackExecInclusion(desc safe.Descriptor, prop safe.Proposal, hash common.Hash, info chain.Info) {
+// trackExecInclusion waits for the execution receipt and reflects the outcome: it
+// marks the history record included/failed, updates the proposal on a revert, and
+// pops a result dialog (matching the Send flow) so the user gets clear confirmation
+// that the execution landed — the "Execution submitted" dialog itself is static.
+func (p *safePane) trackExecInclusion(desc safe.Descriptor, prop safe.Proposal, recID int64, hash common.Hash, info chain.Info) {
 	conn, ok := p.app.rpc.Active()
 	if !ok {
 		return
@@ -1000,18 +1419,56 @@ func (p *safePane) trackExecInclusion(desc safe.Descriptor, prop safe.Proposal, 
 		return
 	}
 	success := tx.Succeeded(receipt)
+	blockNum := receipt.BlockNumber.Int64()
+
+	var blockTime int64
+	if head, herr := conn.Client.HeaderByNumber(ctx, receipt.BlockNumber); herr == nil && head != nil {
+		blockTime = int64(head.Time)
+	}
+	if p.app.history != nil && recID != 0 {
+		_ = p.app.history.MarkIncluded(recID, blockNum, blockTime, success)
+	}
 	if p.app.safeProposals != nil && !success {
 		_ = p.app.safeProposals.SetStatus(prop.ID, safe.StatusFailed, hash.Hex(), "execution reverted")
 	}
+
 	fyne.Do(func() {
 		outcome := "succeeded"
 		if !success {
 			outcome = "reverted"
 		}
-		p.status.SetText(fmt.Sprintf("Execution %s in block %d", outcome, receipt.BlockNumber.Int64()))
+		p.status.SetText(fmt.Sprintf("Execution %s in block %d", outcome, blockNum))
 		p.refreshProposals(desc)
 		p.notifyHistory()
+		p.showExecInclusionResult(hash.Hex(), blockNum, blockTime, success, info)
 	})
+}
+
+// showExecInclusionResult reports the mined outcome of a Safe execution.
+func (p *safePane) showExecInclusionResult(hash string, block, blockTime int64, success bool, info chain.Info) {
+	title := "Safe execution included"
+	status := "success ✓"
+	if !success {
+		title = "Safe execution reverted"
+		status = "failed ✗"
+	}
+	rows := [][2]string{
+		{"Execution:", status},
+		{"Block:", fmt.Sprintf("%d", block)},
+	}
+	if blockTime > 0 {
+		rows = append(rows, [2]string{"Time:", time.Unix(blockTime, 0).Local().Format(time.RFC1123)})
+	}
+	grid := container.New(layout.NewFormLayout())
+	for _, r := range rows {
+		grid.Add(widget.NewLabel(r[0]))
+		grid.Add(monoLabel(r[1]))
+	}
+	body := container.NewVBox(grid)
+	if link := info.TxURL(hash); link != "" {
+		body.Add(widget.NewButton("View on explorer", func() { p.app.openURL(link) }))
+	}
+	dialog.ShowCustom(title, "Close", body, p.app.window)
 }
 
 // rejectProposal creates a rejection proposal at the same Safe nonce.
@@ -1079,9 +1536,11 @@ func (p *safePane) showExecResult(hash string, info chain.Info) {
 	dialog.ShowCustom("Safe execution", "Close", body, p.app.window)
 }
 
-func (p *safePane) recordExecHistory(prop safe.Proposal, info chain.Info, from common.Address, hash string) {
+// recordExecHistory inserts a history record for a Safe execution and returns its
+// id (0 if history is unavailable) so trackExecInclusion can mark it included.
+func (p *safePane) recordExecHistory(prop safe.Proposal, info chain.Info, from common.Address, hash string) int64 {
 	if p.app.history == nil {
-		return
+		return 0
 	}
 	rec := history.Record{
 		ChainID:       info.ID,
@@ -1093,9 +1552,12 @@ func (p *safePane) recordExecHistory(prop safe.Proposal, info chain.Info, from c
 		TxHash:        hash,
 		Status:        history.StatusSubmitted,
 	}
-	if id, err := p.app.history.Insert(rec); err == nil {
-		_ = p.app.history.MarkSubmitted(id, hash)
+	id, err := p.app.history.Insert(rec)
+	if err != nil {
+		return 0
 	}
+	_ = p.app.history.MarkSubmitted(id, hash)
+	return id
 }
 
 func (p *safePane) finishProposalError(proposalID int64, msg string) {

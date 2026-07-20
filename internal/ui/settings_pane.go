@@ -57,9 +57,15 @@ func (r *endpointRow) DoubleTapped(*fyne.PointEvent) {
 	}
 }
 
-const rpcHelpText = `Callisto uses a "Flashbots Protect" Ethereum Mainnet RPC by default. Replace or add your own here (http/s or ws/s). To customize Flashbots Protect behaviour, generate a new endpoint at "protect.flashbots.net" (e.g. to set a MEV refund address, configure block builders, etc.).
+/*const rpcHelpText = `Callisto uses a "Flashbots Protect" Ethereum Mainnet RPC by default. Replace or add your own here (http/s or ws/s). To customize Flashbots Protect behaviour, generate a new endpoint at "protect.flashbots.net" (e.g. to set a MEV refund address, configure block builders, etc.).
 
-Select "Auto-connect" when adding the endpoint, Callisto will use that RPC automatically on each subsequent restart.`
+Select "Auto-connect" when adding the endpoint, Callisto will use that RPC automatically on each subsequent restart.`*/
+
+const rpcHelpText = `Callisto uses a dedicated mainnet Ethereum archive node by default. Replace or add your own here (http or websocket). A Flashbots Protect RPC is also provided as a second option.
+
+To customize your own Flashbots Protect RPC (e.g. to set an MEV refund address), generate a new endpoint at "protect.flashbots.net"
+
+If "Auto-connect" is selected when adding an endpoint, Callisto will use that RPC automatically on each subsequent restart. To use an L2 (e.g. Arbitrum), add an RPC for that chain.`
 
 // settingsPane manages the persisted RPC endpoint list: add, remove, select, and
 // connect. Callisto ships no default endpoint, so this is the first thing a user
@@ -105,7 +111,7 @@ func (p *settingsPane) build() fyne.CanvasObject {
 			} else {
 				row.def.SetText("")
 			}
-			row.onTap = func() { p.list.Select(i) }        // single-click selects
+			row.onTap = func() { p.list.Select(i) }          // single-click selects
 			row.onDoubleTap = func() { p.showEditDialog(i) } // double-click edits
 		},
 	)

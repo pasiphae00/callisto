@@ -50,7 +50,8 @@ _Screenshots [here](./FEATURES.md)._
 - **Approvals management.** 
   - See every outstanding token approval for the active wallet — direct ERC-20 *and* Uniswap Permit2 allowances — with spenders named where known and unlimited allowances flagged, and **revoke** any with a reviewed, tracked transaction. Discovery scans on-chain logs (needs an archive RPC for full history), bounded to the wallet's first tx; re-scans are incremental and update live over WSS.
 - **Safe multisig.** 
-  - Import an existing [Safe](https://safe.global) by address and work with it from a dedicated tab: propose ETH/ERC-20 transfers or owner/threshold changes, collect owner signatures locally by switching unlocked wallets (hot, Ledger, or Trezor) until the threshold is met, then execute — or reject with a same-nonce cancellation. No external Safe service; everything is local until on-chain broadcast. (Primarily designed for personal Safes; org support is on the roadmap.)
+  - Import an existing [Safe](https://safe.global) by address and work with it from a dedicated tab (`Overview | Proposals | Assets`): propose ETH/ERC-20 transfers or owner/threshold changes, collect owner signatures locally by switching unlocked wallets (hot, Ledger, or Trezor) until the threshold is met, then execute — or reject with a same-nonce cancellation. No external Safe service; everything is local until on-chain broadcast. (Primarily designed for personal Safes; org support is on the roadmap.)
+  - **Distributed signing** — owners on different machines can collaborate without a Safe transaction service: **Export** a proposal (copy-paste text or a file), a co-owner **Imports** it, reviews, and signs, then sends a signature envelope back. On import Callisto recomputes the `safeTxHash` from the transaction fields and verifies every signature recovers to a current owner — it never trusts the envelope's contents.
 - **WalletConnect.** 
   - Connect Callisto to web dApps (Uniswap, CoW Swap, …) as a wallet: paste the WC link, approve a session exposing your active wallet, then review and sign the dApp's `eth_sendTransaction` / `personal_sign` / `eth_signTypedData_v4` requests here. The WC v2 protocol is implemented from scratch (no Go SDK, no new dependencies); hot, Ledger, and Trezor (incl. native typed-data) are all supported.
 - **History.** 
@@ -67,6 +68,8 @@ Get the latest build from the **[releases page](https://codeberg.org/pasiphae/ca
 3. Unzip and, on macOS, move **`Callisto.app`** to **/Applications**.
 
 macOS builds aren't yet Apple-notarized, so the **first** launch needs one step: right-click the app → **Open** (once), or `xattr -dr com.apple.quarantine /Applications/Callisto.app`.
+
+**Linux** runs with near-complete feature parity — the same wallets, Safe, WalletConnect, and self-updater. Two differences: hardware wallets need the usual `udev` rules for non-root device access, and the Touch-ID/Keychain unlock is macOS-only (Linux uses the passphrase, which always works). Native OS keychain backends for Linux/Windows are on the roadmap.
 
 **Updating:** Settings → **Check for updates** — Callisto pulls the newest release, verifies it against the maintainer key, installs it, and restarts. Your wallets, RPC config, and history are preserved (they live in your OS config directory, outside the app bundle).
 

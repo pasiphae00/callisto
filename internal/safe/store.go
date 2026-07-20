@@ -173,6 +173,15 @@ func (r *ProposalRepo) MarkRejectedByNonce(safeAddr common.Address, chainID, non
 }
 
 // ListBySafe returns the proposals for a Safe (newest first) with signatures loaded.
+// CountActive returns the number of proposals still awaiting action (collecting or
+// ready) across all Safes — used for the Safe nav-badge count.
+func (r *ProposalRepo) CountActive() (int, error) {
+	var n int
+	err := r.db.QueryRow(`SELECT COUNT(*) FROM safe_proposals WHERE status IN (?, ?)`,
+		string(StatusCollecting), string(StatusReady)).Scan(&n)
+	return n, err
+}
+
 func (r *ProposalRepo) ListBySafe(safeAddr common.Address, chainID uint64) ([]Proposal, error) {
 	rows, err := r.db.Query(`
 		SELECT id, safe_address, chain_id, to_address, value_wei, data, operation, safe_nonce,

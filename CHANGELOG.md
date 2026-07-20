@@ -9,6 +9,49 @@ changes; `v1.0.0` marks the first stable, documented release.
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-07-20
+
+Safe / multisig deep dive.
+
+### Added
+- **Safe workspace, reorganized** into `Overview | Proposals | Assets` sub-tabs.
+  Proposals is second and named for the primary action, with a live count on the tab
+  label (e.g. `Proposals (2)`) so it's obvious where to sign/execute.
+- **Safe balances via auto-discovery.** The Assets sub-tab reuses the EOA
+  automatic-balance engine keyed on the Safe address — discovering held tokens from
+  transfer history, refreshing each block, with per-Safe spam-hiding and stable
+  ordering. The transfer picker draws from the same set, so a Safe's full holdings are
+  offered (not just ETH/USDC). The balances list is now a reusable component shared by
+  the EOA Assets tab and the Safe Assets sub-tab.
+- **Proposal Activity view.** Proposals are split into **Active** (collecting/ready,
+  by nonce) and **History** (executed/rejected/failed), with status-colored dots, a
+  same-nonce **conflict flag**, and a richer review dialog (created time, signatures by
+  owner label, an explorer link for the execution tx, and the failure reason).
+- **Distributed signing.** Owners on different machines can collaborate without a Safe
+  transaction service: **Export** a proposal (copy-paste text or a JSON file), a
+  co-owner **Imports** it, reviews, and signs, then exports a signature envelope back.
+  On import Callisto recomputes the `safeTxHash` from the transaction fields and
+  verifies every signature recovers to a current owner — the envelope's own
+  hash/signer fields are never trusted (`internal/safe/envelope.go`).
+- **WalletConnect-for-Safe feasibility** documented in
+  `docs/safe-walletconnect-research.md` (research; implementation deferred).
+
+### Fixed
+- **Inclusion tracking no longer stalls on a transient receipt-query error.**
+  `WaitForReceipt` bailed on the first non-`NotFound` error from
+  `eth_getTransactionReceipt` (which archive/proxied endpoints can return for a pending
+  hash), wrongly reporting "could not confirm inclusion" for a transaction that lands
+  fine. It now polls through transient errors until the receipt appears or the context
+  expires. Affects both Send and Safe execution.
+- **Safe execution now reflects inclusion.** It marks its history record
+  included/failed with the block and time, and pops a result dialog with the outcome
+  and an explorer link (matching the Send flow) — previously the record stayed
+  "submitted" and the static "Execution submitted" dialog never updated.
+
+### Changed
+- The Send broadcast confirmation matches the Safe execution dialog (full hash in mono
+  + a "View on explorer" button).
+
 ## [0.10.1] - 2026-07-19
 
 ### Fixed

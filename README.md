@@ -24,51 +24,37 @@
 
 ---
 
-Callisto is a powerful multi-wallet management system for interacting with the Ethereum ecosystem. It is implemented 100% in Go.
+Callisto is a multi-wallet management system for the Ethereum ecosystem, implemented 100% in Go. It runs entirely on your machine, talks to an Ethereum node you choose, and keeps signing keys under your control — no telemetry, no accounts, no outbound connections except the RPC and services you use.
 
-Callisto runs entirely on your machine, talks to an Ethereum node you choose, and keeps signing keys safely under your control. It features full support for managing and using Safe multi-signature wallets.
+It manages hot wallets, Trezor and Ledger hardware wallets, and Safe multi-signature wallets from one interface, and can act as a [WalletConnect](https://walletconnect.network/) backend for any web3 app — letting you switch between wallet types as a self-custody signer across the ecosystem.
 
-Callisto can act as wallet middleware for any web3 application that supports [WalletConnect](https://walletconnect.network/), enabling you to easily switch between several different wallets and wallet types from one interface for use as a self-custody backend across the web3 ecosystem.
+_Screenshots [here](./FEATURES.md)._
 
-In addition to Safe contract wallets, it supports Trezor and Ledger hardware wallets, with richer support for additional signer types on the roadmap.
-
-_See some screenshots of it in action [here](./FEATURES.md)._
-
-> **Status: pre-1.0 (`v0.9.1`).** Distributed as a native, self-updating desktop app (see [Download](https://codeberg.org/pasiphae/callisto/releases)). The foundation, basic transaction flows, Gnosis Safe multisig (including owner/threshold administration), encrypted hot-wallet keystores, WalletConnect (sign for web dApps), direct-USB Ledger/Trezor signing (no Trezor Suite/Bridge), and token-approval management (view/revoke ERC-20 + Permit2) are in place and usable, with a default archive RPC and automatic failover. The Claude-assisted complex-transaction pipeline is planned — see [Roadmap](#roadmap).
+> **Status: pre-1.0 (`v0.10.1`).** Distributed as a native, self-updating desktop app (see [Download](https://codeberg.org/pasiphae/callisto/releases)). The features below are in place and usable; the Claude-assisted complex-transaction pipeline is still planned — see [Roadmap](#roadmap).
 
 ## Features
 
-- **Bring your own node.**
-  - Configure multiple Ethereum RPC endpoints (`https://` or `wss://`, with optional bearer auth). WebSocket endpoints get live block updates; HTTP endpoints are polled.
-  - Out of the box Callisto connects to a maintainer-run **archive** node (so approval history and live subscriptions work immediately), and **falls over to [Flashbots Protect](https://protectrpc.flashbots.net/about) (fast)** if it's unreachable. Replace either, or point Callisto at your own node, in Settings.
+- **Bring your own node.** 
+  - Configure multiple RPC endpoints (`https://` or `wss://`, optional bearer auth); WebSocket gets live block updates, HTTP is polled. Out of the box Callisto connects to a maintainer-run **archive** node (so approval history and live subscriptions work immediately) and **falls over to [Flashbots Protect](https://protectrpc.flashbots.net/about)** if it's unreachable. Replace either, or use your own node, in Settings.
 - **Multiple wallets, multiple signers.**
-  - *Hot wallets* — import a BIP-39 seed phrase **once**, pick the account(s) to add from a derived index→address list, and set an encryption passphrase. The seed is stored only as a scrypt+AES-GCM-encrypted keystore; afterwards you unlock with just the passphrase (no re-entering the phrase). Keys are held in memory only while unlocked and wiped on lock.
-  - *Hardware wallets* — Ledger and Trezor over direct USB, via a common signing interface; keys never leave the device. **No Trezor Suite or Bridge required** — Callisto talks to the Trezor Safe directly over libusb (Trezor Bridge is kept only as an automatic fallback). Trezor hidden wallets (passphrase-protected, including on-device passphrase entry) are supported.
-- **Chain-aware.**
-  - The native asset and block explorer adapt to the connected chain (Ethereum, Sepolia, Holesky, OP, Base, Arbitrum, Polygon, Gnosis, etc.) with a safe fallback for unknown chains.
-- **WalletConnect.**
-  - Paste a WalletConnect (WC) URI from any web3 application that supports WC into Callisto and use it to review, sign, and broadcast transactions from applications across the web3/L2 ecosystem.
-- **Approvals management.**
-  - See every outstanding token approval for the active wallet — direct ERC-20 allowances *and* Uniswap Permit2 inner allowances — with the spender named where known and unlimited allowances flagged. 
-  - Easily **revoke** any of them with a reviewed, signed, tracked transaction. Discovery scans on-chain logs (needs an archive RPC for full history), bounded to the wallet's first tx so it never scans from genesis; re-scans are incremental and, over a WSS endpoint, updating live.
+  - *Hot wallets* — import a BIP-39 seed **once**, pick the account(s) to add, and set an encryption passphrase; the seed is stored only as a scrypt+AES-GCM keystore and unlocked thereafter with just the passphrase. Keys live in memory only while unlocked and are wiped on lock. Full key management: change passphrase, reveal a private key, export an encrypted backup, derive more accounts, import a raw key / MetaMask JSON / watch-only address, idle auto-lock, and Touch ID unlock on macOS.
+  - *Hardware wallets* — Ledger and Trezor over direct USB via a common signing interface; keys never leave the device. **No Trezor Suite or Bridge required** — Callisto talks to the Trezor directly over libusb (Bridge is kept only as a fallback). Trezor hidden wallets (passphrase-protected, incl. on-device entry) are supported.
+- **Chain-aware.** 
+  - Native asset and block explorer adapt to the connected chain (Ethereum, Sepolia, Holesky, OP, Base, Arbitrum, Polygon, Gnosis, …) with a safe fallback for unknown chains.
 - **Balances.** 
-  - Ether and ERC-20 tokens auto-populate with on-chain metadata (name/symbol/decimals, including legacy `bytes32` tokens), and add-your-own tokens by address.
+  - Held ETH and ERC-20 tokens are **discovered automatically** from on-chain transfer history (with name/symbol/decimals, incl. legacy `bytes32` tokens) and refresh each block — no manual refresh. Hide spam tokens (persisted), or add a token by address.
 - **ENS everywhere.** 
-  - Addresses are shown as their primary ENS name where one is set (forward-verified), and recipient fields accept ENS names or addresses with live, verified resolution. All addresses are EIP-55 checksum-validated on entry.
-- **Basic transfers.**
-  - Send ETH or ERC-20 tokens with a consistent flow and a detailed pre-signature summary — review decoded calldata, nonce, EIP-1559 fees, and maximum total fee — before signing.
-- **Broadcast & track.** 
-  - Transaction monitoring post-broadcast to pre-configured chain and node.
-  - Live monitoring for block inclusion and execution status.
+  - Addresses display as their primary ENS name where set (forward-verified); recipient fields accept names or addresses with live resolution. All addresses are EIP-55 checksum-validated on entry.
+- **Transfers, broadcast & track.** 
+  - Send ETH or ERC-20 with a detailed pre-signature summary (decoded calldata, nonce, EIP-1559 fees, max total fee). After broadcast, Callisto tracks block inclusion and execution status live.
+- **Approvals management.** 
+  - See every outstanding token approval for the active wallet — direct ERC-20 *and* Uniswap Permit2 allowances — with spenders named where known and unlimited allowances flagged, and **revoke** any with a reviewed, tracked transaction. Discovery scans on-chain logs (needs an archive RPC for full history), bounded to the wallet's first tx; re-scans are incremental and update live over WSS.
 - **Safe multisig.** 
-  - Import an existing [Safe](https://safe.global) by address and work with it from a dedicated tab: propose ETH/ERC-20 transfers or owner and threshold changes, collect owner signatures locally by switching unlocked wallets (hot, Ledger, or Trezor) until the threshold is met, then execute — or reject a proposal with a same-nonce cancellation.
-  - No external Safe service; everything is pre-configured locally until on-chain broadcast.
-  - Pattern is primarily designed for personal Safe setups. Org support a roadmap item.
-- **WalletConnect.**
-  - Connect Callisto to web dApps (Uniswap, CoW Swap, …) as a wallet: paste the WalletConnect link, approve a session exposing your active wallet, then review and sign the dApp's transaction and signature requests (`eth_sendTransaction`, `personal_sign`, `eth_signTypedData_v4`) here. Works out of the box with no signup.
-  - The WalletConnect v2 protocol is implemented from scratch (no Go SDK) with no new dependencies. Hot wallets and Ledger are fully supported; Trezor does transactions and message signing today (native typed-data lands with a planned Trezor overhaul).
-- **History.**
-  - A local record of every transaction Callisto prepared, with status and explorer links, kept in an embedded SQLite database.
+  - Import an existing [Safe](https://safe.global) by address and work with it from a dedicated tab: propose ETH/ERC-20 transfers or owner/threshold changes, collect owner signatures locally by switching unlocked wallets (hot, Ledger, or Trezor) until the threshold is met, then execute — or reject with a same-nonce cancellation. No external Safe service; everything is local until on-chain broadcast. (Primarily designed for personal Safes; org support is on the roadmap.)
+- **WalletConnect.** 
+  - Connect Callisto to web dApps (Uniswap, CoW Swap, …) as a wallet: paste the WC link, approve a session exposing your active wallet, then review and sign the dApp's `eth_sendTransaction` / `personal_sign` / `eth_signTypedData_v4` requests here. The WC v2 protocol is implemented from scratch (no Go SDK, no new dependencies); hot, Ledger, and Trezor (incl. native typed-data) are all supported.
+- **History.** 
+  - A local record of every transaction Callisto prepared — status, gas, explorer links — in an embedded SQLite database. Select a row for full details.
 
 ## Install & run
 
@@ -76,27 +62,17 @@ _See some screenshots of it in action [here](./FEATURES.md)._
 
 Get the latest build from the **[releases page](https://codeberg.org/pasiphae/callisto/releases)**:
 
-1. Download the archive for your platform — `Callisto-v<version>-darwin-arm64.zip`
-   (Apple-silicon macOS) or `Callisto-v<version>-linux-amd64.tar.gz` (Linux).
-2. **(Optional, recommended) verify it** against the release's `SHA256SUMS`:
-   `shasum -a 256 -c SHA256SUMS`. `SHA256SUMS` is itself ed25519-signed
-   (`SHA256SUMS.sig`) with the maintainer key — the same key Callisto's in-app
-   updater checks.
+1. Download the archive for your platform — `Callisto-v<version>-darwin-arm64.zip` / `-darwin-amd64.zip` (macOS) or `-linux-amd64.tar.gz` (Linux).
+2. **(Recommended) verify it:** `shasum -a 256 -c SHA256SUMS`. `SHA256SUMS` is itself ed25519-signed (`SHA256SUMS.sig`) with the maintainer key — the same key Callisto's in-app updater checks.
 3. Unzip and, on macOS, move **`Callisto.app`** to **/Applications**.
 
-Because macOS builds are not yet Apple-notarized, the **first** launch needs one
-extra step: right-click the app → **Open** (once), or run
-`xattr -dr com.apple.quarantine /Applications/Callisto.app`. After that it opens
-normally.
+macOS builds aren't yet Apple-notarized, so the **first** launch needs one step: right-click the app → **Open** (once), or `xattr -dr com.apple.quarantine /Applications/Callisto.app`.
 
-**Updating:** Settings → **Check for updates**. Callisto pulls the newest release,
-verifies it against the maintainer signing key, installs it, and restarts — your
-wallets, RPC config, and history are preserved (they live outside the app bundle,
-in your OS config directory).
+**Updating:** Settings → **Check for updates** — Callisto pulls the newest release, verifies it against the maintainer key, installs it, and restarts. Your wallets, RPC config, and history are preserved (they live in your OS config directory, outside the app bundle).
 
 ### Build from source
 
-You need **Go 1.24+** and a C toolchain (Fyne uses CGo for its desktop driver — see Fyne's [getting-started prerequisites](https://docs.fyne.io/started/) for your OS; on macOS the Xcode command-line tools suffice).
+Needs **Go 1.24+** and a C toolchain (Fyne uses CGo — see Fyne's [prerequisites](https://docs.fyne.io/started/); on macOS the Xcode command-line tools suffice).
 
 ```sh
 git clone https://codeberg.org/pasiphae/callisto.git
@@ -104,37 +80,37 @@ cd callisto
 go run ./cmd/callisto
 ```
 
-Or build a binary (`go build -o callisto ./cmd/callisto`), or a native app bundle
-with `make package-mac` (macOS) / `make package-linux` (Linux) — see
-[docs/RELEASING.md](docs/RELEASING.md).
+Or build a binary (`go build -o callisto ./cmd/callisto`) or a native app bundle (`make package-mac` / `make package-linux`) — see [docs/RELEASING.md](docs/RELEASING.md).
 
 ## Quick start
 
-1. **Connect.** Callisto auto-connects to its default mainnet endpoint on first launch (the status dot turns green). In **Settings** you can replace it, disable auto-connect, or add your own `https://…` / `wss://…` endpoints (e.g. a testnet).
-2. **Wallets** → **Add hot wallet…** (use a *throwaway/test* seed for experimentation): enter the phrase once, pick the account(s), and set an encryption passphrase — you'll unlock with just that passphrase afterwards. Or **Add hardware…** for a Ledger/Trezor — both work over direct USB with no extra software (no Trezor Suite/Bridge needed); just plug in, unlock the device, and confirm on-device.
-3. **Assets** → view balances for the selected wallet; they refresh on each block.
-4. **Send** → choose an asset, enter a recipient (address or ENS) and amount, **Prepare transfer**, review, then **Sign & send**.
-5. **Safe** (optional) → **Import Safe…** by address, propose a transfer or an owner/threshold change, collect owner signatures (unlock each owner in **Wallets** and click **Sign**), then **Execute** once the threshold is met.
-6. **History** → track what you've sent; select a row to open it on a block explorer.
+1. **Connect.** Callisto auto-connects to its default mainnet endpoint on first launch (status dot turns green). Replace it, disable auto-connect, or add your own endpoints in **Settings**.
+2. **Add a wallet.** **Wallets → Add hot wallet…** (use a *throwaway/test* seed to experiment): enter the phrase once, pick account(s), set a passphrase. Or **Add hardware…** for a Ledger/Trezor — plug in, unlock the device, confirm on-device (no extra software).
+3. **Assets** → view balances (refresh each block; spam hidden).
+4. **Approvals** → manage ERC20 token approvals (one-click revoke).
+4. **Send** → pick an asset, enter recipient (address or ENS) and amount, **Prepare transfer**, review, **Sign & send**.
+5. **Safe** (optional) → **Import Safe…** by address, propose a transfer or owner/threshold change, collect signatures (unlock each owner in **Wallets** → **Sign**), then **Execute** at threshold.
+6. **WalletConnect** → start and manage WalletConnect sessions with Callisto-managed wallets.
+6. **History** → track what you've sent; select a row for details and an explorer link.
 
 ## Security model
 
-- **Seeds are stored only as encrypted keystores — never in the clear.** A hot wallet's BIP-39 seed is sealed with **scrypt (memory-hard KDF) + AES-256-GCM** under a passphrase you choose at import, and written to a `0600` file. The config itself holds only inert *descriptors* (label, address, derivation path) and never key material. Deleting a wallet securely wipes its keystore once no account references it.
-- **Hot wallets** decrypt the seed into memory only while unlocked (so you can switch derived accounts); the seed and the selected private key are zeroed on lock, disconnect, or exit. HD derivation (BIP-32/44) is implemented in-house on the secp256k1 primitives go-ethereum already vendors, deliberately avoiding extra dependencies in the signing path.
-- **Your recovery phrase is your backup.** The passphrase protects the on-disk keystore; it is not recoverable and does not replace your seed phrase. Best-effort file wiping is not a guaranteed secure-erase on modern SSDs — keep your phrase safe offline.
-- **Hardware wallets** keep keys on the device; Callisto only requests signatures you confirm on the device.
-- Callisto makes **no outbound connections except to the RPC endpoint and services you use.** It ships with a maintainer-run archive endpoint as the auto-connecting default (with a Flashbots Protect fallback); you can replace either, disable auto-connect, or point Callisto at your own node at any time in Settings. The default endpoint authenticates with a bearer token baked into release builds — this is a **shared access key** (rate-limited server-side), not a per-user secret.
-- __Callisto has no telemetry or tracking features__.
+- **Seeds are stored only as encrypted keystores — never in the clear.** A hot wallet's BIP-39 seed is sealed with **scrypt + AES-256-GCM** under your chosen passphrase in a `0600` file. The config holds only inert *descriptors* (label, address, derivation path), never key material. Deleting a wallet securely wipes its keystore once unreferenced.
+- **Keys are held in memory only while unlocked** and zeroed on lock, idle auto-lock, disconnect, or exit. HD derivation (BIP-32/44) is implemented in-house on the secp256k1 primitives go-ethereum already vendors — no extra dependency in the signing path. On macOS you can optionally cache the unlock key in the Secure-Enclave-backed Keychain for Touch ID unlock; the passphrase always remains a fallback.
+- **Your recovery phrase is your backup.** The passphrase protects the on-disk keystore; it is never persisted and does not replace your seed. Best-effort file wiping isn't a guaranteed secure-erase on modern SSDs — keep your phrase safe offline.
+- **Hardware wallets** keep keys on the device; Callisto only requests signatures that you confirm there.
+- **No outbound connections except the RPC endpoint and services you use.** The default is a maintainer-run archive endpoint (with a Flashbots Protect RPC fallback), replaceable anytime. Its bearer token is a **shared access key** baked into release builds (rate-limited server-side), not a per-user secret. 
+- **No telemetry, user tracking, or metrics collection.** for maximum privacy, use your own node as the RPC, or Flashbots Protect (optional by default).
 
-Treat this as pre-1.0 software: review transactions on-device, and prefer test networks and throwaway keys while the project matures.
+_Treat Callisto as pre-1.0 software: review transactions on-device, and prefer test networks and throwaway keys while the project matures._
 
 ## Configuration & data
 
 Stored under your OS config directory (e.g. `~/Library/Application Support/callisto/` on macOS), managed in-app:
 
-- `config.json` — RPC endpoints, wallet descriptors, imported Safes (address + cached owners/threshold + local owner labels), and added tokens (no secrets; written atomically, `0600`).
-- `keystores/<id>.json` — per-hot-wallet encrypted seed keystores (scrypt + AES-256-GCM), `0600` in a `0700` directory. This is the only place seed material is stored, and only ever encrypted.
-- `callisto.db` — SQLite database for transaction history, Safe proposals and collected signatures, and the contract address book.
+- `config.json` — RPC endpoints, wallet descriptors, imported Safes (address + cached owners/threshold + local labels), added tokens (no secrets; atomic, `0600`).
+- `keystores/<id>.json` — per-hot-wallet encrypted seed keystores (scrypt + AES-256-GCM), `0600` in a `0700` directory. The only place seed material is stored, and only ever in cipher form.
+- `callisto.db` — SQLite: transaction history, Safe proposals + signatures, discovered/hidden tokens, and the contract address book.
 
 ## Development
 
@@ -149,11 +125,11 @@ go vet ./...                                      # static checks
 go test -tags integration ./...                  # (override endpoints via CALLISTO_TEST_RPC / CALLISTO_TEST_MAINNET_RPC)
 ```
 
-On macOS the linker prints a benign `ignoring duplicate libraries: '-lobjc'` warning from Fyne's CGo driver — it is not an error.
+On macOS the linker prints a benign `ignoring duplicate libraries: '-lobjc'` warning from Fyne's CGo driver — not an error.
 
 ### Architecture
 
-The GUI (`internal/ui`) is a thin layer over independent domain packages; the domain never depends on the UI, and all key material is isolated in the signer and keystore packages. New signer types, chains, and asset kinds are designed to slot in without touching transaction preparation, review, or broadcast.
+The GUI (`internal/ui`) is a thin layer over independent domain packages; the domain never depends on the UI, and all key material is isolated in the signer and keystore packages. New signer types, chains, and asset kinds slot in without touching transaction preparation, review, or broadcast.
 
 | Package | Responsibility |
 |---|---|
@@ -163,29 +139,31 @@ The GUI (`internal/ui`) is a thin layer over independent domain packages; the do
 | `internal/ens` | ENS forward/reverse resolution (forward-verified) |
 | `internal/signer`, `.../hot`, `.../hardware` | Signing interface; hot (seed) and Ledger/Trezor signers |
 | `internal/keystore` | scrypt + AES-256-GCM encryption of hot-wallet seeds at rest |
-| `internal/assets` | ETH + ERC-20 detection, metadata, unit conversion |
+| `internal/assets` | ETH + ERC-20 detection, discovery, metadata, unit conversion |
 | `internal/tx` | Build, gas estimation, assembly, broadcast, inclusion |
 | `internal/safe` | Safe multisig: reads, safeTxHash, exec/admin encoding, proposals |
 | `internal/walletconnect` | WalletConnect v2 Sign (relay, envelope crypto, session engine) |
 | `internal/history` | Transaction lifecycle records |
 | `internal/config`, `internal/store` | JSON settings; SQLite store |
 
-See [`DESIGN.md`](DESIGN.md) for the full specification and [`PRINCIPLES.md`](PRINCIPLES.md) for development principles. Contributions follow the branch/version/release workflow in [`docs/RELEASING.md`](docs/RELEASING.md).
+See [`DESIGN.md`](DESIGN.md) for the original full specification and [`PRINCIPLES.md`](PRINCIPLES.md) for development principles.
+
+Contributions follow the workflow in [`docs/RELEASING.md`](docs/RELEASING.md).
 
 ## Roadmap
 
-Implemented above; still to come (designed for, not yet built):
+Still to come (designed, pending implementation):
 
-- **Claude-assisted complex transactions**: natural-language requests ("deposit 10 ETH to Aave v3") resolved to reviewed calldata, with a growing on-chain contract address book, and multi-step flows via the DeFiSaver SDK.
+- **Claude-assisted complex transactions**: natural-language requests ("deposit 10 ETH to Aave v3") resolved to reviewed calldata, with a growing on-chain contract address book and multi-step flows via the DeFiSaver SDK.
 - **Transaction simulation** against a fork before signing.
-- **OS-native keystore storage**: back the encrypted keystore with the OS keychain where available (macOS Keychain, and the Secret Service / DPAPI equivalents) for defense in depth beyond the passphrase-encrypted file.
-- More signer types (incl. GridPlus Lattice, pending a Go SDK) and chains.
+- **OS keychain on more platforms**: Touch ID / macOS Keychain ships today; Linux Secret Service and Windows DPAPI backends to follow.
+- **More signer types**: support for more hardware signers (incl. GridPlus Lattice, pending a Go SDK) and richer multi-chain support.
 
 ## Credits
 
 - Callisto imagery: NASA/JPL's [Galileo](https://solarsystem.nasa.gov/) mosaic of Jupiter's moon Callisto (public domain).
 - Addresses and numeric values are set in [Berkeley Mono](https://usgraphics.com/products/berkeley-mono) by U.S. Graphics Company, bundled and embedded under the project's font license.
-- `internal/signer/hardware/usbwallet` is a local, patched fork of three files from [go-ethereum](https://github.com/ethereum/go-ethereum)'s `accounts/usbwallet` (LGPL-3.0-or-later; license and attribution preserved in-file) — see that package's doc comment for why.
+- `internal/signer/hardware/usbwallet` is a local, patched fork of three files from [go-ethereum](https://github.com/ethereum/go-ethereum)'s `accounts/usbwallet` (LGPL-3.0-or-later; license and attribution preserved in-file).
 
 ## License
 ```

@@ -165,8 +165,9 @@ not quarantine them and they relaunch without a prompt.
 
 ## Release message template
 
-Paste this as the Codeberg release body, replacing `X.Y.Z` and the highlights, and
-appending the `CHANGELOG.md` section for this version.
+Keep the release body short: a one/two-line summary, install + checksum steps, and a
+link to the version's `CHANGELOG.md` section for the details — don't paste the whole
+changelog. Paste this and replace `X.Y.Z` and the summary.
 
 ```markdown
 ## Callisto `vX.Y.Z`
@@ -196,5 +197,6 @@ same key the in-app updater checks).
 
 ### Changes
 
-<paste the CHANGELOG.md section for vX.Y.Z here>
+See the [`vX.Y.Z` changelog](https://codeberg.org/pasiphae/callisto/src/branch/main/CHANGELOG.md#0xyz---yyyy-mm-dd)
+for the full list.
 ```

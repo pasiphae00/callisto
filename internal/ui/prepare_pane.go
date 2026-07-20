@@ -76,7 +76,7 @@ func (p *preparePane) build() fyne.CanvasObject {
 	p.prepareBtn.Disable()
 
 	header := widget.NewLabelWithStyle("Prepare", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
-	help := widget.NewLabel("Prepare a transaction from a known action (e.g. wrap ETH, stake with Lido). Callisto builds and decodes the call for you to review before signing. With AI enabled (Settings → AI features), you can also describe what you want in plain language.")
+	help := widget.NewLabel("Prepare a transaction from a known action (e.g. wrap ETH, stake with Lido). Callisto builds and decodes the call for you to review before signing. With AI enabled (Settings > AI features), you can also describe what you want in plain language.")
 	help.Wrapping = fyne.TextWrapWord
 
 	p.nlEntry = widget.NewEntry()
@@ -109,7 +109,7 @@ func (p *preparePane) build() fyne.CanvasObject {
 func (p *preparePane) interpret() {
 	if !p.app.cfg.AIReady() {
 		dialog.ShowInformation("AI not enabled",
-			"Enable AI-assisted preparation and set your Anthropic API key in Settings → AI features.", p.app.window)
+			"Enable AI-assisted preparation and set your Anthropic API key in Settings > AI features.", p.app.window)
 		return
 	}
 	intent := strings.TrimSpace(p.nlEntry.Text)

@@ -26,6 +26,8 @@ Integration tests (`//go:build integration`) verify real-network behavior (RPC d
 
 On macOS the linker prints a benign `ignoring duplicate libraries: '-lobjc'` warning from Fyne's CGo driver — it is not an error. The GUI cannot be launched in a headless environment; UI construction is verified instead by the Fyne test-driver smoke test in `internal/ui/ui_test.go`.
 
+**UI glyph gotcha:** the default Fyne theme font does **not** contain many non-ASCII glyphs (notably the arrow `→`), which render as `�` in a plain `widget.NewLabel`/`canvas.Text`. Only text set in the bundled **Berkeley Mono** (i.e. `monoLabel(...)` or `TextStyle{Monospace:true}`) renders them. So in default-font labels use ASCII (`->`, `>`) — reserve `→`/similar for mono text. Known-safe in the default font: `●` (dots), `✓`, `⚠`, `⭐`.
+
 ## Dependencies (deliberately minimal — see PRINCIPLES.md)
 
 `fyne.io/fyne/v2` (GUI), `github.com/ethereum/go-ethereum` (RPC/ABI/crypto/EIP-55; Ledger+Trezor drivers are a local LGPL fork under `internal/signer/hardware/usbwallet`), `github.com/karalabe/usb` (bundled libusb+hidapi — the USB backend for hardware wallets; **replaced `github.com/ethereum/hid`** in v0.7.0 so Trezor works over raw libusb with no Trezor Suite/Bridge), `modernc.org/sqlite` (pure-Go, no CGo — history + address book), `github.com/tyler-smith/go-bip39` (mnemonic↔seed). **Do not add `btcutil`/`hdkeychain`**: it drags a personal-fork transitive dep (`kcalvinalvin/anet`) into a signing wallet. Implement BIP32/BIP44 derivation directly on `github.com/decred/dcrd/dcrec/secp256k1/v4`, which go-ethereum already vendors (zero new dependency).

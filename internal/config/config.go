@@ -43,9 +43,9 @@ const configFile = "config.json"
 //     can't be reached (no embedded token, or it's down), Callisto uses this.
 const (
 	DefaultEndpointName = "Ethereum Mainnet (via Flashbots Protect)"
-	DefaultEndpointURL  = "https://rpc.flashbots.net/fast?originId=callisto-system"
+	DefaultEndpointURL  = "https://rpc.flashbots.net/fast"
 
-	GanymedeEndpointName = "Ethereum Mainnet (Ganymede archive)"
+	GanymedeEndpointName = "Ethereum Mainnet (via Ganymede archive)"
 	GanymedeEndpointURL  = "wss://ganymede.pasiphae.io"
 	GanymedeAuthRef      = "ganymede"
 )

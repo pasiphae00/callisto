@@ -37,10 +37,10 @@ type safePane struct {
 	app *App
 
 	safeSelect   *widget.Select
-	tabs         *container.AppTabs  // Overview | Proposals | Assets
-	proposalsTab *container.TabItem  // kept to update its label with the active count
-	detailsBox   *fyne.Container     // Overview tab body
-	proposalBox  *fyne.Container     // Proposals tab body
+	tabs         *container.AppTabs // Overview | Proposals | Assets
+	proposalsTab *container.TabItem // kept to update its label with the active count
+	detailsBox   *fyne.Container    // Overview tab body
+	proposalBox  *fyne.Container    // Proposals tab body
 	status       *widget.Label
 	assetsView   *assetsView // Assets tab: balances for the selected Safe
 
@@ -92,7 +92,7 @@ func (p *safePane) build() fyne.CanvasObject {
 	p.proposalBox = container.NewVBox()
 
 	header := widget.NewLabelWithStyle("Safe multisig", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
-	help := widget.NewLabel("Import an existing Safe by address to use Callisto to prepare and execute Safe transactions.\n\nYou can Propose a transaction or an owner/threshold change, then collect owner signatures until the threshold is met.\n\nTo sign a Proposal, unlock and switch to owner accounts in the Wallets tab and click Sign.")
+	help := widget.NewLabel("Import an existing Safe by address to use Callisto to prepare and execute Safe transactions. You can Propose a transaction or an owner/threshold change, then collect owner signatures until the threshold is met.\n\nTo sign a Proposal, unlock and switch to owner accounts in the Wallets tab and click Sign.")
 	help.Wrapping = fyne.TextWrapWord
 
 	top := container.NewVBox(

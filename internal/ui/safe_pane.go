@@ -36,12 +36,13 @@ import (
 type safePane struct {
 	app *App
 
-	safeSelect  *widget.Select
-	tabs        *container.AppTabs // Overview | Assets | Activity
-	detailsBox  *fyne.Container    // Overview tab body
-	proposalBox *fyne.Container    // Activity tab body
-	status      *widget.Label
-	assetsView  *assetsView // Assets tab: balances for the selected Safe
+	safeSelect   *widget.Select
+	tabs         *container.AppTabs  // Overview | Proposals | Assets
+	proposalsTab *container.TabItem  // kept to update its label with the active count
+	detailsBox   *fyne.Container     // Overview tab body
+	proposalBox  *fyne.Container     // Proposals tab body
+	status       *widget.Label
+	assetsView   *assetsView // Assets tab: balances for the selected Safe
 
 	proposals []safe.Proposal
 
@@ -101,16 +102,19 @@ func (p *safePane) build() fyne.CanvasObject {
 		widget.NewSeparator(),
 	)
 
-	// Overview | Assets | Activity sub-tabs. Overview holds the details/owners/
-	// actions, Assets the (shared) balances view, Activity the proposal list.
+	// Overview | Proposals | Assets sub-tabs. Proposals is second and named for the
+	// primary action (propose / sign / execute), and its label carries a live count
+	// of active proposals so it's obvious where to go. Overview holds the
+	// details/owners/actions; Assets the (shared) balances view.
 	overview := container.NewVScroll(p.detailsBox)
+	proposals := container.NewVScroll(p.proposalBox)
 	assetsTab := p.assetsView.build("",
 		"Tokens held by this Safe, detected automatically on each block. Hide spam to keep the list clean.")
-	activity := container.NewVScroll(p.proposalBox)
+	p.proposalsTab = container.NewTabItem("Proposals", proposals)
 	p.tabs = container.NewAppTabs(
 		container.NewTabItem("Overview", overview),
+		p.proposalsTab,
 		container.NewTabItem("Assets", assetsTab),
-		container.NewTabItem("Activity", activity),
 	)
 	p.tabs.OnSelected = func(ti *container.TabItem) {
 		if ti.Text == "Assets" {
@@ -477,6 +481,15 @@ func (p *safePane) refreshProposals(desc safe.Descriptor) {
 	}
 	p.proposalBox.Objects = []fyne.CanvasObject{box}
 	p.proposalBox.Refresh()
+
+	// Surface the active count on the tab label so it's obvious where to act.
+	if p.proposalsTab != nil {
+		label := "Proposals"
+		if len(active) > 0 {
+			label = fmt.Sprintf("Proposals (%d)", len(active))
+		}
+		p.proposalsTab.Text = label
+	}
 	p.relayout()
 }
 

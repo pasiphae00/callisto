@@ -25,8 +25,11 @@ Scope + layout decided 2026-07-19. Safe tab becomes **inner sub-tabs**
   collected sigs as a self-contained blob; a co-owner imports, Callisto **recomputes the
   `safeTxHash` from the fields (never trusts the blob)**, they review + sign, export back,
   merge (each sig verified to recover to a *current* owner) and execute.
-- Open decision at build time: transport format — file / copy-paste text / QR (lean
-  file + text first, QR later for air-gapped).
+- **Decided:** ship **file + copy-paste text** first (shared encode/decode, two transports),
+  give users both options, and **document the flow clearly** in-app + README.
+- **Roadmap (later):** **QR** (air-gapped / mobile↔desktop) and an **optional secure relay**
+  so co-owners can just send a link — end-to-end encrypted, the relay never sees plaintext
+  proposal/signature data (opt-in, off by default; nothing leaves the machine unless enabled).
 
 **P4 — WalletConnect-for-Safe** (research first, may defer impl)
 - Feasibility writeup: EIP-1271 signatures from collected owner sigs; mapping a dApp

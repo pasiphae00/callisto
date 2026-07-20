@@ -158,12 +158,12 @@ func (p *preparePane) prepare() {
 		return
 	}
 
-	// Parse inputs (ETH amounts → wei for now).
-	in := actions.Inputs{Amounts: map[string]*big.Int{}}
+	// Parse inputs (18-decimal amounts → base units).
+	in := actions.Inputs{Amounts: map[string]*big.Int{}, Account: from}
 	for _, f := range p.current.Fields {
 		raw := p.entries[f.Key].Text
 		switch f.Kind {
-		case actions.FieldAmountETH:
+		case actions.FieldAmount18:
 			v, perr := assets.ParseUnits(raw, 18)
 			if perr != nil {
 				dialog.ShowError(fmt.Errorf("%s: %w", f.Label, perr), p.app.window)
@@ -221,7 +221,13 @@ func (p *preparePane) showReview(prepared actions.Prepared, prep tx.Prepared, in
 	notice := widget.NewLabel(signMsg)
 	notice.Wrapping = fyne.TextWrapWord
 
-	body := container.NewVBox(grid, widget.NewSeparator(), notice)
+	body := container.NewVBox(grid)
+	if prepared.Note != "" {
+		// A caveat (e.g. a required token approval) — flag it before signing.
+		body.Add(cautionBox(prepared.Note))
+	}
+	body.Add(widget.NewSeparator())
+	body.Add(notice)
 	d := dialog.NewCustomConfirm("Review — "+prepared.Summary, "Sign & send", "Cancel", body,
 		func(confirm bool) {
 			if confirm {

@@ -31,7 +31,9 @@ func TestWrapUnwrapStakeCalldata(t *testing.T) {
 	}{
 		{"weth.wrap", "d0e30db0", oneEth, 4, common.HexToAddress("0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2")},
 		{"weth.unwrap", "2e1a7d4d", "0", 4 + 32, common.HexToAddress("0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2")},
-		{"lido.stake", "a1903eab", oneEth, 4 + 32, common.HexToAddress("0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84")},
+		{"lido.deposit", "a1903eab", oneEth, 4 + 32, common.HexToAddress("0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84")},
+		{"wsteth.wrap", "ea598cb0", "0", 4 + 32, common.HexToAddress("0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0")},
+		{"wsteth.unwrap", "de0e9a3e", "0", 4 + 32, common.HexToAddress("0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0")},
 	}
 	for _, c := range cases {
 		a, ok := ByID(c.id)

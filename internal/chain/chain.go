@@ -85,6 +85,18 @@ var registry = map[uint64]Info{
 		Native:      NativeAsset{Name: "xDAI", Symbol: "xDAI", Decimals: 18},
 		ExplorerURL: "https://gnosisscan.io",
 	},
+	56: {
+		ID:          56,
+		Name:        "BNB Smart Chain",
+		Native:      ether("BNB"),
+		ExplorerURL: "https://bscscan.com",
+	},
+	324: {
+		ID:          324,
+		Name:        "zkSync Era",
+		Native:      ether("ETH"),
+		ExplorerURL: "https://era.zksync.network",
+	},
 }
 
 // Lookup returns metadata for a chain ID. For unknown chains it synthesizes a

@@ -193,6 +193,19 @@ func (a *App) autoConnectOnStart() {
 // usable, and refreshes the status bar. It does not auto-return to the primary — a
 // manual reconnect in Settings does that.
 func (a *App) failoverToFallback() {
+	// The Flashbots fallback is Ethereum mainnet, so it's only a sane failover when the
+	// lost connection was also on Ethereum. On an L2 (Polygon, Base, …) failing over to
+	// Flashbots would silently switch chains — so there, just report the loss.
+	if cur, ok := a.cfg.EndpointByName(a.cfg.ActiveEndpoint); ok && cur.ChainID != 0 && cur.ChainID != 1 {
+		fyne.Do(func() {
+			a.refreshStatusBar()
+			if a.window != nil {
+				dialog.ShowInformation("Connection lost",
+					"The RPC for "+cur.Name+" became unreachable. Reconnect it, or switch chain, in Settings.", a.window)
+			}
+		})
+		return
+	}
 	fb, ok := a.cfg.FallbackEndpoint()
 	if !ok || a.cfg.ActiveEndpoint == fb.Name {
 		return

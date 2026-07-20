@@ -10,6 +10,12 @@ changes; `v1.0.0` marks the first stable, documented release.
 ## [Unreleased]
 
 ### Added
+- **Switch chain — one-click networks with bundled default RPCs.** Settings now has a
+  **Switch chain…** picker covering Ethereum plus **Base, Arbitrum One, Optimism,
+  Polygon, zkSync Era, and BNB Smart Chain**, each shipping a default public RPC (via
+  dRPC); Ethereum keeps its archive node + Flashbots fallback. Picking a network
+  connects to its RPC and remembers it across restarts. You can still change any chain's
+  RPC or add your own under **Manage endpoints** ("Custom endpoint…" in the picker).
 - **Safe "Build" sub-tab — curated ecosystem actions as proposals.** Prepare common
   actions (wrap/unwrap WETH, stake with Lido, wrap/unwrap wstETH, request/claim a Lido
   withdrawal) for a Safe: pick an action, fill in the amounts, and Callisto builds and
@@ -23,6 +29,12 @@ changes; `v1.0.0` marks the first stable, documented release.
   the standalone **Prepare** pane and the optional Claude/AI integration were removed;
   curated preparation now lives in the Safe tab, where it's genuinely needed (a Safe
   can't drive a synchronous dApp session).
+
+### Fixed
+- **Connection failover no longer switches chains.** If an L2 RPC dropped mid-session,
+  Callisto used to silently fail over to the Ethereum-mainnet Flashbots endpoint; it now
+  only does so when you were on Ethereum, and otherwise just reports the RPC is
+  unreachable so you can reconnect or switch chain.
 
 ## [0.11.1] - 2026-07-20
 

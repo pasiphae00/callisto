@@ -12,6 +12,8 @@ import (
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
 
+	"codeberg.org/pasiphae/callisto/internal/chain"
+	"codeberg.org/pasiphae/callisto/internal/config"
 	"codeberg.org/pasiphae/callisto/internal/rpc"
 )
 
@@ -65,7 +67,7 @@ const rpcHelpText = `Callisto uses a dedicated mainnet Ethereum archive node by 
 
 To customize your own Flashbots Protect RPC (e.g. to set an MEV refund address), generate a new endpoint at "protect.flashbots.net"
 
-If "Auto-connect" is selected when adding an endpoint, Callisto will use that RPC automatically on each subsequent restart. To use an L2 (e.g. Arbitrum), add an RPC for that chain.`
+If "Auto-connect" is selected when adding an endpoint, Callisto will use that RPC automatically on each subsequent restart. To move between networks, use "Switch chain" — Ethereum and the major L2s come with a default RPC; add one here only for a chain or provider not listed there.`
 
 // settingsPane manages the persisted RPC endpoint list: add, remove, select, and
 // connect. Callisto ships no default endpoint, so this is the first thing a user
@@ -91,13 +93,16 @@ func (p *settingsPane) build() fyne.CanvasObject {
 	p.statusLbl.Wrapping = fyne.TextWrapWord
 	p.refreshStatus()
 
-	// RPC management lives in a pop-out to keep this pane uncluttered; the compact
-	// launcher shows the current connection + a "Manage endpoints…" button.
-	header := widget.NewLabelWithStyle("RPC endpoints", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
-	summary := widget.NewLabel("The Ethereum nodes Callisto connects to. Manage them — add, connect, rename, set default, remove — in the endpoints window.")
+	// The compact launcher shows the current connection and two actions: Switch chain
+	// (move between Ethereum and the built-in L2s) and Manage endpoints (add/customize
+	// the underlying RPC nodes, in a pop-out to keep this pane uncluttered).
+	header := widget.NewLabelWithStyle("Network & RPC", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+	summary := widget.NewLabel("The network Callisto is connected to. Switch chain to move between Ethereum and L2s (Base, Arbitrum, Optimism, Polygon, and more) — each comes with a default RPC. Manage endpoints to change those or add your own.")
 	summary.Wrapping = fyne.TextWrapWord
+	switchBtn := widget.NewButton("Switch chain…", p.showSwitchChain)
+	switchBtn.Importance = widget.HighImportance
 	manageBtn := widget.NewButton("Manage endpoints…", p.showRPCManager)
-	rpcBox := container.NewVBox(header, summary, p.statusLbl, indentToText(container.NewHBox(manageBtn)))
+	rpcBox := container.NewVBox(header, summary, p.statusLbl, indentToText(container.NewHBox(switchBtn, manageBtn)))
 
 	content := container.NewVBox(
 		rpcBox,
@@ -165,6 +170,100 @@ func (p *settingsPane) showRPCManager() {
 	d.Resize(fyne.NewSize(720, 560))
 	d.SetOnClosed(func() { p.refreshStatus() }) // reflect any connection change in the launcher
 	d.Show()
+}
+
+// showSwitchChain presents the built-in chains (Ethereum + L2s) as a one-click network
+// picker, with the currently-connected chain marked. Picking one connects to that
+// chain's default RPC (adding it to the endpoint list if needed) and makes it the
+// startup default. "Custom endpoint…" drops into the full add-endpoint form for any
+// chain/RPC not listed here.
+func (p *settingsPane) showSwitchChain() {
+	var d dialog.Dialog
+
+	activeChainID := uint64(0)
+	if conn, ok := p.app.rpc.Active(); ok {
+		activeChainID = conn.ChainID.Uint64()
+	}
+
+	box := container.NewVBox()
+	intro := widget.NewLabel("Pick a network. Callisto connects to its default RPC — change it or add your own under Manage endpoints. Ethereum ships with an archive node plus a Flashbots fallback; each L2 ships one public RPC.")
+	intro.Wrapping = fyne.TextWrapWord
+	box.Add(intro)
+	box.Add(widget.NewSeparator())
+
+	for _, opt := range config.ChainCatalog() {
+		opt := opt
+		info, _ := chain.Lookup(opt.ChainID)
+		current := opt.ChainID == activeChainID
+
+		dot := canvas.NewText("●", colorTransparent)
+		if current {
+			dot.Color = statusGreen
+		}
+		title := widget.NewLabel(fmt.Sprintf("%s  ·  %s", opt.Label, info.Native.Symbol))
+		if current {
+			title.TextStyle = fyne.TextStyle{Bold: true}
+		}
+		url := monoLabel(opt.ConnectTarget().URL)
+		labels := container.NewVBox(title, url)
+
+		btn := widget.NewButton("Switch", func() {
+			d.Hide()
+			p.switchToChain(opt)
+		})
+		if current {
+			btn.SetText("Connected")
+			btn.Disable()
+		}
+		box.Add(container.NewBorder(nil, nil, dot, btn, labels))
+	}
+
+	box.Add(widget.NewSeparator())
+	customBtn := widget.NewButton("Custom endpoint…", func() {
+		d.Hide()
+		p.showAddDialog()
+	})
+	box.Add(indentToText(container.NewHBox(customBtn)))
+
+	d = dialog.NewCustom("Switch chain", "Close", container.NewVScroll(box), p.app.window)
+	d.Resize(fyne.NewSize(640, 560))
+	d.SetOnClosed(func() { p.refreshStatus() })
+	d.Show()
+}
+
+// switchToChain connects to a catalog chain's default RPC, seeding its endpoint(s) into
+// the config if absent, and makes it the startup auto-connect default so a restart
+// returns to the same chain.
+func (p *settingsPane) switchToChain(opt config.ChainOption) {
+	for _, e := range opt.Endpoints {
+		if _, ok := p.app.cfg.EndpointByName(e.Name); !ok {
+			_ = p.app.cfg.UpsertEndpoint(e)
+		}
+	}
+	target := opt.ConnectTarget()
+	p.statusLbl.SetText("Connecting to " + opt.Label + "…")
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		conn, err := p.app.rpc.Connect(ctx, target)
+		fyne.Do(func() {
+			if err != nil {
+				dialog.ShowError(fmt.Errorf("could not connect to %s: %w", opt.Label, err), p.app.window)
+				p.refreshStatus()
+				return
+			}
+			target.ChainID = conn.ChainID.Uint64()
+			_ = p.app.cfg.UpsertEndpoint(target)
+			p.app.cfg.ActiveEndpoint = target.Name
+			p.app.cfg.SetAutoConnect(target.Name) // reconnect to this chain on restart
+			if err := p.app.cfg.Save(); err != nil {
+				dialog.ShowError(err, p.app.window)
+			}
+			p.refreshList()
+			p.refreshStatus()
+			p.app.refreshStatusBar()
+		})
+	}()
 }
 
 // refreshList / unselectList are nil-safe: the endpoint list only exists while the

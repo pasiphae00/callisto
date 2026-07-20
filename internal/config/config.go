@@ -78,6 +78,55 @@ func defaultConfig() *Config {
 	}
 }
 
+// ChainOption is a built-in chain offered in the Settings "Switch chain" picker,
+// bundled with the default RPC endpoint(s) Callisto ships for it. Ethereum is the
+// first-class chain with two endpoints (the Ganymede archive + a Flashbots fallback);
+// each L2 ships one public dRPC WebSocket. Users can still change or add their own via
+// Manage endpoints. Non-EVM chains (e.g. Starknet) are intentionally excluded —
+// Callisto's go-ethereum signing/tx stack can't drive them.
+type ChainOption struct {
+	ChainID   uint64
+	Label     string
+	Endpoints []rpc.Endpoint // default RPC(s); ConnectTarget picks the one to dial
+}
+
+// ConnectTarget returns the endpoint to dial for this chain. On Ethereum it prefers
+// the Ganymede archive when a bearer token is embedded in this build, else the
+// no-auth Flashbots endpoint; every other chain has a single endpoint.
+func (o ChainOption) ConnectTarget() rpc.Endpoint {
+	if o.ChainID == 1 {
+		for _, e := range o.Endpoints {
+			if e.AuthRef != "" && buildsecrets.Token(e.AuthRef) != "" {
+				return e
+			}
+		}
+		for _, e := range o.Endpoints {
+			if e.AuthRef == "" {
+				return e
+			}
+		}
+	}
+	return o.Endpoints[0]
+}
+
+// ChainCatalog returns the built-in chains offered in "Switch chain", in display
+// order. Ethereum leads (its two endpoints); the L2s follow with one dRPC WebSocket
+// each. Non-EVM chains are omitted deliberately (see ChainOption).
+func ChainCatalog() []ChainOption {
+	return []ChainOption{
+		{ChainID: 1, Label: "Ethereum Mainnet", Endpoints: []rpc.Endpoint{
+			{Name: GanymedeEndpointName, URL: GanymedeEndpointURL, AuthRef: GanymedeAuthRef},
+			{Name: DefaultEndpointName, URL: DefaultEndpointURL},
+		}},
+		{ChainID: 8453, Label: "Base", Endpoints: []rpc.Endpoint{{Name: "Base (drpc)", URL: "wss://base.drpc.org"}}},
+		{ChainID: 42161, Label: "Arbitrum One", Endpoints: []rpc.Endpoint{{Name: "Arbitrum One (drpc)", URL: "wss://arbitrum.drpc.org"}}},
+		{ChainID: 10, Label: "Optimism", Endpoints: []rpc.Endpoint{{Name: "Optimism (drpc)", URL: "wss://optimism.drpc.org"}}},
+		{ChainID: 137, Label: "Polygon", Endpoints: []rpc.Endpoint{{Name: "Polygon (drpc)", URL: "wss://polygon.drpc.org"}}},
+		{ChainID: 324, Label: "zkSync Era", Endpoints: []rpc.Endpoint{{Name: "ZkSync (drpc)", URL: "wss://zksync.drpc.org"}}},
+		{ChainID: 56, Label: "BNB Smart Chain", Endpoints: []rpc.Endpoint{{Name: "BSC (drpc)", URL: "wss://bsc.drpc.org"}}},
+	}
+}
+
 // Config is the full persisted settings document.
 type Config struct {
 	// Endpoints is the user-curated RPC list; Callisto ships no default.

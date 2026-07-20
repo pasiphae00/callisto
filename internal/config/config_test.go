@@ -6,10 +6,57 @@ import (
 	"testing"
 
 	"codeberg.org/pasiphae/callisto/internal/assets"
+	"codeberg.org/pasiphae/callisto/internal/chain"
 	"codeberg.org/pasiphae/callisto/internal/rpc"
 	"codeberg.org/pasiphae/callisto/internal/safe"
 	"codeberg.org/pasiphae/callisto/internal/wallet"
 )
+
+func TestChainCatalog(t *testing.T) {
+	cat := ChainCatalog()
+	if len(cat) == 0 {
+		t.Fatal("empty catalog")
+	}
+	if cat[0].ChainID != 1 {
+		t.Errorf("first catalog entry = chain %d, want Ethereum (1)", cat[0].ChainID)
+	}
+	seen := map[uint64]bool{}
+	for _, opt := range cat {
+		if seen[opt.ChainID] {
+			t.Errorf("duplicate chain %d in catalog", opt.ChainID)
+		}
+		seen[opt.ChainID] = true
+		if len(opt.Endpoints) == 0 {
+			t.Errorf("%s (chain %d) has no endpoints", opt.Label, opt.ChainID)
+		}
+		for _, e := range opt.Endpoints {
+			if err := e.Validate(); err != nil {
+				t.Errorf("%s endpoint %q invalid: %v", opt.Label, e.Name, err)
+			}
+		}
+		// ConnectTarget must return one of the listed endpoints.
+		tgt := opt.ConnectTarget()
+		found := false
+		for _, e := range opt.Endpoints {
+			if e.Name == tgt.Name {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("%s ConnectTarget %q not in its endpoint list", opt.Label, tgt.Name)
+		}
+		// Every catalog chain should have real metadata (native symbol, explorer).
+		if info, known := chain.Lookup(opt.ChainID); !known {
+			t.Errorf("%s (chain %d) missing from chain registry", opt.Label, opt.ChainID)
+		} else if info.ExplorerURL == "" {
+			t.Errorf("%s (chain %d) has no explorer URL", opt.Label, opt.ChainID)
+		}
+	}
+	// No embedded token in tests → Ethereum dials the no-auth (Flashbots) endpoint.
+	if tgt := cat[0].ConnectTarget(); tgt.AuthRef != "" {
+		t.Errorf("Ethereum ConnectTarget in a token-less build = %q (auth %q), want the no-auth fallback", tgt.Name, tgt.AuthRef)
+	}
+}
 
 func TestSafeRegistry(t *testing.T) {
 	c := &Config{}

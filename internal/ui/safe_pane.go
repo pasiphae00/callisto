@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"image/color"
 	"math/big"
+	"os"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"fyne.io/fyne/v2"
@@ -460,7 +462,9 @@ func (p *safePane) refreshProposals(desc safe.Descriptor) {
 	sectionHead := func(s string) fyne.CanvasObject {
 		return widget.NewLabelWithStyle(s, fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
 	}
-	box := container.NewVBox()
+	importBtn := indentToText(container.NewHBox(
+		widget.NewButton("Import proposal / signatures…", func() { p.showImportProposal(desc) })))
+	box := container.NewVBox(importBtn, widget.NewSeparator())
 	if len(p.proposals) == 0 {
 		box.Add(widget.NewLabel("No proposals yet."))
 	} else {
@@ -906,6 +910,210 @@ func (p *safePane) reviewObjects(desc safe.Descriptor, prop safe.Proposal, rende
 	return objs
 }
 
+// --- distributed signing: export / import proposals + signatures ------------
+
+// ownerAddresses returns the Safe's current owner addresses.
+func ownerAddresses(desc safe.Descriptor) []common.Address {
+	out := make([]common.Address, 0, len(desc.Owners))
+	for _, o := range desc.Owners {
+		if a, err := address.Parse(o.Address); err == nil {
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
+// showExportProposal presents a shareable envelope (copy-paste text + save-to-file)
+// for a proposal, so a co-owner on another machine can import, review, and sign it.
+// The envelope carries the transaction details and any signatures collected so far —
+// no keys or secrets.
+func (p *safePane) showExportProposal(desc safe.Descriptor, prop safe.Proposal) {
+	env := safe.ExportEnvelope(prop)
+	text, err := env.EncodeText()
+	if err != nil {
+		dialog.ShowError(err, p.app.window)
+		return
+	}
+
+	info := widget.NewLabel("Send this to a co-owner. They import it in Callisto, review, sign as an owner, then send a signature envelope back to you. It contains the transaction details and the signatures collected so far — no keys or secrets.")
+	info.Wrapping = fyne.TextWrapWord
+	blob := widget.NewMultiLineEntry()
+	blob.SetText(text)
+	blob.Wrapping = fyne.TextWrapBreak
+
+	copyBtn := widget.NewButton("Copy", func() { p.app.fyneApp.Clipboard().SetContent(text) })
+	actions := container.NewHBox(copyBtn)
+	if nativeDialogsAvailable() {
+		actions.Add(widget.NewButton("Save to file…", func() {
+			path, perr := nativeSavePath("Save proposal envelope", fmt.Sprintf("safe-proposal-nonce-%d.json", prop.SafeNonce))
+			if perr != nil {
+				return // cancelled
+			}
+			jsonBytes, jerr := env.EncodeJSON()
+			if jerr != nil {
+				dialog.ShowError(jerr, p.app.window)
+				return
+			}
+			if werr := os.WriteFile(path, jsonBytes, 0o600); werr != nil {
+				dialog.ShowError(werr, p.app.window)
+				return
+			}
+			dialog.ShowInformation("Saved", "Proposal envelope written to:\n"+path, p.app.window)
+		}))
+	}
+
+	content := container.NewBorder(info, actions, nil, nil, container.NewVScroll(blob))
+	d := dialog.NewCustom("Export proposal", "Close", content, p.app.window)
+	d.Resize(fyne.NewSize(660, 480))
+	d.Show()
+}
+
+// showImportProposal prompts for an envelope (paste or file) and imports it.
+func (p *safePane) showImportProposal(desc safe.Descriptor) {
+	entry := widget.NewMultiLineEntry()
+	entry.SetPlaceHolder("Paste a proposal or signature envelope here…")
+	entry.Wrapping = fyne.TextWrapBreak
+
+	info := widget.NewLabel("Paste an envelope shared by a co-owner, or load it from a file. Callisto recomputes the safeTxHash from the details and verifies every signature against this Safe's current owners before accepting anything.")
+	info.Wrapping = fyne.TextWrapWord
+	top := container.NewVBox(info)
+	if nativeDialogsAvailable() {
+		top.Add(widget.NewButton("Load from file…", func() {
+			path, perr := nativeOpenPath("Open proposal envelope")
+			if perr != nil {
+				return // cancelled
+			}
+			data, rerr := os.ReadFile(path)
+			if rerr != nil {
+				dialog.ShowError(rerr, p.app.window)
+				return
+			}
+			entry.SetText(string(data))
+		}))
+	}
+
+	content := container.NewBorder(top, nil, nil, nil, container.NewVScroll(entry))
+	d := dialog.NewCustomConfirm("Import proposal / signatures", "Import", "Cancel", content,
+		func(ok bool) {
+			if ok {
+				p.doImportEnvelope(desc, entry.Text)
+			}
+		}, p.app.window)
+	d.Resize(fyne.NewSize(660, 480))
+	d.Show()
+}
+
+// doImportEnvelope decodes an envelope, recomputes the safeTxHash from its fields,
+// verifies every signature against the Safe's current owners, and merges the result
+// into a matching local proposal (or creates one). Nothing from the envelope is
+// trusted: the hash is re-derived and each signer re-recovered.
+func (p *safePane) doImportEnvelope(desc safe.Descriptor, raw string) {
+	if strings.TrimSpace(raw) == "" {
+		return
+	}
+	env, err := safe.DecodeEnvelope([]byte(raw))
+	if err != nil {
+		dialog.ShowError(err, p.app.window)
+		return
+	}
+	if !addrEqual(env.SafeAddr(), desc.Address) {
+		dialog.ShowError(fmt.Errorf("this envelope is for a different Safe (%s)", address.Short(env.SafeAddr())), p.app.window)
+		return
+	}
+	if env.ChainID != desc.ChainID {
+		dialog.ShowError(fmt.Errorf("this envelope is for chain %d, but the Safe is on chain %d", env.ChainID, desc.ChainID), p.app.window)
+		return
+	}
+	tx, err := env.SafeTx()
+	if err != nil {
+		dialog.ShowError(err, p.app.window)
+		return
+	}
+	safeAddr, err := address.Parse(desc.Address)
+	if err != nil {
+		dialog.ShowError(err, p.app.window)
+		return
+	}
+
+	// Authoritative safeTxHash: on-chain when connected (exactly what owners signed),
+	// local EIP-712 otherwise.
+	var hash common.Hash
+	if conn, ok := p.app.rpc.Active(); ok {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		if h, herr := tx.OnChainHash(ctx, conn.Client, safeAddr); herr == nil {
+			hash = h
+		}
+		cancel()
+	}
+	if (hash == common.Hash{}) {
+		hash = tx.LocalHash(new(big.Int).SetUint64(desc.ChainID), safeAddr)
+	}
+
+	valid, rejected := env.Verify(hash, ownerAddresses(desc))
+	p.mergeImported(desc, env, hash, valid, rejected)
+}
+
+// mergeImported folds verified signatures into an existing local proposal with the
+// same safeTxHash, or inserts a new one, then reports what was accepted.
+func (p *safePane) mergeImported(desc safe.Descriptor, env safe.Envelope, hash common.Hash, valid []safe.Signature, rejected int) {
+	if p.app.safeProposals == nil {
+		dialog.ShowError(fmt.Errorf("proposal store unavailable"), p.app.window)
+		return
+	}
+
+	var target int64
+	existingSigners := map[common.Address]bool{}
+	for _, pr := range p.proposals {
+		if pr.SafeTxHash == hash {
+			target = pr.ID
+			for _, s := range pr.Signatures {
+				existingSigners[s.Signer] = true
+			}
+			break
+		}
+	}
+	newProposal := target == 0
+	if newProposal {
+		prop, perr := env.Proposal(hash, nil)
+		if perr != nil {
+			dialog.ShowError(perr, p.app.window)
+			return
+		}
+		id, ierr := p.app.safeProposals.Insert(prop)
+		if ierr != nil {
+			dialog.ShowError(ierr, p.app.window)
+			return
+		}
+		target = id
+	}
+
+	added := 0
+	for _, s := range valid {
+		if !existingSigners[s.Signer] {
+			added++
+		}
+		_ = p.app.safeProposals.AddSignature(target, s.Signer, s.Sig)
+	}
+	p.maybeMarkReady(target, desc.Threshold)
+	p.refreshProposals(desc)
+
+	msg := fmt.Sprintf("Nonce %d · %s\n\n", env.SafeNonce, env.Description)
+	if newProposal {
+		msg += "Imported as a new proposal.\n"
+	} else {
+		msg += "Merged into the existing proposal.\n"
+	}
+	msg += fmt.Sprintf("%d owner signature(s) accepted", len(valid))
+	if added != len(valid) {
+		msg += fmt.Sprintf(" (%d new)", added)
+	}
+	msg += "."
+	if rejected > 0 {
+		msg += fmt.Sprintf("\n%d signature(s) rejected — not a current owner, duplicate, or malformed.", rejected)
+	}
+	dialog.ShowInformation("Import complete", msg, p.app.window)
+}
+
 // reviewButtons builds the action row for a proposal's current state:
 //   - below threshold, with a matching owner unlocked → Sign; and, when that
 //     signature would be the final one, also Sign & execute (bundle the last
@@ -943,6 +1151,7 @@ func (p *safePane) reviewButtons(desc safe.Descriptor, prop safe.Proposal, rende
 			buttons.Add(widget.NewButton("Reject…", func() { p.rejectProposal(desc, prop) }))
 		}
 	}
+	buttons.Add(widget.NewButton("Export…", func() { p.showExportProposal(desc, prop) }))
 	buttons.Add(widget.NewButton("Refresh", render))
 	return buttons
 }

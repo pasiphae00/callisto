@@ -98,6 +98,12 @@ mac-arch: tools
 	rm -rf $(DIST)/.build-$(ARCH)
 	@# strip any quarantine xattr so a locally built app opens cleanly.
 	-xattr -cr $(DIST)/$(APP).app
+	@# Ad-hoc code-sign (identity "-"): no Developer ID needed, but it gives the
+	@# bundle a valid signature so a downloaded (quarantined) copy shows the normal
+	@# "unidentified developer" prompt instead of the scary "damaged" error on Apple
+	@# silicon. Full Developer-ID signing + notarization is the real fix (roadmap).
+	@# Must be the last step that touches the bundle, before zipping.
+	codesign --force --deep --sign - $(DIST)/$(APP).app
 	cd $(DIST) && rm -f $(APP)-v$(VERSION)-darwin-$(ARCH).zip && \
 		ditto -c -k --sequesterRsrc --keepParent $(APP).app $(APP)-v$(VERSION)-darwin-$(ARCH).zip
 	@echo "built $(DIST)/$(APP)-v$(VERSION)-darwin-$(ARCH).zip"

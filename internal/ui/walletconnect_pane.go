@@ -72,7 +72,8 @@ func (p *walletConnectPane) build() fyne.CanvasObject {
 	p.sessionsBox = container.NewVBox()
 
 	header := widget.NewLabelWithStyle("WalletConnect", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
-	help := widget.NewLabel("On a dApp (e.g. Uniswap) choose Connect, then WalletConnect, then Copy link. Paste it below and Connect, then Approve the session.\n\nThe dApp's requests then appear here to review and sign; the active wallet in the Wallets tab is the one used.")
+	help := widget.NewLabel("On a web3 application, choose Connect with WalletConnect, then Copy the link and paste it below. Press Connect, then Approve the session.\n\nThe app's requests appear here to review and sign; the active wallet in the Wallets tab is the one used.")
+
 	help.Wrapping = fyne.TextWrapWord
 
 	top := container.NewVBox(

@@ -1341,7 +1341,7 @@ func (p *safePane) executeProposal(desc safe.Descriptor, prop safe.Proposal, aft
 			p.finishProposalError(prop.ID, berr.Error())
 			return
 		}
-		p.recordExecHistory(prop, info, from, hash.Hex())
+		recID := p.recordExecHistory(prop, info, from, hash.Hex())
 		if p.app.safeProposals != nil {
 			_ = p.app.safeProposals.SetStatus(prop.ID, safe.StatusExecuted, hash.Hex(), "")
 			if prop.Kind == safe.KindReject {
@@ -1357,12 +1357,15 @@ func (p *safePane) executeProposal(desc safe.Descriptor, prop safe.Proposal, aft
 				after()
 			}
 		})
-		go p.trackExecInclusion(desc, prop, hash, info)
+		go p.trackExecInclusion(desc, prop, recID, hash, info)
 	}()
 }
 
-// trackExecInclusion waits for the execution receipt and reflects the outcome.
-func (p *safePane) trackExecInclusion(desc safe.Descriptor, prop safe.Proposal, hash common.Hash, info chain.Info) {
+// trackExecInclusion waits for the execution receipt and reflects the outcome: it
+// marks the history record included/failed, updates the proposal on a revert, and
+// pops a result dialog (matching the Send flow) so the user gets clear confirmation
+// that the execution landed — the "Execution submitted" dialog itself is static.
+func (p *safePane) trackExecInclusion(desc safe.Descriptor, prop safe.Proposal, recID int64, hash common.Hash, info chain.Info) {
 	conn, ok := p.app.rpc.Active()
 	if !ok {
 		return
@@ -1375,18 +1378,56 @@ func (p *safePane) trackExecInclusion(desc safe.Descriptor, prop safe.Proposal, 
 		return
 	}
 	success := tx.Succeeded(receipt)
+	blockNum := receipt.BlockNumber.Int64()
+
+	var blockTime int64
+	if head, herr := conn.Client.HeaderByNumber(ctx, receipt.BlockNumber); herr == nil && head != nil {
+		blockTime = int64(head.Time)
+	}
+	if p.app.history != nil && recID != 0 {
+		_ = p.app.history.MarkIncluded(recID, blockNum, blockTime, success)
+	}
 	if p.app.safeProposals != nil && !success {
 		_ = p.app.safeProposals.SetStatus(prop.ID, safe.StatusFailed, hash.Hex(), "execution reverted")
 	}
+
 	fyne.Do(func() {
 		outcome := "succeeded"
 		if !success {
 			outcome = "reverted"
 		}
-		p.status.SetText(fmt.Sprintf("Execution %s in block %d", outcome, receipt.BlockNumber.Int64()))
+		p.status.SetText(fmt.Sprintf("Execution %s in block %d", outcome, blockNum))
 		p.refreshProposals(desc)
 		p.notifyHistory()
+		p.showExecInclusionResult(hash.Hex(), blockNum, blockTime, success, info)
 	})
+}
+
+// showExecInclusionResult reports the mined outcome of a Safe execution.
+func (p *safePane) showExecInclusionResult(hash string, block, blockTime int64, success bool, info chain.Info) {
+	title := "Safe execution included"
+	status := "success ✓"
+	if !success {
+		title = "Safe execution reverted"
+		status = "failed ✗"
+	}
+	rows := [][2]string{
+		{"Execution:", status},
+		{"Block:", fmt.Sprintf("%d", block)},
+	}
+	if blockTime > 0 {
+		rows = append(rows, [2]string{"Time:", time.Unix(blockTime, 0).Local().Format(time.RFC1123)})
+	}
+	grid := container.New(layout.NewFormLayout())
+	for _, r := range rows {
+		grid.Add(widget.NewLabel(r[0]))
+		grid.Add(monoLabel(r[1]))
+	}
+	body := container.NewVBox(grid)
+	if link := info.TxURL(hash); link != "" {
+		body.Add(widget.NewButton("View on explorer", func() { p.app.openURL(link) }))
+	}
+	dialog.ShowCustom(title, "Close", body, p.app.window)
 }
 
 // rejectProposal creates a rejection proposal at the same Safe nonce.
@@ -1454,9 +1495,11 @@ func (p *safePane) showExecResult(hash string, info chain.Info) {
 	dialog.ShowCustom("Safe execution", "Close", body, p.app.window)
 }
 
-func (p *safePane) recordExecHistory(prop safe.Proposal, info chain.Info, from common.Address, hash string) {
+// recordExecHistory inserts a history record for a Safe execution and returns its
+// id (0 if history is unavailable) so trackExecInclusion can mark it included.
+func (p *safePane) recordExecHistory(prop safe.Proposal, info chain.Info, from common.Address, hash string) int64 {
 	if p.app.history == nil {
-		return
+		return 0
 	}
 	rec := history.Record{
 		ChainID:       info.ID,
@@ -1468,9 +1511,12 @@ func (p *safePane) recordExecHistory(prop safe.Proposal, info chain.Info, from c
 		TxHash:        hash,
 		Status:        history.StatusSubmitted,
 	}
-	if id, err := p.app.history.Insert(rec); err == nil {
-		_ = p.app.history.MarkSubmitted(id, hash)
+	id, err := p.app.history.Insert(rec)
+	if err != nil {
+		return 0
 	}
+	_ = p.app.history.MarkSubmitted(id, hash)
+	return id
 }
 
 func (p *safePane) finishProposalError(proposalID int64, msg string) {

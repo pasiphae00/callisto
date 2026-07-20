@@ -58,13 +58,26 @@ func (in Inputs) amount(key string) (*big.Int, error) {
 // ReviewRow is one decoded line for the pre-sign review (contract, function, params).
 type ReviewRow struct{ Key, Value string }
 
+// Approval is an ERC-20 allowance an action needs before it can run: Spender must be
+// allowed to move at least Amount of Token from the acting account. The pipeline
+// checks the live allowance and, if short, prepends an approve — for an EOA a
+// preceding transaction, for a Safe batched with the action in one MultiSend proposal
+// — so the user never has to approve separately.
+type Approval struct {
+	Token   common.Address
+	Spender common.Address
+	Amount  *big.Int
+}
+
 // Prepared is an action's output: the concrete call plus a human-readable review.
 type Prepared struct {
 	Call    tx.Call
 	Summary string // one line, e.g. "Wrap 10 ETH -> WETH"
 	Review  []ReviewRow
-	// Note, when set, is a caveat shown prominently in the review (e.g. a required
-	// token approval, or that a withdrawal is claimed later).
+	// Approvals the action needs before its call will succeed (handled by the pipeline).
+	Approvals []Approval
+	// Note, when set, is a caveat shown prominently in the review (e.g. that a
+	// withdrawal is claimed later).
 	Note string
 }
 
@@ -250,9 +263,10 @@ var registry = []Action{
 				return Prepared{}, err
 			}
 			return Prepared{
-				Call:    tx.Call{To: to, Value: big.NewInt(0), Data: data},
-				Summary: fmt.Sprintf("Request Lido withdrawal of %s stETH", eth18(amt)),
-				Note:    "Requires a prior stETH approval to the Lido Withdrawal Queue. Creates a withdrawal request; claim the ETH later once processed.",
+				Call:      tx.Call{To: to, Value: big.NewInt(0), Data: data},
+				Summary:   fmt.Sprintf("Request Lido withdrawal of %s stETH", eth18(amt)),
+				Approvals: []Approval{{Token: stethMainnet, Spender: to, Amount: amt}},
+				Note:      "Creates a withdrawal request; claim the ETH later once processed.",
 				Review: []ReviewRow{
 					{"Action", "Request Lido withdrawal (stETH -> ETH)"},
 					{"Contract", "Lido Withdrawal Queue · " + to.Hex()},
@@ -280,9 +294,9 @@ var registry = []Action{
 				return Prepared{}, err
 			}
 			return Prepared{
-				Call:    tx.Call{To: to, Value: big.NewInt(0), Data: data},
-				Summary: fmt.Sprintf("Wrap %s stETH -> wstETH", eth18(amt)),
-				Note:    "Requires a prior stETH approval to the wstETH contract.",
+				Call:      tx.Call{To: to, Value: big.NewInt(0), Data: data},
+				Summary:   fmt.Sprintf("Wrap %s stETH -> wstETH", eth18(amt)),
+				Approvals: []Approval{{Token: stethMainnet, Spender: to, Amount: amt}},
 				Review: []ReviewRow{
 					{"Action", "Wrap stETH to wstETH"},
 					{"Contract", "wstETH · " + to.Hex()},

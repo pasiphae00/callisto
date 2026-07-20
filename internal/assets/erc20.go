@@ -22,7 +22,9 @@ var (
       {"name":"balanceOf","type":"function","stateMutability":"view","inputs":[{"name":"","type":"address"}],"outputs":[{"name":"","type":"uint256"}]},
       {"name":"decimals","type":"function","stateMutability":"view","inputs":[],"outputs":[{"name":"","type":"uint8"}]},
       {"name":"symbol","type":"function","stateMutability":"view","inputs":[],"outputs":[{"name":"","type":"string"}]},
-      {"name":"name","type":"function","stateMutability":"view","inputs":[],"outputs":[{"name":"","type":"string"}]}
+      {"name":"name","type":"function","stateMutability":"view","inputs":[],"outputs":[{"name":"","type":"string"}]},
+      {"name":"allowance","type":"function","stateMutability":"view","inputs":[{"name":"owner","type":"address"},{"name":"spender","type":"address"}],"outputs":[{"name":"","type":"uint256"}]},
+      {"name":"approve","type":"function","stateMutability":"nonpayable","inputs":[{"name":"spender","type":"address"},{"name":"amount","type":"uint256"}],"outputs":[{"name":"","type":"bool"}]}
     ]`)
 	erc20BytesABI = mustABI(`[
       {"name":"symbol","type":"function","stateMutability":"view","inputs":[],"outputs":[{"name":"","type":"bytes32"}]},
@@ -69,6 +71,24 @@ func BalanceOf(ctx context.Context, client rpc.Client, token, account common.Add
 		return nil, fmt.Errorf("decode balanceOf: %w", err)
 	}
 	return bal, nil
+}
+
+// Allowance returns how much of token owner has approved spender to move.
+func Allowance(ctx context.Context, client rpc.Client, token, owner, spender common.Address) (*big.Int, error) {
+	out, err := callView(ctx, client, token, erc20ABI, "allowance", owner, spender)
+	if err != nil {
+		return nil, err
+	}
+	var v *big.Int
+	if err := erc20ABI.UnpackIntoInterface(&v, "allowance", out); err != nil {
+		return nil, fmt.Errorf("decode allowance: %w", err)
+	}
+	return v, nil
+}
+
+// EncodeApprove builds approve(spender, amount) calldata for an ERC-20 token.
+func EncodeApprove(spender common.Address, amount *big.Int) ([]byte, error) {
+	return erc20ABI.Pack("approve", spender, amount)
 }
 
 // Metadata reads name, symbol, and decimals for a token, tolerating tokens that

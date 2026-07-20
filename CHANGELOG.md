@@ -9,6 +9,8 @@ changes; `v1.0.0` marks the first stable, documented release.
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-07-20
+
 ### Added
 - **Switch chain — one-click networks with bundled default RPCs.** Settings now has a
   **Switch chain…** picker covering Ethereum plus **Base, Arbitrum One, Optimism,

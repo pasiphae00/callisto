@@ -254,7 +254,18 @@ func (p *walletConnectPane) describeRequest(req walletconnect.Request) (title st
 			[2]string{"Value", assets.FormatUnits(tp.Value, 18) + " ETH"},
 			[2]string{"Data", shortHex(tp.Data)},
 		)
-		return "Transaction request", formGrid(rows), true
+		// Decode known high-risk calls (token approvals/transfers) so an "approve
+		// unlimited to attacker" hidden in the calldata is visible, not opaque hex.
+		body := fyne.CanvasObject(formGrid(rows))
+		if summary, warn, ok := decodeDangerousCall(tp.Data); ok {
+			box := cautionBox("This call does: " + summary)
+			if warn {
+				box = dangerBox("⚠ Token approval — read carefully:\n" + summary +
+					"\n\nApproving lets the spender move your tokens. Only approve contracts you trust, and prefer a specific amount over UNLIMITED.")
+			}
+			body = container.NewVBox(formGrid(rows), box)
+		}
+		return "Transaction request", body, true
 
 	case walletconnect.MethodPersonalSign, walletconnect.MethodSign:
 		msg, addr, err := walletconnect.DecodePersonalSign(req.Params)

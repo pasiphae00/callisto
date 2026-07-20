@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math/big"
+	"strings"
 	"time"
 
 	"fyne.io/fyne/v2"
@@ -16,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 
 	"codeberg.org/pasiphae/callisto/internal/actions"
+	"codeberg.org/pasiphae/callisto/internal/ai"
 	"codeberg.org/pasiphae/callisto/internal/address"
 	"codeberg.org/pasiphae/callisto/internal/assets"
 	"codeberg.org/pasiphae/callisto/internal/chain"
@@ -41,12 +43,14 @@ type prepareTarget struct {
 type preparePane struct {
 	app *App
 
-	fromSel    *widget.Select
-	actionSel  *widget.Select
-	fieldsBox  *fyne.Container
-	entries    map[string]*widget.Entry
-	prepareBtn *widget.Button
-	status     *widget.Label
+	nlEntry      *widget.Entry
+	interpretBtn *widget.Button
+	fromSel      *widget.Select
+	actionSel    *widget.Select
+	fieldsBox    *fyne.Container
+	entries      map[string]*widget.Entry
+	prepareBtn   *widget.Button
+	status       *widget.Label
 
 	acts    []actions.Action
 	current *actions.Action
@@ -71,14 +75,21 @@ func (p *preparePane) build() fyne.CanvasObject {
 	p.prepareBtn.Disable()
 
 	header := widget.NewLabelWithStyle("Prepare", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
-	help := widget.NewLabel("Prepare a transaction from a known action (e.g. wrap ETH, stake with Lido). Callisto builds and decodes the call for you to review before signing. Natural-language requests (optional, AI-assisted) come later.")
+	help := widget.NewLabel("Prepare a transaction from a known action (e.g. wrap ETH, stake with Lido). Callisto builds and decodes the call for you to review before signing. With AI enabled (Settings → AI features), you can also describe what you want in plain language.")
 	help.Wrapping = fyne.TextWrapWord
+
+	p.nlEntry = widget.NewEntry()
+	p.nlEntry.SetPlaceHolder(`Describe what you want — e.g. "stake 5 ETH with Lido" (needs AI enabled in Settings)`)
+	p.nlEntry.OnSubmitted = func(string) { p.interpret() }
+	p.interpretBtn = widget.NewButton("Interpret with AI", p.interpret)
+	nlRow := container.NewBorder(nil, nil, nil, p.interpretBtn, p.nlEntry)
 
 	// Reload the action list when the connection changes (actions are chain-scoped).
 	p.app.rpc.OnNewHead(func(*types.Header) { fyne.Do(p.reloadActions) })
 
 	top := container.NewVBox(
 		header, help,
+		nlRow,
 		container.New(layout.NewFormLayout(),
 			widget.NewLabelWithStyle("From", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}), p.fromSel,
 			widget.NewLabelWithStyle("Action", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}), p.actionSel),
@@ -88,6 +99,79 @@ func (p *preparePane) build() fyne.CanvasObject {
 	)
 	p.reloadActions()
 	return container.NewVScroll(top)
+}
+
+// interpret sends the natural-language intent to the AI resolver, which maps it to a
+// registry action + params. On success the action/fields are populated for the user
+// to review and Prepare — Claude never bypasses the deterministic build/review/sign.
+func (p *preparePane) interpret() {
+	if !p.app.cfg.AIReady() {
+		dialog.ShowInformation("AI not enabled",
+			"Enable AI-assisted preparation and set your Anthropic API key in Settings → AI features.", p.app.window)
+		return
+	}
+	intent := strings.TrimSpace(p.nlEntry.Text)
+	if intent == "" {
+		return
+	}
+	conn, ok := p.app.rpc.Active()
+	if !ok {
+		dialog.ShowError(fmt.Errorf("connect an RPC endpoint first"), p.app.window)
+		return
+	}
+	chainID := conn.ChainID.Uint64()
+	chainName := conn.ChainInfo.Name
+
+	acts := actions.All(chainID)
+	aiActs := make([]ai.Action, len(acts))
+	for i, a := range acts {
+		fields := make([]ai.Field, len(a.Fields))
+		for j, f := range a.Fields {
+			fields[j] = ai.Field{Key: f.Key, Label: f.Label, Hint: f.Hint}
+		}
+		aiActs[i] = ai.Action{ID: a.ID, Name: a.Name, Desc: a.Description, Fields: fields}
+	}
+
+	client := ai.NewClient(p.app.cfg.AI.APIKey)
+	p.interpretBtn.Disable()
+	p.status.SetText("Interpreting…")
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		res, err := client.Resolve(ctx, intent, chainName, aiActs)
+		fyne.Do(func() {
+			p.interpretBtn.Enable()
+			if err != nil {
+				p.status.SetText("Ready")
+				dialog.ShowError(fmt.Errorf("AI request failed: %w", err), p.app.window)
+				return
+			}
+			if !res.OK {
+				p.status.SetText("Ready")
+				dialog.ShowInformation("Couldn't prepare that", res.Reason, p.app.window)
+				return
+			}
+			p.applyResolution(res)
+		})
+	}()
+}
+
+// applyResolution selects the resolved action and fills its fields, leaving the user
+// to review and Prepare.
+func (p *preparePane) applyResolution(res ai.Resolution) {
+	a, ok := actions.ByID(res.ActionID)
+	if !ok {
+		dialog.ShowError(fmt.Errorf("unknown action: %s", res.ActionID), p.app.window)
+		return
+	}
+	p.actionSel.SetSelected(a.Name) // fires onActionSelected → (re)builds the fields
+	p.onActionSelected()            // ensure fields are built even if selection was unchanged
+	for k, v := range res.Params {
+		if e, ok := p.entries[k]; ok {
+			e.SetText(v)
+		}
+	}
+	p.status.SetText("Interpreted — review the filled form, then Prepare.")
 }
 
 // reloadActions repopulates the action dropdown for the connected chain.

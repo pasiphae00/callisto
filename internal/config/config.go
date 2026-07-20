@@ -15,6 +15,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/ethereum/go-ethereum/common"
 
@@ -104,6 +105,25 @@ type Config struct {
 	// derived key is held in the OS keychain, never here). Per keystore, so all
 	// accounts sharing it are covered.
 	TouchIDKeystores []string `json:"touch_id_keystores,omitempty"`
+	// AI holds the optional, default-off Claude integration settings.
+	AI AISettings `json:"ai"`
+}
+
+// AISettings controls the optional Claude-assisted transaction preparation. Off by
+// default; nothing is sent to Anthropic unless Enabled is true and a key is set.
+type AISettings struct {
+	// Enabled turns AI-assisted preparation on. When false, no AI client is ever
+	// constructed and the API key is never read (cold path).
+	Enabled bool `json:"enabled"`
+	// APIKey is the user's Anthropic API key (bring-your-own). Stored in this 0600
+	// config; delete it to fully remove it. It is a billing credential, not wallet
+	// material.
+	APIKey string `json:"api_key,omitempty"`
+}
+
+// AIReady reports whether AI-assisted preparation is enabled and has a key.
+func (c *Config) AIReady() bool {
+	return c.AI.Enabled && strings.TrimSpace(c.AI.APIKey) != ""
 }
 
 // SecuritySettings controls when an unlocked hot wallet is automatically locked.

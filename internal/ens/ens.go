@@ -21,6 +21,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 
 	"codeberg.org/pasiphae/callisto/internal/rpc"
+	"codeberg.org/pasiphae/callisto/internal/textsafe"
 )
 
 // ErrNotFound means the name/address has no (verified) ENS record.
@@ -118,12 +119,14 @@ func (r *Resolver) ReverseResolve(ctx context.Context, addr common.Address) (str
 		return "", ErrNotFound
 	}
 
-	// Forward-verify: the primary name must resolve back to this address.
+	// Forward-verify with the raw name (namehash must use the exact record), then
+	// sanitize only the value we return for display — strips bidi/zero-width/control
+	// characters a spoofing name could carry.
 	fwd, err := r.Resolve(ctx, name)
 	if err != nil || fwd != addr {
 		return "", ErrNotFound
 	}
-	return name, nil
+	return textsafe.Display(name), nil
 }
 
 // resolverOf returns the resolver contract for a node, or ErrNotFound if none.

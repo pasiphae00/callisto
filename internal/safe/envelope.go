@@ -11,6 +11,8 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
+
+	"codeberg.org/pasiphae/callisto/internal/textsafe"
 )
 
 // EnvelopeVersion is the portable-proposal format version.
@@ -112,6 +114,9 @@ func DecodeEnvelope(raw []byte) (Envelope, error) {
 	if e.Version != EnvelopeVersion {
 		return Envelope{}, fmt.Errorf("safe: unsupported envelope version %d (need %d)", e.Version, EnvelopeVersion)
 	}
+	// The description comes from whoever built the envelope (another machine) — sanitize
+	// it before it can reach a dialog or the history record.
+	e.Description = textsafe.Display(e.Description)
 	return e, nil
 }
 

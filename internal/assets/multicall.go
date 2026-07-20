@@ -7,6 +7,8 @@ import (
 
 	ethereum "github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
+
+	"codeberg.org/pasiphae/callisto/internal/textsafe"
 )
 
 // multicall3 is the canonical Multicall3 deployment, at the same address on every
@@ -158,8 +160,8 @@ func (s *Service) batchMetadata(ctx context.Context, tokens []common.Address) (m
 		}
 		out[token] = erc20Metadata{
 			Decimals: decimals,
-			Symbol:   decodeStringOrBytes32(sym),
-			Name:     decodeStringOrBytes32(nam),
+			Symbol:   textsafe.Display(decodeStringOrBytes32(sym)),
+			Name:     textsafe.Display(decodeStringOrBytes32(nam)),
 		}
 	}
 	return out, true

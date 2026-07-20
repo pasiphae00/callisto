@@ -11,6 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 
 	"codeberg.org/pasiphae/callisto/internal/rpc"
+	"codeberg.org/pasiphae/callisto/internal/textsafe"
 )
 
 // Two ABIs: the standard one with string-typed name/symbol, and a fallback with
@@ -105,8 +106,10 @@ func Metadata(ctx context.Context, client rpc.Client, token common.Address) (erc
 		return m, fmt.Errorf("decode decimals: %w", err)
 	}
 
-	m.Symbol = readStringOrBytes32(ctx, client, token, "symbol")
-	m.Name = readStringOrBytes32(ctx, client, token, "name")
+	// Sanitize the on-chain (attacker-controllable) name/symbol before they reach any
+	// display — strips bidi overrides, zero-width, and control characters used to spoof.
+	m.Symbol = textsafe.Display(readStringOrBytes32(ctx, client, token, "symbol"))
+	m.Name = textsafe.Display(readStringOrBytes32(ctx, client, token, "name"))
 	return m, nil
 }
 

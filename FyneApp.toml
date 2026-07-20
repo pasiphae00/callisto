@@ -1,8 +1,3 @@
-# Metadata for `fyne package` (see the Makefile). Version/Build are overridden by
-# the Makefile at package time (--appVersion from internal/buildinfo, --appBuild),
-# so the values here are only a fallback for a bare `fyne package` invocation.
-# Note: `fyne package` rewrites this file (bumps Build, drops comments) on each run;
-# that churn doesn't need to be committed.
 Website = "https://callisto.pasiphae.io"
 
 [Details]
@@ -10,4 +5,4 @@ Website = "https://callisto.pasiphae.io"
   Name = "Callisto"
   ID = "io.pasiphae.callisto"
   Version = "0.12.0"
-  Build = 1
+  Build = 3

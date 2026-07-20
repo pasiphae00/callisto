@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"sync"
 	"time"
+
+	"codeberg.org/pasiphae/callisto/internal/textsafe"
 )
 
 // sessionTTL is how long a settled session is advertised as valid (7 days, the
@@ -277,10 +279,17 @@ func (c *Client) handlePropose(topic string, msg rpcRequest) {
 	if err := json.Unmarshal(msg.Params, &p); err != nil {
 		return
 	}
+	// The proposer metadata is dApp-controlled; sanitize the human-facing fields at
+	// ingestion so every place they're shown (and the Session.Peer copied from here) is
+	// free of bidi/zero-width/control spoofing characters.
+	md := p.Proposer.Metadata
+	md.Name = textsafe.Display(md.Name)
+	md.URL = textsafe.Display(md.URL)
+	md.Description = textsafe.Display(md.Description)
 	prop := &Proposal{
 		ID:                 msg.ID,
 		PairingTopic:       topic,
-		Proposer:           p.Proposer.Metadata,
+		Proposer:           md,
 		ProposerPubKey:     p.Proposer.PublicKey,
 		RequiredNamespaces: p.RequiredNamespaces,
 		OptionalNamespaces: p.OptionalNamespaces,

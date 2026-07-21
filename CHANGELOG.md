@@ -9,6 +9,11 @@ changes; `v1.0.0` marks the first stable, documented release.
 
 ## [Unreleased]
 
+## [0.12.2] - 2026-07-21
+
+Small UI fixes, and macOS builds are now **Apple-notarized** — they open with no
+Gatekeeper prompt (the right-click → Open / `xattr` step is no longer needed).
+
 ### Changed
 - **Copy a Safe's address** from the Safe → Overview tab (a Copy button next to the
   address, matching the wallet detail view).

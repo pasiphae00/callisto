@@ -187,8 +187,7 @@ changelog. Paste this and replace `X.Y.Z` and the summary.
 
 **macOS** — download `Callisto-vX.Y.Z-darwin-arm64.zip` (Apple silicon) or
 `-darwin-amd64.zip` (Intel), unzip, and move **Callisto.app** to /Applications.
-First launch: right-click → **Open** (once), or
-`xattr -dr com.apple.quarantine /Applications/Callisto.app`.
+(Notarized by Apple — opens with no Gatekeeper prompt.)
 
 **Linux** — download `Callisto-vX.Y.Z-linux-amd64.tar.gz` and extract.
 

@@ -13,7 +13,7 @@
   <a href="https://codeberg.org/pasiphae/callisto/src/branch/main/CHANGELOG.md">Changelog</a> ·
   <a href="https://codeberg.org/pasiphae/callisto/src/branch/main/DESIGN.md">Design</a> ·
   <a href="https://codeberg.org/pasiphae/callisto/src/branch/main/PRINCIPLES.md">Principles</a> ·
-  <a href="https://codeberg.org/pasiphae/callisto/src/branch/main/docs/RELEASING.md">Releasing</a> ·
+  <a href="https://codeberg.org/pasiphae/callisto/src/branch/main/RELEASING.md">Releasing</a> ·
   <a href="https://codeberg.org/pasiphae/callisto/src/branch/main/docs/security-review-2026-07.md">Security Review</a>
 </p>
 
@@ -31,7 +31,7 @@ It manages hot wallets, Trezor and Ledger hardware wallets, and Safe multi-signa
 
 _Screenshots [here](./FEATURES.md)._
 
-> **Status: pre-1.0 (`v0.12.1`).** Distributed as a native, self-updating desktop app (see [Download](https://codeberg.org/pasiphae/callisto/releases)). The features below are in place and usable; transaction simulation and multi-step Safe recipes are still planned — see [Roadmap](#roadmap).
+> **Status: pre-1.0 (`v0.12.2`).** Distributed as a native, self-updating desktop app (see [Download](https://codeberg.org/pasiphae/callisto/releases)). The features below are in place and usable; transaction simulation and multi-step Safe recipes are still planned — see [Roadmap](#roadmap).
 
 ## Features
 
@@ -69,7 +69,7 @@ Get the latest build from the **[releases page](https://codeberg.org/pasiphae/ca
 2. **(Recommended) verify it:** `shasum -a 256 -c SHA256SUMS`. `SHA256SUMS` is itself ed25519-signed (`SHA256SUMS.sig`) with the maintainer key — the same key Callisto's in-app updater checks.
 3. Unzip and, on macOS, move **`Callisto.app`** to **/Applications**.
 
-macOS builds aren't yet Apple-notarized, so the **first** launch needs one step: right-click the app → **Open** (once), or `xattr -dr com.apple.quarantine /Applications/Callisto.app`.
+macOS builds are **Developer ID signed and notarized by Apple**, so they open on first launch with no Gatekeeper prompt.
 
 **Linux** runs with near-complete feature parity — the same wallets, Safe, WalletConnect, and self-updater. Two differences: hardware wallets need the usual `udev` rules for non-root device access, and the Touch-ID/Keychain unlock is macOS-only (Linux uses the passphrase, which always works). Native OS keychain backends for Linux/Windows are on the roadmap.
 

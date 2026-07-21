@@ -49,18 +49,20 @@ Do these in order on `main` (replace `X.Y.Z` throughout). Steps 1–5 are one co
       and add a fresh empty `## [Unreleased]` above it.
 - [ ] 4. **`README.md`** — update the status line (`Status: pre-1.0 (vX.Y.Z)`) if the
       milestone/feature summary changed.
-- [ ] 5. **`RELEASING.md` / `TODO.md`** — update if the process or roadmap
-      changed. Commit steps 1–5: `git commit -m "release: vX.Y.Z"`.
+- [ ] 5. **`docs/release-notes/vX.Y.Z.md`** — add the release notes (fill the template
+      below); this is the canonical copy pasted into the Codeberg release.
+- [ ] 6. **`RELEASING.md` / `TODO.md`** — update if the process or roadmap
+      changed. Commit steps 1–6: `git commit -m "release: vX.Y.Z"`.
 
 **Verify:**
-- [ ] 6. `go build ./... && go vet ./... && go test ./...` all green (Test
+- [ ] 7. `go build ./... && go vet ./... && go test ./...` all green (Test
       `TestEmbeddedReleaseKeyConfigured` guards that a real signing key is embedded), and
       `go run golang.org/x/vuln/cmd/govulncheck@latest ./...` reports no reachable
       vulnerabilities.
 
 **Tag & push:**
-- [ ] 7. `git tag -a vX.Y.Z -m "Callisto vX.Y.Z — <one-line summary>"`
-- [ ] 8. `git push origin main --follow-tags`
+- [ ] 8. `git tag -a vX.Y.Z -m "Callisto vX.Y.Z — <one-line summary>"`
+- [ ] 9. `git push origin main --follow-tags`
 
 **Build, sign, publish artifacts** (see below): run `make release` on each target
 OS, collect `dist/`, then create the Codeberg release and upload every artifact. For
@@ -69,7 +71,7 @@ OS, collect `dist/`, then create the Codeberg release and upload every artifact.
 [docs/macos-signing.md](docs/macos-signing.md) for the one-time cert/notary setup.
 
 **Post-release:**
-- [ ] 9. Install the published build and confirm **Settings → Check for updates**
+- [ ] 10. Install the published build and confirm **Settings → Check for updates**
       reports up-to-date; on the *next* release, confirm it updates from the prior one.
 
 ### Publishing on Codeberg
@@ -176,7 +178,9 @@ right-click/`xattr` instructions from the release notes and README.
 
 Keep the release body short: a one/two-line summary, install + checksum steps, and a
 link to the version's `CHANGELOG.md` section for the details — don't paste the whole
-changelog. Paste this and replace `X.Y.Z` and the summary.
+changelog. Fill this out, save it as **`docs/release-notes/vX.Y.Z.md`** (the canonical
+copy — see [docs/release-notes/](docs/release-notes/)), and paste the same into the
+Codeberg release. Replace `X.Y.Z` and the summary.
 
 ```markdown
 ## Callisto `vX.Y.Z`

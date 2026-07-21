@@ -63,7 +63,10 @@ Do these in order on `main` (replace `X.Y.Z` throughout). Steps 1–5 are one co
 - [ ] 8. `git push origin main --follow-tags`
 
 **Build, sign, publish artifacts** (see below): run `make release` on each target
-OS, collect `dist/`, then create the Codeberg release and upload every artifact.
+OS, collect `dist/`, then create the Codeberg release and upload every artifact. For
+**notarized macOS** builds (no Gatekeeper prompt) pass your Developer ID identity —
+`make release CALLISTO_SIGN_ID="Developer ID Application: NAME (TEAMID)"` — see
+[docs/macos-signing.md](macos-signing.md) for the one-time cert/notary setup.
 
 **Post-release:**
 - [ ] 9. Install the published build and confirm **Settings → Check for updates**
@@ -159,11 +162,15 @@ wouldn't match the arch-specific lookup already shipped in released builds.)
 
 ### First-launch note for users (unsigned build)
 
-Callisto is not yet Apple-notarized, so the **first** launch of a browser-downloaded
-build is gated by Gatekeeper. Document for users: right-click the app → **Open**
-(once), or `xattr -dr com.apple.quarantine /Applications/Callisto.app`. In-app
-updates afterward are downloaded by Callisto itself (not a browser), so macOS does
-not quarantine them and they relaunch without a prompt.
+Applies only to **ad-hoc** builds (released without `CALLISTO_SIGN_ID`). Such a build's
+**first** browser-downloaded launch is gated by Gatekeeper. Document for users:
+right-click the app → **Open** (once), or `xattr -dr com.apple.quarantine
+/Applications/Callisto.app`. In-app updates afterward are downloaded by Callisto itself
+(not a browser), so macOS does not quarantine them and they relaunch without a prompt.
+
+For **notarized** builds (`make release CALLISTO_SIGN_ID=…`, see
+[docs/macos-signing.md](macos-signing.md)) this note does **not** apply — drop the
+right-click/`xattr` instructions from the release notes and README.
 
 ## Release message template
 

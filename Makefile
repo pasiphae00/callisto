@@ -37,6 +37,16 @@ FYNE_VER   := v2.8.0
 CALLISTO_RELEASE_KEY ?= $(HOME)/.callisto/release_ed25519.key
 PUBKEY     := internal/updater/release_pubkey.ed25519
 
+# macOS Developer ID signing + notarization (optional). Set CALLISTO_SIGN_ID to your
+# "Developer ID Application: NAME (TEAMID)" identity (see `security find-identity -v -p
+# codesigning`) to produce SIGNED, NOTARIZED, STAPLED release zips that launch with no
+# Gatekeeper prompt. Leave empty for ad-hoc dev builds (valid signature, but the
+# "unidentified developer" prompt still shows on a downloaded copy). Requires notary
+# credentials stored under CALLISTO_NOTARY_PROFILE (`xcrun notarytool store-credentials`).
+# Full setup + release flow: docs/macos-signing.md.
+CALLISTO_SIGN_ID ?=
+CALLISTO_NOTARY_PROFILE ?= callisto-notary
+
 # Ganymede default-RPC bearer token, injected (obfuscated) into builds from the
 # gitignored GANYMEDE_RPC_TOKEN.env. Absent file → empty → dev builds ship no token
 # and fall back to Flashbots. OBF_CMD emits the obfuscated token (or nothing); it's
@@ -98,12 +108,25 @@ mac-arch: tools
 	rm -rf $(DIST)/.build-$(ARCH)
 	@# strip any quarantine xattr so a locally built app opens cleanly.
 	-xattr -cr $(DIST)/$(APP).app
-	@# Ad-hoc code-sign (identity "-"): no Developer ID needed, but it gives the
-	@# bundle a valid signature so a downloaded (quarantined) copy shows the normal
-	@# "unidentified developer" prompt instead of the scary "damaged" error on Apple
-	@# silicon. Full Developer-ID signing + notarization is the real fix (roadmap).
-	@# Must be the last step that touches the bundle, before zipping.
-	codesign --force --deep --sign - $(DIST)/$(APP).app
+	@# Code-sign the bundle. This must be the last step that touches it, before zipping.
+	@# With CALLISTO_SIGN_ID set: real Developer ID signature (hardened runtime + secure
+	@# timestamp) -> notarize with Apple (--wait blocks ~1-5 min) -> staple the ticket, so
+	@# the download opens with no Gatekeeper prompt. stapler fails if notarization didn't
+	@# actually succeed, so a bad notarization aborts the build. Without it: ad-hoc sign,
+	@# which gives a valid signature (no "damaged" error on arm64) but still prompts on a
+	@# downloaded copy — fine for dev builds. See docs/macos-signing.md.
+	@if [ -n "$(CALLISTO_SIGN_ID)" ]; then \
+		echo "==> Developer ID sign + notarize + staple ($(ARCH))"; \
+		codesign --force --options runtime --timestamp --sign "$(CALLISTO_SIGN_ID)" $(DIST)/$(APP).app && \
+		codesign --verify --strict --verbose=2 $(DIST)/$(APP).app && \
+		ditto -c -k --keepParent $(DIST)/$(APP).app $(DIST)/.notarize-$(ARCH).zip && \
+		xcrun notarytool submit $(DIST)/.notarize-$(ARCH).zip --keychain-profile "$(CALLISTO_NOTARY_PROFILE)" --wait && \
+		xcrun stapler staple $(DIST)/$(APP).app && \
+		rm -f $(DIST)/.notarize-$(ARCH).zip; \
+	else \
+		echo "==> ad-hoc sign ($(ARCH); dev build — Gatekeeper prompt still shows on download)"; \
+		codesign --force --deep --sign - $(DIST)/$(APP).app; \
+	fi
 	cd $(DIST) && rm -f $(APP)-v$(VERSION)-darwin-$(ARCH).zip && \
 		ditto -c -k --sequesterRsrc --keepParent $(APP).app $(APP)-v$(VERSION)-darwin-$(ARCH).zip
 	@echo "built $(DIST)/$(APP)-v$(VERSION)-darwin-$(ARCH).zip"

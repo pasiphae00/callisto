@@ -1,10 +1,25 @@
 # Transaction simulation — design & plan
 
 Pre-sign simulation for the review step (`DESIGN.md`'s "simulate before signing"), for
-**both EOAs and Safe multisig**. Goal: before a user signs, tell them **(1) will it
-revert** (with the reason) and **(2) what changes** — ETH/token/NFT balance deltas and
-approvals granted — decoded into plain language, computed **in-house against the
-connected RPC** (no third-party service; privacy per `PRINCIPLES.md`).
+**both EOAs and Safe multisig**. Two related features, driven by **one in-house
+simulation** of the prepared transaction against **current chain state** (no third-party
+service; privacy per `PRINCIPLES.md`):
+
+1. **Asset-change preview — the safety feature (the point).** Before signing, show the
+   user the actual **balance/state changes** the transaction would produce right now —
+   "you send 10 ETH, you receive 9.998 stETH; you grant an **UNLIMITED** USDC approval" —
+   so they can confirm it does what they expect. A self-custody guardrail against scams,
+   buggy dApps, and fat-fingers.
+2. **Automatic revert warning — the guardrail.** If the transaction **would revert**,
+   surface a prominent automatic warning (with the reason) so the user doesn't sign a
+   doomed tx and waste gas.
+
+They come from the same simulation call — a successful sim yields the asset changes, a
+failing one yields the revert — but differ in **surface and availability**: the revert
+warning works on **any** RPC (`eth_call`), while the asset-change preview needs a capable
+endpoint (`eth_simulateV1` or archive `debug`) because it requires the execution
+**logs/state-diff**, not just pass/fail. So where we can't render a rich preview we can
+still auto-warn on reverts.
 
 Where it plugs in: the pre-sign review dialogs — basic **Send**, **WalletConnect**
 `eth_sendTransaction`, and **Safe** proposals (both the Proposals review and the **Build**
@@ -126,16 +141,23 @@ auto-simulate.
 
 ## Phasing
 
-- **P3a — Revert pre-check (universal, high value, low complexity).** EOA: `eth_call` at
-  pending, decode the revert reason. Safe: `simulateAndRevert` + `SimulateTxAccessor`.
-  Show PASS/REVERT + reason + gas in every review. Catches most failing txs and works on
-  **every** RPC. Ship this first.
-- **P3b — Asset diffs on capable RPCs.** `eth_simulateV1` (`traceTransfers` + logs) →
-  decoded ETH/token/approval changes for EOA and Safe-`Call`; fallback `debug_traceCall`
-  (Ganymede). Capability probe + graceful degradation.
-- **P3c — Full-fidelity Safe + polish.** `execTransaction` with signature-bypass state
-  override for `DelegateCall`/MultiSend diffs; ERC-721/1155; storage-diff niceties;
-  caching.
+The asset-change preview is the deliverable; the revert warning falls out of the same
+engine and degrades to bare RPCs.
+
+- **P3a — The engine + both surfaces (EOA + Safe-`Call`).** Simulate the prepared tx and
+  render the **asset-change preview** on capable RPCs (`eth_simulateV1` `traceTransfers` +
+  logs → decoded ETH/token/approval deltas; `debug_traceCall` fallback on Ganymede), **and**
+  the **automatic revert warning** universally (`eth_call` for EOA, `simulateAndRevert` +
+  `SimulateTxAccessor` for Safe). Sensible build order *within* P3a: (1) the sim call +
+  revert warning (quick, universal), (2) log→asset-diff decoding + the preview UI (the
+  meat), (3) wire into the Send / WalletConnect / Safe review dialogs. On a bare RPC the
+  preview shows "asset preview needs an `eth_simulateV1`/archive endpoint — revert check
+  only."
+- **P3b — Safe `DelegateCall`/MultiSend diffs.** `execTransaction` with a signature-bypass
+  state override so Build-tab batches get a real asset preview (P3a already covers their
+  revert-check via `simulateAndRevert`, and plain-`Call` Safe txs get full previews).
+- **P3c — Polish.** ERC-721/1155 in/out, storage-diff niceties for un-logged effects,
+  capability-probe caching.
 
 ---
 
@@ -155,11 +177,11 @@ auto-simulate.
 
 ## Open decisions
 
-1. **Auto-simulate vs button** — recommend auto-on-open (Rabby-style), non-blocking, with a
-   Settings toggle. Confirm.
+1. **Trigger** — the **revert warning** is always automatic. For the **asset-change
+   preview**, recommend it also runs automatically on review-open (non-blocking spinner →
+   result), with a Settings toggle. Confirm auto vs on-demand button for the preview.
 2. **Primary method** — `eth_simulateV1`-first with `debug_traceCall` fallback (recommended)
    vs `debug`-first (richer but archive-only). Ganymede supports both.
-3. **Safe DelegateCall diffs in P3b or defer to P3c** — the state-override `execTransaction`
-   path is the fiddly part; P3a+P3b already cover revert-checks everywhere and Call-op
-   diffs. Recommend deferring the override path to P3c.
-4. **Scope of decoding** — ERC-20 + native + approvals first; ERC-721/1155 in P3c.
+3. **Surfaces first** — WalletConnect (arbitrary dApp calldata, highest value), Safe
+   (the multisig case), and/or basic Send. Recommend WalletConnect + Safe first.
+4. **Decoding scope** — ERC-20 + native + approvals first; ERC-721/1155 in P3c.

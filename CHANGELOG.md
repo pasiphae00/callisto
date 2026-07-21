@@ -9,6 +9,11 @@ changes; `v1.0.0` marks the first stable, documented release.
 
 ## [Unreleased]
 
+### Added
+- **Show QR code** for a wallet's receive address — a button in the Wallets detail bar
+  pops a scannable QR of the selected wallet's address (plus the address and a Copy
+  button). Uses `rsc.io/qr` (pure-Go, no transitive dependencies).
+
 ## [0.12.2] - 2026-07-21
 
 Small UI fixes, and macOS builds are now **Apple-notarized** — they open with no

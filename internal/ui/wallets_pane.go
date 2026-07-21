@@ -178,7 +178,18 @@ func (p *walletsPane) buildDetailBox() *fyne.Container {
 			p.app.fyneApp.Clipboard().SetContent(p.detailAddr.Text)
 		}
 	})
-	row := container.NewBorder(nil, nil, widget.NewLabel("Address:"), copyBtn, p.detailAddr)
+	qrBtn := widget.NewButton("Show QR code", func() {
+		addr := p.detailAddr.Text
+		if addr == "" {
+			return
+		}
+		title := "Receive address"
+		if p.selected >= 0 && p.selected < len(p.app.cfg.Wallets) {
+			title = "Receive — " + displayName(p.app.cfg.Wallets[p.selected])
+		}
+		showAddressQR(p.app, title, addr)
+	})
+	row := container.NewBorder(nil, nil, widget.NewLabel("Address:"), container.NewHBox(qrBtn, copyBtn), p.detailAddr)
 	return container.NewVBox(widget.NewSeparator(), row)
 }
 

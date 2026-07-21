@@ -14,6 +14,15 @@ changes; `v1.0.0` marks the first stable, documented release.
   pops a scannable QR of the selected wallet's address (plus the address and a Copy
   button). Uses `rsc.io/qr` (pure-Go, no transitive dependencies).
 
+### Fixed
+- **WalletConnect sessions survive the relay's load-balancing disconnects.** The relay
+  routinely closes idle sockets (close code `4010`); Callisto now **auto-reconnects**
+  (re-dialing with backoff and re-subscribing to active topics) instead of dropping the
+  session, and shows a brief "reconnecting…" status.
+- **WalletConnect transaction dialog now updates to "included."** After a dApp
+  transaction is broadcast, the result dialog advances from "submitted" to the block
+  and status in place, matching the Send flow (previously it stayed on "submitted").
+
 ## [0.12.2] - 2026-07-21
 
 Small UI fixes, and macOS builds are now **Apple-notarized** — they open with no

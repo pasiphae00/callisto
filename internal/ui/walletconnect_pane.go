@@ -100,6 +100,8 @@ func (p *walletConnectPane) ensureClient(ctx context.Context) (*walletconnect.Cl
 	c.OnRequest(func(req walletconnect.Request) { fyne.Do(func() { p.showRequest(req) }) })
 	c.OnSessionDelete(func(string) { fyne.Do(p.refreshSessions) })
 	c.OnError(func(err error) { fyne.Do(func() { p.status.SetText("WalletConnect disconnected: " + err.Error()) }) })
+	c.OnReconnecting(func() { fyne.Do(func() { p.status.SetText("WalletConnect: relay cycled the connection — reconnecting…") }) })
+	c.OnReconnected(func() { fyne.Do(func() { p.status.SetText("WalletConnect reconnected — sessions active.") }) })
 	if err := c.Connect(ctx); err != nil {
 		c.Close()
 		return nil, err
@@ -367,31 +369,34 @@ func (p *walletConnectPane) dispatchSendTx(ctx context.Context, req walletconnec
 	recID := p.recordHistory(conn.ChainID.Uint64(), s.Address(), *tp.To, tp.Value, hash.Hex(), req)
 	p.respondResult(req, hash.Hex())
 	info := conn.ChainInfo
+	client := conn.Client
 	fyne.Do(func() {
 		p.status.SetText("Transaction submitted to " + info.Name)
-		p.showTxResult(hash.Hex(), info)
+		resultLabel := p.showTxResult(hash.Hex(), info)
 		if p.app.historyReload != nil {
 			p.app.historyReload()
 		}
+		// Track inclusion so the open dialog + history advance from "submitted" to
+		// "included" (with block/status), mirroring the Send flow.
+		go p.trackInclusion(recID, client, hash, info, resultLabel)
 	})
-	// Track inclusion in the background so the history row advances from
-	// "submitted" to "included" (with block/status), mirroring the Send flow.
-	go p.trackInclusion(recID, conn.Client, hash, info)
 }
 
 // trackInclusion waits for the receipt of a WalletConnect-broadcast transaction and
 // updates its history record to included/failed. It uses its own context so it
 // outlives the request handler.
-func (p *walletConnectPane) trackInclusion(recID int64, client rpc.Client, hash common.Hash, info chain.Info) {
-	if p.app.history == nil || recID == 0 {
-		return
-	}
+func (p *walletConnectPane) trackInclusion(recID int64, client rpc.Client, hash common.Hash, info chain.Info, resultLabel *widget.Label) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 
 	receipt, err := tx.WaitForReceipt(ctx, client, hash)
 	if err != nil {
-		return // leave it "submitted"; a later manual refresh can still resolve it
+		fyne.Do(func() {
+			if resultLabel != nil {
+				resultLabel.SetText("Still pending — could not confirm inclusion. Check the explorer.")
+			}
+		})
+		return // history stays "submitted"; a later manual refresh can still resolve it
 	}
 	success := tx.Succeeded(receipt)
 	blockNum := receipt.BlockNumber.Int64()
@@ -399,22 +404,36 @@ func (p *walletConnectPane) trackInclusion(recID int64, client rpc.Client, hash 
 	if head, herr := client.HeaderByNumber(ctx, receipt.BlockNumber); herr == nil && head != nil {
 		blockTime = int64(head.Time)
 	}
-	_ = p.app.history.MarkIncluded(recID, blockNum, blockTime, success)
+	if p.app.history != nil && recID != 0 {
+		_ = p.app.history.MarkIncluded(recID, blockNum, blockTime, success)
+	}
 	fyne.Do(func() {
+		outcome := "succeeded"
+		if !success {
+			outcome = "reverted"
+		}
+		if resultLabel != nil {
+			resultLabel.SetText(fmt.Sprintf("Included in block %d — %s.", blockNum, outcome))
+		}
+		p.status.SetText(fmt.Sprintf("Included in block %d — %s", blockNum, outcome))
 		if p.app.historyReload != nil {
 			p.app.historyReload()
 		}
 	})
 }
 
-// showTxResult presents a submitted transaction with the hash in the monospace
-// font and a clickable explorer link.
-func (p *walletConnectPane) showTxResult(hash string, info chain.Info) {
+// showTxResult presents a submitted transaction with the hash in the monospace font
+// and a clickable explorer link. It returns the status label so trackInclusion can
+// update it in place ("submitted" → "included") while the dialog stays open.
+func (p *walletConnectPane) showTxResult(hash string, info chain.Info) *widget.Label {
+	status := widget.NewLabel("Transaction submitted. Waiting for inclusion…")
+	status.Wrapping = fyne.TextWrapWord
 	body := container.NewVBox(
-		widget.NewLabel("Transaction submitted."),
+		status,
 		monoHyperlink(hash, info.TxURL(hash)),
 	)
 	dialog.ShowCustom("WalletConnect transaction", "Close", body, p.app.window)
+	return status
 }
 
 func (p *walletConnectPane) dispatchSignTx(ctx context.Context, req walletconnect.Request, s signer.Signer) {

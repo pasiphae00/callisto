@@ -81,8 +81,13 @@ func (c *Client) OnProposal(fn func(Proposal))          { c.onProposal = fn }
 func (c *Client) OnRequest(fn func(Request))            { c.onRequest = fn }
 func (c *Client) OnSessionDelete(fn func(topic string)) { c.onDelete = fn }
 
-// OnError registers a handler for a fatal relay error (socket dropped).
+// OnError registers a handler for a fatal relay error. Rare with auto-reconnect —
+// transient drops (incl. the relay's 4010 load-balancing close) recover silently.
 func (c *Client) OnError(fn func(error)) { c.relay.OnError(fn) }
+
+// OnReconnecting / OnReconnected report transient relay reconnects (for UI status).
+func (c *Client) OnReconnecting(fn func()) { c.relay.OnReconnecting(fn) }
+func (c *Client) OnReconnected(fn func())  { c.relay.OnReconnected(fn) }
 
 // Connect dials the relay.
 func (c *Client) Connect(ctx context.Context) error { return c.relay.Dial(ctx) }

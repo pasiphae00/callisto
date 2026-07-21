@@ -24,6 +24,9 @@ const (
 	methodSubscription = "irn_subscription"
 )
 
+// maxReconnectBackoff caps the exponential backoff between relay reconnect attempts.
+const maxReconnectBackoff = 30 * time.Second
+
 // publishParams / subscribeParams / subscriptionData are the irn_* param shapes.
 type publishParams struct {
 	Topic   string `json:"topic"`
@@ -51,24 +54,32 @@ type subscriptionParams struct {
 // (request/response correlation and acking inbound irn_subscription pushes) and
 // hands decrypted-topic-scoped messages to onMessage. It knows nothing about the
 // Sign protocol — the engine layers that on top.
+//
+// The relay reconnects automatically: WalletConnect's relay routinely closes idle
+// sockets for load balancing (close code 4010), so a dropped socket is treated as
+// transient — it re-dials with backoff and re-subscribes to the tracked topics rather
+// than tearing down the client.
 type Relay struct {
 	url       string
 	projectID string
 	auth      *authKey
 
 	dialer *websocket.Dialer
-	conn   *websocket.Conn
 
 	writeMu sync.Mutex
+	conn    *websocket.Conn // current socket; swapped on reconnect (guarded by writeMu)
 
 	mu      sync.Mutex
 	pending map[uint64]chan rpcResponse
+	topics  map[string]struct{} // active subscriptions, restored on reconnect
 
-	onMessage func(topic, message string, tag int)
-	onError   func(error)
+	onMessage      func(topic, message string, tag int)
+	onError        func(error)
+	onReconnecting func()
+	onReconnected  func()
 
 	closeOnce sync.Once
-	closed    chan struct{}
+	closed    chan struct{} // closed only by Close() — the "shut down for good" signal
 }
 
 // NewRelay builds a relay client for the given relay URL and projectId. Pass
@@ -84,6 +95,7 @@ func NewRelay(relayURL, projectID string) (*Relay, error) {
 		auth:      auth,
 		dialer:    websocket.DefaultDialer,
 		pending:   make(map[uint64]chan rpcResponse),
+		topics:    make(map[string]struct{}),
 		closed:    make(chan struct{}),
 	}, nil
 }
@@ -92,16 +104,32 @@ func NewRelay(relayURL, projectID string) (*Relay, error) {
 // tag). Set before Dial.
 func (r *Relay) OnMessage(fn func(topic, message string, tag int)) { r.onMessage = fn }
 
-// OnError sets the handler invoked when the read loop terminates with an error
-// (e.g. the socket dropped). Set before Dial.
+// OnError sets the handler invoked on a fatal relay error. With auto-reconnect this is
+// rare — transient socket drops (including the relay's 4010 load-balancing close) are
+// recovered silently and surfaced via OnReconnecting/OnReconnected instead. Set before Dial.
 func (r *Relay) OnError(fn func(error)) { r.onError = fn }
+
+// OnReconnecting / OnReconnected report transient relay reconnects (for UI status).
+func (r *Relay) OnReconnecting(fn func()) { r.onReconnecting = fn }
+func (r *Relay) OnReconnected(fn func())  { r.onReconnected = fn }
 
 // Dial connects to the relay, authenticating with a fresh JWT, and starts the read
 // loop.
 func (r *Relay) Dial(ctx context.Context) error {
+	conn, err := r.dial(ctx)
+	if err != nil {
+		return err
+	}
+	go r.readLoop(conn)
+	return nil
+}
+
+// dial establishes a new authenticated relay socket and installs it as the current
+// connection. It does not start a read loop (Dial / reconnect do).
+func (r *Relay) dial(ctx context.Context) (*websocket.Conn, error) {
 	u, err := url.Parse(r.url)
 	if err != nil {
-		return fmt.Errorf("walletconnect: bad relay url: %w", err)
+		return nil, fmt.Errorf("walletconnect: bad relay url: %w", err)
 	}
 	q := u.Query()
 	if r.projectID != "" {
@@ -111,24 +139,31 @@ func (r *Relay) Dial(ctx context.Context) error {
 
 	jwt, err := r.auth.SignRelayJWT(r.url, time.Now())
 	if err != nil {
-		return err
+		return nil, err
 	}
 	header := http.Header{}
 	header.Set("Authorization", "Bearer "+jwt)
 
 	conn, _, err := r.dialer.DialContext(ctx, u.String(), header)
 	if err != nil {
-		return fmt.Errorf("walletconnect: dial relay: %w", err)
+		return nil, fmt.Errorf("walletconnect: dial relay: %w", err)
 	}
+	r.writeMu.Lock()
 	r.conn = conn
-	go r.readLoop()
-	return nil
+	r.writeMu.Unlock()
+	return conn, nil
 }
 
-// Subscribe subscribes to a topic and waits for the relay's acknowledgement.
+// Subscribe subscribes to a topic, waits for the relay's acknowledgement, and records
+// the topic so it is restored if the socket reconnects.
 func (r *Relay) Subscribe(ctx context.Context, topic string) error {
-	_, err := r.call(ctx, methodSubscribe, subscribeParams{Topic: topic})
-	return err
+	if _, err := r.call(ctx, methodSubscribe, subscribeParams{Topic: topic}); err != nil {
+		return err
+	}
+	r.mu.Lock()
+	r.topics[topic] = struct{}{}
+	r.mu.Unlock()
+	return nil
 }
 
 // Publish sends an encrypted message on a topic with the given WalletConnect tag
@@ -170,7 +205,7 @@ func (r *Relay) call(ctx context.Context, method string, params interface{}) (js
 	}
 }
 
-// write serializes and sends a value under the write mutex.
+// write serializes and sends a value under the write mutex, on the current connection.
 func (r *Relay) write(v interface{}) error {
 	data, err := json.Marshal(v)
 	if err != nil {
@@ -184,13 +219,16 @@ func (r *Relay) write(v interface{}) error {
 	return r.conn.WriteMessage(websocket.TextMessage, data)
 }
 
-// readLoop reads frames, correlating responses to pending calls and dispatching
-// inbound irn_subscription pushes (which it also acks).
-func (r *Relay) readLoop() {
+// readLoop reads frames off conn, correlating responses to pending calls and
+// dispatching inbound irn_subscription pushes (which it also acks). On a read error it
+// triggers a reconnect (unless the relay was closed for good).
+func (r *Relay) readLoop(conn *websocket.Conn) {
 	for {
-		_, data, err := r.conn.ReadMessage()
+		_, data, err := conn.ReadMessage()
 		if err != nil {
-			r.fail(err)
+			if !r.isClosed() {
+				go r.reconnect() // transient drop (e.g. relay 4010) — recover
+			}
 			return
 		}
 		// A message with a method is a request (irn_subscription); otherwise it is
@@ -219,6 +257,56 @@ func (r *Relay) readLoop() {
 	}
 }
 
+// reconnect re-dials the relay with exponential backoff and re-subscribes to every
+// tracked topic, then resumes the read loop. It runs until it succeeds or the relay is
+// closed. Exactly one reconnect runs at a time: it is only started by a read loop that
+// has already returned, and it starts the next read loop only on success.
+func (r *Relay) reconnect() {
+	notify(r.onReconnecting)
+	backoff := time.Second
+	for {
+		if r.isClosed() {
+			return
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		conn, err := r.dial(ctx)
+		cancel()
+		if err == nil {
+			go r.readLoop(conn)
+			r.resubscribeAll()
+			notify(r.onReconnected)
+			return
+		}
+		select {
+		case <-r.closed:
+			return
+		case <-time.After(backoff):
+		}
+		if backoff < maxReconnectBackoff {
+			if backoff *= 2; backoff > maxReconnectBackoff {
+				backoff = maxReconnectBackoff
+			}
+		}
+	}
+}
+
+// resubscribeAll re-subscribes to every tracked topic after a reconnect. Best-effort:
+// the read loop is already running to ack these, and any transient failure will surface
+// as another read error and trigger a further reconnect.
+func (r *Relay) resubscribeAll() {
+	r.mu.Lock()
+	topics := make([]string, 0, len(r.topics))
+	for t := range r.topics {
+		topics = append(topics, t)
+	}
+	r.mu.Unlock()
+	for _, t := range topics {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		_, _ = r.call(ctx, methodSubscribe, subscribeParams{Topic: t})
+		cancel()
+	}
+}
+
 // handleSubscription acks an inbound push and forwards it to onMessage.
 func (r *Relay) handleSubscription(reqID uint64, params json.RawMessage) {
 	// Ack the relay so it doesn't redeliver.
@@ -233,25 +321,31 @@ func (r *Relay) handleSubscription(reqID uint64, params json.RawMessage) {
 	}
 }
 
-// fail closes the relay once and notifies onError.
-func (r *Relay) fail(err error) {
-	r.closeOnce.Do(func() {
-		close(r.closed)
-		if r.conn != nil {
-			_ = r.conn.Close()
-		}
-		if r.onError != nil && !websocket.IsCloseError(err, websocket.CloseNormalClosure) {
-			r.onError(err)
-		}
-	})
+// isClosed reports whether Close() has been called (a permanent shutdown, distinct from
+// a transient socket drop).
+func (r *Relay) isClosed() bool {
+	select {
+	case <-r.closed:
+		return true
+	default:
+		return false
+	}
 }
 
-// Close shuts down the relay connection.
+// Close shuts down the relay connection for good (stops reconnecting).
 func (r *Relay) Close() {
 	r.closeOnce.Do(func() {
 		close(r.closed)
+		r.writeMu.Lock()
 		if r.conn != nil {
 			_ = r.conn.Close()
 		}
+		r.writeMu.Unlock()
 	})
+}
+
+func notify(fn func()) {
+	if fn != nil {
+		fn()
+	}
 }

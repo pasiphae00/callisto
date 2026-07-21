@@ -13,7 +13,7 @@
   <a href="https://codeberg.org/pasiphae/callisto/src/branch/main/CHANGELOG.md">Changelog</a> ·
   <a href="https://codeberg.org/pasiphae/callisto/src/branch/main/DESIGN.md">Design</a> ·
   <a href="https://codeberg.org/pasiphae/callisto/src/branch/main/PRINCIPLES.md">Principles</a> ·
-  <a href="https://codeberg.org/pasiphae/callisto/src/branch/main/RELEASING.md">Releasing</a>
+  <a href="https://codeberg.org/pasiphae/callisto/src/branch/main/docs/RELEASING.md">Releasing</a> ·
   <a href="https://codeberg.org/pasiphae/callisto/src/branch/main/docs/security-review-2026-07.md">Security Review</a>
 </p>
 

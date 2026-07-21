@@ -232,9 +232,16 @@ func (p *safePane) renderDetails(desc safe.Descriptor) {
 		rows = append(rows, [2]string{"Version", desc.Version})
 	}
 	grid := container.New(layout.NewFormLayout())
-	for _, r := range rows {
-		grid.Add(widget.NewLabelWithStyle(r[0], fyne.TextAlignLeading, fyne.TextStyle{Bold: true}))
-		grid.Add(monoLabel(r[1]))
+	addRow := func(k string, v fyne.CanvasObject) {
+		grid.Add(widget.NewLabelWithStyle(k, fyne.TextAlignLeading, fyne.TextStyle{Bold: true}))
+		grid.Add(v)
+	}
+	// Address gets a Copy button (parity with the wallet detail view).
+	copyBtn := widget.NewButton("Copy", func() { p.app.fyneApp.Clipboard().SetContent(desc.Address) })
+	copyBtn.Importance = widget.LowImportance
+	addRow(rows[0][0], container.NewBorder(nil, nil, nil, copyBtn, monoLabel(rows[0][1])))
+	for _, r := range rows[1:] {
+		addRow(r[0], monoLabel(r[1]))
 	}
 
 	ownersHead := widget.NewLabelWithStyle("Owners", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
@@ -272,8 +279,13 @@ func (p *safePane) ownerRow(desc safe.Descriptor, o safe.OwnerLabel) fyne.Canvas
 func (p *safePane) editOwnerLabel(desc safe.Descriptor, ownerAddr string) {
 	entry := widget.NewEntry()
 	entry.SetText(desc.OwnerLabelFor(ownerAddr))
-	dialog.ShowForm("Label owner "+ownerAddr, "Save", "Cancel",
-		[]*widget.FormItem{widget.NewFormItem("Label", entry)},
+	// Show the address as a monospace field in the body (a dialog title can't be
+	// monospaced) so it renders in the fixed-width font like every other address.
+	dialog.ShowForm("Label owner", "Save", "Cancel",
+		[]*widget.FormItem{
+			widget.NewFormItem("Owner", monoLabel(ownerAddr)),
+			widget.NewFormItem("Label", entry),
+		},
 		func(ok bool) {
 			if !ok {
 				return

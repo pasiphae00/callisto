@@ -9,6 +9,12 @@ changes; `v1.0.0` marks the first stable, documented release.
 
 ## [Unreleased]
 
+### Changed
+- **Copy a Safe's address** from the Safe → Overview tab (a Copy button next to the
+  address, matching the wallet detail view).
+- The Safe "Label owner" dialog now shows the owner address in the **monospace** font
+  (moved out of the dialog title, which can't be monospaced).
+
 ## [0.12.1] - 2026-07-20
 
 Security-hardening release from a pre-beta internal review

@@ -67,7 +67,7 @@ func (p *walletsPane) showImportPrivateKey() {
 				p.doImportPrivateKey(label.Text, pk.Text, ksPass.Text, ksPass2.Text)
 			}
 		}, p.app.window)
-	d.Resize(fyne.NewSize(560, 420))
+	d.Resize(fyne.NewSize(560, 560))
 	d.Show()
 }
 
@@ -156,7 +156,7 @@ func (p *walletsPane) promptKeystoreFilePassword(data []byte) {
 				p.doImportKeystoreFile(label.Text, data, filePass.Text, ksPass.Text, ksPass2.Text)
 			}
 		}, p.app.window)
-	d.Resize(fyne.NewSize(560, 440))
+	d.Resize(fyne.NewSize(560, 580))
 	d.Show()
 }
 

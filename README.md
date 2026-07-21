@@ -13,7 +13,7 @@
   <a href="https://codeberg.org/pasiphae/callisto/src/branch/main/CHANGELOG.md">Changelog</a> ·
   <a href="https://codeberg.org/pasiphae/callisto/src/branch/main/DESIGN.md">Design</a> ·
   <a href="https://codeberg.org/pasiphae/callisto/src/branch/main/PRINCIPLES.md">Principles</a> ·
-  <a href="https://codeberg.org/pasiphae/callisto/src/branch/main/docs/RELEASING.md">Releasing</a>
+  <a href="https://codeberg.org/pasiphae/callisto/src/branch/main/RELEASING.md">Releasing</a>
   <a href="https://codeberg.org/pasiphae/callisto/src/branch/main/docs/security-review-2026-07.md">Security Review</a>
 </p>
 
@@ -85,7 +85,7 @@ cd callisto
 go run ./cmd/callisto
 ```
 
-Or build a binary (`go build -o callisto ./cmd/callisto`) or a native app bundle (`make package-mac` / `make package-linux`) — see [docs/RELEASING.md](docs/RELEASING.md).
+Or build a binary (`go build -o callisto ./cmd/callisto`) or a native app bundle (`make package-mac` / `make package-linux`) — see [RELEASING.md](RELEASING.md).
 
 ## Quick start
 
@@ -162,7 +162,7 @@ The GUI (`internal/ui`) is a thin layer over independent domain packages; the do
 
 See [`DESIGN.md`](DESIGN.md) for the original full specification and [`PRINCIPLES.md`](PRINCIPLES.md) for development principles.
 
-Contributions follow the workflow in [`docs/RELEASING.md`](docs/RELEASING.md).
+Contributions follow the workflow in [`RELEASING.md`](RELEASING.md).
 
 ## Roadmap
 

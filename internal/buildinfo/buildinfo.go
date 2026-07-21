@@ -1,6 +1,6 @@
 // Package buildinfo exposes Callisto's version and commit for display (About
 // dialog, logs). Version is bumped by hand alongside CHANGELOG.md at release
-// time (see docs/RELEASING.md); Commit is read automatically from the Go
+// time (see RELEASING.md); Commit is read automatically from the Go
 // toolchain's embedded VCS metadata (populated by `go build` in a git checkout,
 // no ldflags required).
 package buildinfo

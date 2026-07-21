@@ -45,12 +45,12 @@ fails when Gatekeeper can't reach Apple.
 
 ## Full release flow (after tagging `vX.Y.Z`)
 
-This is the complete post-tag flow. Steps 1–2 and 6–9 are the normal release; steps 3–5
-are the macOS signing that this doc adds.
+The complete post-tag flow, with the macOS sign → notarize → staple sequence folded into
+`make release` (step 2).
 
 ### 1. Prep, verify, tag
 
-Follow `docs/RELEASING.md` steps 1–8: bump `internal/buildinfo`, finalize `CHANGELOG.md`,
+Follow `RELEASING.md` steps 1–8: bump `internal/buildinfo`, finalize `CHANGELOG.md`,
 `go build/vet/test` + `govulncheck` green, then `git tag -a vX.Y.Z` and
 `git push origin main --follow-tags`.
 
@@ -83,7 +83,7 @@ Build the **Linux** `.tar.gz` on a Linux box (`make release`) or via
 `make package-linux-cross`, drop it into `dist/`, and re-run `make checksums && make sign`
 so `SHA256SUMS` covers all three artifacts.
 
-### 7. Verify (do this before uploading)
+### 3. Verify (do this before uploading)
 
 ```sh
 # Gatekeeper accepts it as notarized (the real test):
@@ -108,13 +108,13 @@ go run ./cmd/callisto-release verify --pub internal/updater/release_pubkey.ed255
 strings dist/*/Callisto.app/Contents/MacOS/callisto | grep -F "$GANYMEDE_TOKEN"   # must be empty
 ```
 
-### 8. Create the Codeberg release & upload
+### 4. Create the Codeberg release & upload
 
 Web UI → Releases → New release → pick `vX.Y.Z` → paste the notes (template in
-`docs/RELEASING.md`) → attach **all**: both `-darwin-*.zip`, the `-linux-*.tar.gz`,
+`RELEASING.md`) → attach **all**: both `-darwin-*.zip`, the `-linux-*.tar.gz`,
 `SHA256SUMS`, `SHA256SUMS.sig` → Publish.
 
-### 9. Post-release
+### 5. Post-release
 
 From a machine on the previous version, **Settings → Check for updates** should install
 this build and relaunch with **no** Gatekeeper prompt. On the *next* release, confirm the
@@ -125,7 +125,7 @@ auto-update path still works.
 ## Removing the quarantine workaround from the docs
 
 Once releases are notarized, delete the "right-click → Open / `xattr -dr
-com.apple.quarantine`" instructions from `README.md`, the `docs/RELEASING.md` release-notes
+com.apple.quarantine`" instructions from `README.md`, the `RELEASING.md` release-notes
 template, and the release notes — a notarized, stapled build opens on first launch with no
 step.
 
@@ -149,7 +149,7 @@ step.
 - **Entitlements.** Go + Fyne under hardened runtime normally need **none**. Only add an
   entitlements plist if notarization or launch fails with a specific capability error.
 - **Gatekeeper still blocks after notarizing.** You probably didn't **staple**, or shipped
-  a zip made *before* stapling. Re-zip from the stapled `.app` (step 5 order matters).
+  a zip made *before* stapling. Always re-zip from the already-stapled `.app`.
 
 ---
 

@@ -34,9 +34,9 @@ On macOS the linker prints a benign `ignoring duplicate libraries: '-lobjc'` war
 
 ## Workflow & releases
 
-Hosted on **Codeberg** (Forgejo — the GitHub `gh` CLI does not apply). Work on `feat/…` / `fix/…` branches off `main`; never commit to `main` directly. Semantic versioning with `v`-prefixed tags (`v0.x.y` pre-release, `v1.0.0` = first stable). Update `CHANGELOG.md` (Keep a Changelog) for every user-facing change. Full process in `docs/RELEASING.md`.
+Hosted on **Codeberg** (Forgejo — the GitHub `gh` CLI does not apply). Work on `feat/…` / `fix/…` branches off `main`; never commit to `main` directly. Semantic versioning with `v`-prefixed tags (`v0.x.y` pre-release, `v1.0.0` = first stable). Update `CHANGELOG.md` (Keep a Changelog) for every user-facing change. Full process in `RELEASING.md`.
 
-**Documentation style:** keep prose concise — favor short, information-dense lines over long explanations; the `CHANGELOG.md` is the single detailed record. **Release notes stay brief:** a one/two-line summary + install + checksum steps, and a link to the release's `CHANGELOG.md` section rather than pasting the full changes (template in `docs/RELEASING.md`).
+**Documentation style:** keep prose concise — favor short, information-dense lines over long explanations; the `CHANGELOG.md` is the single detailed record. **Release notes stay brief:** a one/two-line summary + install + checksum steps, and a link to the release's `CHANGELOG.md` section rather than pasting the full changes (template in `RELEASING.md`).
 
 ## What Callisto is
 

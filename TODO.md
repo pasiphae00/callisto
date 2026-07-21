@@ -402,7 +402,7 @@ platform/CGo Keychain last):
     Linux `.tar.gz` via `fyne package` (CLI installed locally to `./bin`, no new
     module dep). `make release` = package + `SHA256SUMS` + ed25519 signature, ready
     to upload to a Codeberg release. Version is single-sourced from
-    `internal/buildinfo`. See `docs/RELEASING.md`.
+    `internal/buildinfo`. See `RELEASING.md`.
   - **In-app updates (`internal/updater`):** Settings → Check for updates hits the
     Forgejo releases API, compares via `x/mod/semver`, shows the changelog, then
     downloads → **verifies (embedded ed25519 maintainer key over SHA256SUMS +

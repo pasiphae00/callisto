@@ -9,10 +9,24 @@ changes; `v1.0.0` marks the first stable, documented release.
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-07-21
+
+macOS builds are now **Apple-notarized** (they open with no Gatekeeper prompt), plus a
+**Show QR code** feature for receive addresses, tougher WalletConnect connections, and
+several UI fixes.
+
 ### Added
 - **Show QR code** for a wallet's receive address — a button in the Wallets detail bar
   pops a scannable QR of the selected wallet's address (plus the address and a Copy
   button). Uses `rsc.io/qr` (pure-Go, no transitive dependencies).
+
+### Changed
+- **macOS builds are Developer ID signed and notarized by Apple** — they open on first
+  launch with no Gatekeeper prompt (the right-click → Open / `xattr` step is gone).
+- **Copy a Safe's address** from the Safe → Overview tab (a Copy button next to the
+  address, matching the wallet detail view).
+- The Safe "Label owner" dialog now shows the owner address in the **monospace** font
+  (moved out of the dialog title, which can't be monospaced).
 
 ### Fixed
 - **WalletConnect sessions survive the relay's load-balancing disconnects.** The relay
@@ -22,19 +36,6 @@ changes; `v1.0.0` marks the first stable, documented release.
 - **WalletConnect transaction dialog now updates to "included."** After a dApp
   transaction is broadcast, the result dialog advances from "submitted" to the block
   and status in place, matching the Send flow (previously it stayed on "submitted").
-
-## [0.12.2] - 2026-07-21
-
-Small UI fixes, and macOS builds are now **Apple-notarized** — they open with no
-Gatekeeper prompt (the right-click → Open / `xattr` step is no longer needed).
-
-### Changed
-- **Copy a Safe's address** from the Safe → Overview tab (a Copy button next to the
-  address, matching the wallet detail view).
-- The Safe "Label owner" dialog now shows the owner address in the **monospace** font
-  (moved out of the dialog title, which can't be monospaced).
-
-### Fixed
 - The **import keystore file** and **import private key** dialogs are now tall enough to
   show all fields — the passphrase-strength line is no longer clipped at the bottom.
 

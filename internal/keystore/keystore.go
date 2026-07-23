@@ -183,7 +183,16 @@ func Rekey(ks *Keystore, oldPassphrase, newPassphrase string) (*Keystore, error)
 		return nil, err
 	}
 	defer zero(secret)
-	return Encrypt(secret, newPassphrase)
+	rk, err := Encrypt(secret, newPassphrase)
+	if err != nil {
+		return nil, err
+	}
+	// Encrypt has no notion of what the plaintext bytes represent, so it never
+	// sets Secret -- preserve the original label (e.g. "private-key") or a
+	// raw-private-key import silently starts being treated as an HD seed on next
+	// unlock, deriving the wrong address despite a correct passphrase.
+	rk.Secret = ks.Secret
+	return rk, nil
 }
 
 // newGCM builds an AES-256-GCM AEAD from a 32-byte key.

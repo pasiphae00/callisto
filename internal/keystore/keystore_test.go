@@ -63,6 +63,28 @@ func TestRekey(t *testing.T) {
 	}
 }
 
+// TestRekeyPreservesSecretLabel guards against a real bug: Rekey used to return
+// Encrypt's fresh Keystore as-is, which has no notion of what the plaintext
+// represents, silently dropping a "private-key" label. A raw-private-key wallet
+// that then had its passphrase changed got mis-derived as an HD seed on next
+// unlock -- decryption succeeded (right passphrase), but the derived account
+// address was wrong.
+func TestRekeyPreservesSecretLabel(t *testing.T) {
+	ks, err := Encrypt(sampleSecret, "old-pass")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ks.Secret = "private-key"
+
+	rk, err := Rekey(ks, "old-pass", "new-pass")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rk.Secret != "private-key" {
+		t.Fatalf("Rekey dropped the Secret label: got %q, want %q", rk.Secret, "private-key")
+	}
+}
+
 func TestDeriveKeyAndDecryptWithKey(t *testing.T) {
 	ks, err := Encrypt(sampleSecret, "pw")
 	if err != nil {

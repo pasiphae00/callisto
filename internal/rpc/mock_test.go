@@ -8,6 +8,7 @@ import (
 	ethereum "github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	gethrpc "github.com/ethereum/go-ethereum/rpc"
 )
 
 // mockClient is a controllable Client for tests. Unset fields return zero values
@@ -139,6 +140,8 @@ func (m *mockClient) pushHead(n uint64) {
 		ch <- &types.Header{Number: new(big.Int).SetUint64(n)}
 	}
 }
+
+func (m *mockClient) RawClient() *gethrpc.Client { return nil }
 
 func (m *mockClient) Close() {
 	m.mu.Lock()

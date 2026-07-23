@@ -7,7 +7,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 
-	"codeberg.org/pasiphae/callisto/internal/store"
+	"github.com/pasiphae00/callisto/internal/store"
 )
 
 // Cache persists discovered approvals + a per-(chain, owner) scan watermark so

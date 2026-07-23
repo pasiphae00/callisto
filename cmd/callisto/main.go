@@ -8,11 +8,11 @@ package main
 import (
 	"log"
 
-	"codeberg.org/pasiphae/callisto/internal/buildsecrets"
-	"codeberg.org/pasiphae/callisto/internal/config"
-	"codeberg.org/pasiphae/callisto/internal/rpc"
-	"codeberg.org/pasiphae/callisto/internal/store"
-	"codeberg.org/pasiphae/callisto/internal/ui"
+	"github.com/pasiphae00/callisto/internal/buildsecrets"
+	"github.com/pasiphae00/callisto/internal/config"
+	"github.com/pasiphae00/callisto/internal/rpc"
+	"github.com/pasiphae00/callisto/internal/store"
+	"github.com/pasiphae00/callisto/internal/ui"
 )
 
 func main() {

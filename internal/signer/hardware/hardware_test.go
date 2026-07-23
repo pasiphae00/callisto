@@ -3,7 +3,7 @@ package hardware
 import (
 	"testing"
 
-	"codeberg.org/pasiphae/callisto/internal/signer"
+	"github.com/pasiphae00/callisto/internal/signer"
 )
 
 func TestDerivationPath(t *testing.T) {

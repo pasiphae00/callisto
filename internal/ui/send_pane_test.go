@@ -6,8 +6,8 @@ import (
 
 	"fyne.io/fyne/v2/test"
 
-	"codeberg.org/pasiphae/callisto/internal/assets"
-	"codeberg.org/pasiphae/callisto/internal/config"
+	"github.com/pasiphae00/callisto/internal/assets"
+	"github.com/pasiphae00/callisto/internal/config"
 )
 
 func TestSendPanePrepareState(t *testing.T) {

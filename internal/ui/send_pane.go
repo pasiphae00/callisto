@@ -15,12 +15,12 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 
-	"codeberg.org/pasiphae/callisto/internal/address"
-	"codeberg.org/pasiphae/callisto/internal/assets"
-	"codeberg.org/pasiphae/callisto/internal/chain"
-	"codeberg.org/pasiphae/callisto/internal/history"
-	"codeberg.org/pasiphae/callisto/internal/rpc"
-	"codeberg.org/pasiphae/callisto/internal/tx"
+	"github.com/pasiphae00/callisto/internal/address"
+	"github.com/pasiphae00/callisto/internal/assets"
+	"github.com/pasiphae00/callisto/internal/chain"
+	"github.com/pasiphae00/callisto/internal/history"
+	"github.com/pasiphae00/callisto/internal/rpc"
+	"github.com/pasiphae00/callisto/internal/tx"
 )
 
 // sendPane is the basic-transfer flow shared by ETH and ERC-20: pick an asset,

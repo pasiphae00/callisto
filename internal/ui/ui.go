@@ -23,15 +23,15 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
-	"codeberg.org/pasiphae/callisto/internal/assets"
-	"codeberg.org/pasiphae/callisto/internal/config"
-	"codeberg.org/pasiphae/callisto/internal/ens"
-	"codeberg.org/pasiphae/callisto/internal/history"
-	"codeberg.org/pasiphae/callisto/internal/rpc"
-	"codeberg.org/pasiphae/callisto/internal/safe"
-	"codeberg.org/pasiphae/callisto/internal/signer"
-	"codeberg.org/pasiphae/callisto/internal/store"
-	"codeberg.org/pasiphae/callisto/internal/walletconnect"
+	"github.com/pasiphae00/callisto/internal/assets"
+	"github.com/pasiphae00/callisto/internal/config"
+	"github.com/pasiphae00/callisto/internal/ens"
+	"github.com/pasiphae00/callisto/internal/history"
+	"github.com/pasiphae00/callisto/internal/rpc"
+	"github.com/pasiphae00/callisto/internal/safe"
+	"github.com/pasiphae00/callisto/internal/signer"
+	"github.com/pasiphae00/callisto/internal/store"
+	"github.com/pasiphae00/callisto/internal/walletconnect"
 )
 
 // App holds the wiring shared across panes. Panes read/update Config and persist

@@ -20,7 +20,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 
-	"codeberg.org/pasiphae/callisto/internal/rpc"
+	"github.com/pasiphae00/callisto/internal/rpc"
 )
 
 // SentinelOwner is the head/tail sentinel of the Safe's owner linked list

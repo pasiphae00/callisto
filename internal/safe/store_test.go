@@ -7,8 +7,8 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 
-	"codeberg.org/pasiphae/callisto/internal/safe"
-	"codeberg.org/pasiphae/callisto/internal/store"
+	"github.com/pasiphae00/callisto/internal/safe"
+	"github.com/pasiphae00/callisto/internal/store"
 )
 
 func newRepo(t *testing.T) *safe.ProposalRepo {

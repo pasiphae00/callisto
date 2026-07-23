@@ -12,7 +12,7 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
-	"codeberg.org/pasiphae/callisto/internal/buildinfo"
+	"github.com/pasiphae00/callisto/internal/buildinfo"
 )
 
 //go:embed images/logo.png

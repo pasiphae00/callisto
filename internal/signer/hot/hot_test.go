@@ -9,7 +9,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 
-	"codeberg.org/pasiphae/callisto/internal/keystore"
+	"github.com/pasiphae00/callisto/internal/keystore"
 )
 
 // Well-known BIP-44 (m/44'/60'/0'/0/i) test vectors.

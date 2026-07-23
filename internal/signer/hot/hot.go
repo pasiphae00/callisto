@@ -15,8 +15,8 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	bip39 "github.com/tyler-smith/go-bip39"
 
-	"codeberg.org/pasiphae/callisto/internal/keystore"
-	"codeberg.org/pasiphae/callisto/internal/signer"
+	"github.com/pasiphae00/callisto/internal/keystore"
+	"github.com/pasiphae00/callisto/internal/signer"
 )
 
 var (

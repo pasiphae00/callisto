@@ -17,7 +17,7 @@ import (
 	"os"
 	"strings"
 
-	"codeberg.org/pasiphae/callisto/internal/buildsecrets"
+	"github.com/pasiphae00/callisto/internal/buildsecrets"
 )
 
 func main() {

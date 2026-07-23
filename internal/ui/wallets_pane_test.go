@@ -7,10 +7,10 @@ import (
 
 	"fyne.io/fyne/v2/test"
 
-	"codeberg.org/pasiphae/callisto/internal/config"
-	"codeberg.org/pasiphae/callisto/internal/keystore"
-	"codeberg.org/pasiphae/callisto/internal/signer/hot"
-	"codeberg.org/pasiphae/callisto/internal/wallet"
+	"github.com/pasiphae00/callisto/internal/config"
+	"github.com/pasiphae00/callisto/internal/keystore"
+	"github.com/pasiphae00/callisto/internal/signer/hot"
+	"github.com/pasiphae00/callisto/internal/wallet"
 )
 
 const junkMnemonic = "test test test test test test test test test test test junk"

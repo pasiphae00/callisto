@@ -19,8 +19,8 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 
-	"codeberg.org/pasiphae/callisto/internal/assets"
-	"codeberg.org/pasiphae/callisto/internal/rpc"
+	"github.com/pasiphae00/callisto/internal/assets"
+	"github.com/pasiphae00/callisto/internal/rpc"
 )
 
 // Layer distinguishes a direct token allowance from a Permit2 inner allowance.

@@ -20,8 +20,8 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 
-	"codeberg.org/pasiphae/callisto/internal/signer"
-	"codeberg.org/pasiphae/callisto/internal/signer/hardware/usbwallet"
+	"github.com/pasiphae00/callisto/internal/signer"
+	"github.com/pasiphae00/callisto/internal/signer/hardware/usbwallet"
 )
 
 var (

@@ -8,7 +8,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 
-	"codeberg.org/pasiphae/callisto/internal/address"
+	"github.com/pasiphae00/callisto/internal/address"
 )
 
 // dangerDecoderABI covers the handful of high-risk methods a dApp might slip into an

@@ -10,7 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 
-	"codeberg.org/pasiphae/callisto/internal/rpc"
+	"github.com/pasiphae00/callisto/internal/rpc"
 )
 
 // transferTopic is keccak256("Transfer(address,address,uint256)"), the topic0 of

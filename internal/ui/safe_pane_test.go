@@ -6,9 +6,9 @@ import (
 	"fyne.io/fyne/v2/test"
 	"github.com/ethereum/go-ethereum/common"
 
-	"codeberg.org/pasiphae/callisto/internal/config"
-	"codeberg.org/pasiphae/callisto/internal/safe"
-	"codeberg.org/pasiphae/callisto/internal/store"
+	"github.com/pasiphae00/callisto/internal/config"
+	"github.com/pasiphae00/callisto/internal/safe"
+	"github.com/pasiphae00/callisto/internal/store"
 )
 
 // TestSafePaneBuildsWithImportedSafe verifies the Safe pane constructs, renders a

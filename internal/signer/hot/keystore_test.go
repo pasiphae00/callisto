@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"codeberg.org/pasiphae/callisto/internal/keystore"
+	"github.com/pasiphae00/callisto/internal/keystore"
 )
 
 // TestKeystoreRoundTripDerivesSameAddress verifies that importing to a keystore

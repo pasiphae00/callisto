@@ -1,5 +1,5 @@
-// Package updater implements Callisto's in-app self-update: it checks the Codeberg
-// (Forgejo) releases API for a newer tagged version and, on request, downloads,
+// Package updater implements Callisto's in-app self-update: it checks the GitHub
+// releases API for a newer tagged version and, on request, downloads,
 // cryptographically verifies, and installs it, then relaunches.
 //
 // Security: Callisto is a signing wallet, so an update is only ever applied after
@@ -21,9 +21,9 @@ import (
 )
 
 const (
-	// defaultAPIBase is Codeberg's Forgejo API root. Overridable in tests.
-	defaultAPIBase = "https://codeberg.org/api/v1"
-	repoOwner      = "pasiphae"
+	// defaultAPIBase is GitHub's REST API root. Overridable in tests.
+	defaultAPIBase = "https://api.github.com"
+	repoOwner      = "pasiphae00"
 	repoName       = "callisto"
 )
 
@@ -59,8 +59,10 @@ type Release struct {
 	Newer   bool    // true if Version > the running version
 }
 
-// forgejoRelease is the subset of the Forgejo releases API response we use.
-type forgejoRelease struct {
+// apiRelease is the subset of GitHub's releases API response we use. The shape
+// (tag_name/body/draft/assets[].name/assets[].browser_download_url) happens to be
+// identical to Forgejo's, which this package originally targeted.
+type apiRelease struct {
 	TagName string  `json:"tag_name"`
 	Body    string  `json:"body"`
 	Draft   bool    `json:"draft"`
@@ -70,9 +72,11 @@ type forgejoRelease struct {
 // Check queries the releases API and reports the highest-semver published release
 // and whether it is newer than the running version. We pick by semver (not the
 // API's "latest", which excludes anything flagged pre-release) so it works for a
-// 0.x project regardless of how a release is flagged; drafts are excluded.
+// 0.x project regardless of how a release is flagged; drafts are excluded (GitHub
+// only returns drafts to authenticated requests with push access anyway, but the
+// client-side filter below is a harmless belt-and-suspenders).
 func (u *Updater) Check(ctx context.Context) (*Release, error) {
-	url := fmt.Sprintf("%s/repos/%s/%s/releases?draft=false&limit=20", u.base, repoOwner, repoName)
+	url := fmt.Sprintf("%s/repos/%s/%s/releases?per_page=20", u.base, repoOwner, repoName)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
@@ -86,7 +90,7 @@ func (u *Updater) Check(ctx context.Context) (*Release, error) {
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("release server returned %s", resp.Status)
 	}
-	var list []forgejoRelease
+	var list []apiRelease
 	if err := json.NewDecoder(resp.Body).Decode(&list); err != nil {
 		return nil, fmt.Errorf("decode releases: %w", err)
 	}
@@ -98,8 +102,8 @@ func (u *Updater) Check(ctx context.Context) (*Release, error) {
 }
 
 // highestSemver returns the release with the greatest valid semver tag.
-func highestSemver(list []forgejoRelease) (forgejoRelease, bool) {
-	var best forgejoRelease
+func highestSemver(list []apiRelease) (apiRelease, bool) {
+	var best apiRelease
 	found := false
 	for _, r := range list {
 		if r.Draft {
@@ -117,7 +121,7 @@ func highestSemver(list []forgejoRelease) (forgejoRelease, bool) {
 }
 
 // releaseFrom builds a Release from the API payload and the running version.
-func releaseFrom(fr forgejoRelease, current string) (*Release, error) {
+func releaseFrom(fr apiRelease, current string) (*Release, error) {
 	v := ensureV(fr.TagName)
 	if !semver.IsValid(v) {
 		return nil, fmt.Errorf("release has non-semver tag %q", fr.TagName)

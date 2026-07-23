@@ -8,7 +8,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 
-	"codeberg.org/pasiphae/callisto/internal/rpc"
+	"github.com/pasiphae00/callisto/internal/rpc"
 )
 
 // receiptPollInterval is how often inclusion is polled when the endpoint can't

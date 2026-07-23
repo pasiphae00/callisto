@@ -15,7 +15,7 @@ import (
 	"fmt"
 	"os"
 
-	"codeberg.org/pasiphae/callisto/internal/signer/hardware"
+	"github.com/pasiphae00/callisto/internal/signer/hardware"
 )
 
 // knownVendors documents the VID/PID combinations go-ethereum's usbwallet

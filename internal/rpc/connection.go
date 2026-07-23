@@ -8,7 +8,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	gethrpc "github.com/ethereum/go-ethereum/rpc"
 
-	"codeberg.org/pasiphae/callisto/internal/chain"
+	"github.com/pasiphae00/callisto/internal/chain"
 )
 
 // ResolveAuthToken maps an Endpoint.AuthRef to its bearer token, or "" if none.

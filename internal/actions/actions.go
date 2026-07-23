@@ -19,8 +19,8 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 
-	"codeberg.org/pasiphae/callisto/internal/assets"
-	"codeberg.org/pasiphae/callisto/internal/tx"
+	"github.com/pasiphae00/callisto/internal/assets"
+	"github.com/pasiphae00/callisto/internal/tx"
 )
 
 // FieldKind is the type of an action input, so the UI can validate/format it.

@@ -14,7 +14,7 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
-	"codeberg.org/pasiphae/callisto/internal/config"
+	"github.com/pasiphae00/callisto/internal/config"
 )
 
 // indentToText shifts obj right by theme.InnerPadding() so its left edge lines

@@ -14,11 +14,11 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 
-	"codeberg.org/pasiphae/callisto/internal/address"
-	"codeberg.org/pasiphae/callisto/internal/config"
-	"codeberg.org/pasiphae/callisto/internal/keystore"
-	"codeberg.org/pasiphae/callisto/internal/signer/hot"
-	"codeberg.org/pasiphae/callisto/internal/wallet"
+	"github.com/pasiphae00/callisto/internal/address"
+	"github.com/pasiphae00/callisto/internal/config"
+	"github.com/pasiphae00/callisto/internal/keystore"
+	"github.com/pasiphae00/callisto/internal/signer/hot"
+	"github.com/pasiphae00/callisto/internal/wallet"
 )
 
 // showAddMenu is the "Add wallet…" sheet: seed, hardware, or an imported key /

@@ -5,7 +5,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 
-	"codeberg.org/pasiphae/callisto/internal/address"
+	"github.com/pasiphae00/callisto/internal/address"
 )
 
 // assetsPane is the Assets tab: an assetsView bound to the active wallet. All the

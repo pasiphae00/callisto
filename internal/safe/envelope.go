@@ -12,7 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
 
-	"codeberg.org/pasiphae/callisto/internal/textsafe"
+	"github.com/pasiphae00/callisto/internal/textsafe"
 )
 
 // EnvelopeVersion is the portable-proposal format version.

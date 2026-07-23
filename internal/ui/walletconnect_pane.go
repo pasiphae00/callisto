@@ -17,14 +17,14 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 
-	"codeberg.org/pasiphae/callisto/internal/address"
-	"codeberg.org/pasiphae/callisto/internal/assets"
-	"codeberg.org/pasiphae/callisto/internal/chain"
-	"codeberg.org/pasiphae/callisto/internal/history"
-	"codeberg.org/pasiphae/callisto/internal/rpc"
-	"codeberg.org/pasiphae/callisto/internal/signer"
-	"codeberg.org/pasiphae/callisto/internal/tx"
-	"codeberg.org/pasiphae/callisto/internal/walletconnect"
+	"github.com/pasiphae00/callisto/internal/address"
+	"github.com/pasiphae00/callisto/internal/assets"
+	"github.com/pasiphae00/callisto/internal/chain"
+	"github.com/pasiphae00/callisto/internal/history"
+	"github.com/pasiphae00/callisto/internal/rpc"
+	"github.com/pasiphae00/callisto/internal/signer"
+	"github.com/pasiphae00/callisto/internal/tx"
+	"github.com/pasiphae00/callisto/internal/walletconnect"
 )
 
 // wcApprovedMethods are the request methods Callisto advertises when settling a

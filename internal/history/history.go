@@ -8,7 +8,7 @@ import (
 	"database/sql"
 	"time"
 
-	"codeberg.org/pasiphae/callisto/internal/store"
+	"github.com/pasiphae00/callisto/internal/store"
 )
 
 // Status is the lifecycle stage of a recorded transaction.

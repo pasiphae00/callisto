@@ -8,7 +8,7 @@ import (
 	ethereum "github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 
-	"codeberg.org/pasiphae/callisto/internal/rpc"
+	"github.com/pasiphae00/callisto/internal/rpc"
 )
 
 // mockClient implements just enough of rpc.Client for ReadInfo: it dispatches

@@ -10,8 +10,8 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 
-	"codeberg.org/pasiphae/callisto/internal/rpc"
-	"codeberg.org/pasiphae/callisto/internal/textsafe"
+	"github.com/pasiphae00/callisto/internal/rpc"
+	"github.com/pasiphae00/callisto/internal/textsafe"
 )
 
 // Two ABIs: the standard one with string-typed name/symbol, and a fallback with

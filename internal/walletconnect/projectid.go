@@ -22,6 +22,6 @@ func ProjectID() string {
 var WalletMetadata = Metadata{
 	Name:        "Callisto",
 	Description: "A locally-run Ethereum wallet and signing utility.",
-	URL:         "https://codeberg.org/pasiphae/callisto",
+	URL:         "https://github.com/pasiphae00/callisto",
 	Icons:       []string{},
 }

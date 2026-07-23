@@ -15,7 +15,7 @@ import (
 
 	_ "modernc.org/sqlite" // registers the "sqlite" driver
 
-	"codeberg.org/pasiphae/callisto/internal/config"
+	"github.com/pasiphae00/callisto/internal/config"
 )
 
 // DBFile is the database filename within the Callisto config directory.

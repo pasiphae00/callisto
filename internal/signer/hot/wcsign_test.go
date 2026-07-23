@@ -7,7 +7,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/crypto"
 
-	"codeberg.org/pasiphae/callisto/internal/signer"
+	"github.com/pasiphae00/callisto/internal/signer"
 )
 
 func TestSignPersonalMessageRecovers(t *testing.T) {

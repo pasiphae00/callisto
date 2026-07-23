@@ -16,11 +16,11 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 
-	"codeberg.org/pasiphae/callisto/internal/actions"
-	"codeberg.org/pasiphae/callisto/internal/address"
-	"codeberg.org/pasiphae/callisto/internal/assets"
-	"codeberg.org/pasiphae/callisto/internal/rpc"
-	"codeberg.org/pasiphae/callisto/internal/safe"
+	"github.com/pasiphae00/callisto/internal/actions"
+	"github.com/pasiphae00/callisto/internal/address"
+	"github.com/pasiphae00/callisto/internal/assets"
+	"github.com/pasiphae00/callisto/internal/rpc"
+	"github.com/pasiphae00/callisto/internal/safe"
 )
 
 // safeBuildView is the Safe "Build" sub-tab: prepare an ecosystem action (wrap ETH,

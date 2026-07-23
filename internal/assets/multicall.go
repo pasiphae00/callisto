@@ -8,7 +8,7 @@ import (
 	ethereum "github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 
-	"codeberg.org/pasiphae/callisto/internal/textsafe"
+	"github.com/pasiphae00/callisto/internal/textsafe"
 )
 
 // multicall3 is the canonical Multicall3 deployment, at the same address on every

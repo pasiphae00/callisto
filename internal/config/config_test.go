@@ -5,11 +5,11 @@ import (
 	"path/filepath"
 	"testing"
 
-	"codeberg.org/pasiphae/callisto/internal/assets"
-	"codeberg.org/pasiphae/callisto/internal/chain"
-	"codeberg.org/pasiphae/callisto/internal/rpc"
-	"codeberg.org/pasiphae/callisto/internal/safe"
-	"codeberg.org/pasiphae/callisto/internal/wallet"
+	"github.com/pasiphae00/callisto/internal/assets"
+	"github.com/pasiphae00/callisto/internal/chain"
+	"github.com/pasiphae00/callisto/internal/rpc"
+	"github.com/pasiphae00/callisto/internal/safe"
+	"github.com/pasiphae00/callisto/internal/wallet"
 )
 
 func TestChainCatalog(t *testing.T) {

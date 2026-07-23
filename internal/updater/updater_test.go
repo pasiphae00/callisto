@@ -21,7 +21,7 @@ import (
 )
 
 func TestReleaseFromNewer(t *testing.T) {
-	fr := forgejoRelease{TagName: "v0.8.0", Body: "notes"}
+	fr := apiRelease{TagName: "v0.8.0", Body: "notes"}
 	rel, err := releaseFrom(fr, "0.7.1")
 	if err != nil {
 		t.Fatal(err)
@@ -31,19 +31,19 @@ func TestReleaseFromNewer(t *testing.T) {
 	}
 
 	// Same version → not newer. Tolerates the running version lacking the "v".
-	same, _ := releaseFrom(forgejoRelease{TagName: "v0.7.1"}, "0.7.1")
+	same, _ := releaseFrom(apiRelease{TagName: "v0.7.1"}, "0.7.1")
 	if same.Newer {
 		t.Errorf("v0.7.1 vs 0.7.1 should not be newer")
 	}
 	// Older tag than running → not newer.
-	older, _ := releaseFrom(forgejoRelease{TagName: "v0.7.0"}, "v0.7.1")
+	older, _ := releaseFrom(apiRelease{TagName: "v0.7.0"}, "v0.7.1")
 	if older.Newer {
 		t.Errorf("v0.7.0 vs v0.7.1 should not be newer")
 	}
 }
 
 func TestReleaseFromBadTag(t *testing.T) {
-	if _, err := releaseFrom(forgejoRelease{TagName: "not-a-version"}, "0.1.0"); err == nil {
+	if _, err := releaseFrom(apiRelease{TagName: "not-a-version"}, "0.1.0"); err == nil {
 		t.Error("expected error for non-semver tag")
 	}
 }

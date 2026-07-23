@@ -5,7 +5,7 @@ import (
 
 	"fyne.io/fyne/v2/test"
 
-	"codeberg.org/pasiphae/callisto/internal/ens"
+	"github.com/pasiphae00/callisto/internal/ens"
 )
 
 func TestAddressFieldValidHex(t *testing.T) {

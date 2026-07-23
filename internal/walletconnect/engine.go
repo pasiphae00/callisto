@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"codeberg.org/pasiphae/callisto/internal/textsafe"
+	"github.com/pasiphae00/callisto/internal/textsafe"
 )
 
 // sessionTTL is how long a settled session is advertised as valid (7 days, the

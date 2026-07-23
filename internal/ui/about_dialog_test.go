@@ -7,7 +7,7 @@ import (
 	"fyne.io/fyne/v2/test"
 	"fyne.io/fyne/v2/theme"
 
-	"codeberg.org/pasiphae/callisto/internal/config"
+	"github.com/pasiphae00/callisto/internal/config"
 )
 
 func TestEmbeddedLogosPresent(t *testing.T) {

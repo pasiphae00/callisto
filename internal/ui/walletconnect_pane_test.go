@@ -5,8 +5,8 @@ import (
 
 	"fyne.io/fyne/v2/test"
 
-	"codeberg.org/pasiphae/callisto/internal/config"
-	"codeberg.org/pasiphae/callisto/internal/walletconnect"
+	"github.com/pasiphae00/callisto/internal/config"
+	"github.com/pasiphae00/callisto/internal/walletconnect"
 )
 
 func TestWalletConnectPaneBuilds(t *testing.T) {

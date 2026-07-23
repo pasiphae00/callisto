@@ -14,9 +14,9 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 
-	"codeberg.org/pasiphae/callisto/internal/assets"
-	"codeberg.org/pasiphae/callisto/internal/chain"
-	"codeberg.org/pasiphae/callisto/internal/history"
+	"github.com/pasiphae00/callisto/internal/assets"
+	"github.com/pasiphae00/callisto/internal/chain"
+	"github.com/pasiphae00/callisto/internal/history"
 )
 
 // historyPane lists transactions Callisto has prepared, with status and a link to

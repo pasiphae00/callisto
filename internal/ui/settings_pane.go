@@ -14,9 +14,9 @@ import (
 
 	"github.com/ethereum/go-ethereum/core/types"
 
-	"codeberg.org/pasiphae/callisto/internal/chain"
-	"codeberg.org/pasiphae/callisto/internal/config"
-	"codeberg.org/pasiphae/callisto/internal/rpc"
+	"github.com/pasiphae00/callisto/internal/chain"
+	"github.com/pasiphae00/callisto/internal/config"
+	"github.com/pasiphae00/callisto/internal/rpc"
 )
 
 // endpointRow is a settings-list row: a single tap selects it (driven explicitly,

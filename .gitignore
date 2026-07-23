@@ -384,6 +384,9 @@ myetherwallet/
 # files inside an excluded directory, so re-include the source dir explicitly.
 # (Real keystore *data* lives in the OS config dir, never in the repo.)
 !internal/keystore/
+# Same reasoning: the keystore-recover diagnostic tool's directory name matches
+# *keystore* too.
+!cmd/keystore-recover/
 # ...but never let a real secrets/keystore directory back in.
 /.local/
 /keystore/

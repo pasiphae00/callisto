@@ -18,13 +18,13 @@ import (
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 
-	"codeberg.org/pasiphae/callisto/internal/address"
-	"codeberg.org/pasiphae/callisto/internal/config"
-	"codeberg.org/pasiphae/callisto/internal/keystore"
-	"codeberg.org/pasiphae/callisto/internal/signer"
-	"codeberg.org/pasiphae/callisto/internal/signer/hardware"
-	"codeberg.org/pasiphae/callisto/internal/signer/hot"
-	"codeberg.org/pasiphae/callisto/internal/wallet"
+	"github.com/pasiphae00/callisto/internal/address"
+	"github.com/pasiphae00/callisto/internal/config"
+	"github.com/pasiphae00/callisto/internal/keystore"
+	"github.com/pasiphae00/callisto/internal/signer"
+	"github.com/pasiphae00/callisto/internal/signer/hardware"
+	"github.com/pasiphae00/callisto/internal/signer/hot"
+	"github.com/pasiphae00/callisto/internal/wallet"
 
 	"github.com/ethereum/go-ethereum/common"
 )
@@ -532,30 +532,36 @@ func (p *walletsPane) unlockSelected() {
 	}
 }
 
-// unlockHotKeystore unlocks an encrypted hot wallet with its passphrase, offering
-// Touch ID first when the wallet is enrolled.
+// unlockHotKeystore unlocks an encrypted hot wallet. When the wallet is enrolled
+// for Touch ID, it goes straight to the Touch ID prompt with no dialog in between;
+// otherwise (or if Touch ID fails) it falls back to the passphrase dialog.
 func (p *walletsPane) unlockHotKeystore(desc wallet.Descriptor) {
-	enrolled := p.app.cfg.IsTouchIDEnrolled(desc.KeystoreID) && keystore.OSSecretStore().Available()
+	if p.app.cfg.IsTouchIDEnrolled(desc.KeystoreID) && keystore.OSSecretStore().Available() {
+		p.unlockWithTouchID(desc)
+		return
+	}
+	p.showPassphraseUnlockDialog(desc, "")
+}
+
+// showPassphraseUnlockDialog prompts for the wallet's passphrase. note, if
+// non-empty, is shown above the field (used to explain a Touch ID fallback).
+func (p *walletsPane) showPassphraseUnlockDialog(desc wallet.Descriptor, note string) {
 	pass := widget.NewPasswordEntry()
 	pass.SetPlaceHolder("wallet passphrase")
 
 	content := container.NewVBox()
-	var d dialog.Dialog
-	if enrolled {
-		tid := widget.NewButton("Use Touch ID", func() { d.Hide(); p.unlockWithTouchID(desc) })
-		tid.Importance = widget.HighImportance
-		content.Add(tid)
-		content.Add(widget.NewLabel("…or enter your passphrase:"))
+	if note != "" {
+		content.Add(widget.NewLabel(note))
 	}
 	content.Add(widget.NewForm(widget.NewFormItem("Passphrase", pass)))
 
-	d = dialog.NewCustomConfirm("Unlock "+displayName(desc), "Unlock", "Cancel", content,
+	d := dialog.NewCustomConfirm("Unlock "+displayName(desc), "Unlock", "Cancel", content,
 		func(ok bool) {
 			if ok {
 				p.openFromKeystore(desc, pass.Text)
 			}
 		}, p.app.window)
-	d.Resize(fyne.NewSize(460, 240))
+	d.Resize(fyne.NewSize(460, 220))
 	d.Show()
 }
 

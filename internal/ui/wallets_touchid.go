@@ -9,10 +9,10 @@ import (
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
 
-	"codeberg.org/pasiphae/callisto/internal/config"
-	"codeberg.org/pasiphae/callisto/internal/keystore"
-	"codeberg.org/pasiphae/callisto/internal/signer/hot"
-	"codeberg.org/pasiphae/callisto/internal/wallet"
+	"github.com/pasiphae00/callisto/internal/config"
+	"github.com/pasiphae00/callisto/internal/keystore"
+	"github.com/pasiphae00/callisto/internal/signer/hot"
+	"github.com/pasiphae00/callisto/internal/wallet"
 )
 
 // touchIDRef is the OS-keychain reference for a keystore's cached unlock key.
@@ -134,12 +134,20 @@ func (p *walletsPane) unlockWithTouchID(desc wallet.Descriptor) {
 		fyne.Do(func() {
 			progress.Hide()
 			if err != nil {
-				dialog.ShowError(fmt.Errorf("Touch ID unlock failed: %w\n\nYou can unlock with your passphrase instead.", err), p.app.window)
+				errD := dialog.NewError(fmt.Errorf("Touch ID unlock failed: %w", err), p.app.window)
+				errD.SetOnClosed(func() {
+					p.showPassphraseUnlockDialog(desc, "Touch ID unlock failed or was cancelled — enter your passphrase instead:")
+				})
+				errD.Show()
 				return
 			}
 			if !addrEqual(w.Address(), desc.Address) {
 				w.Lock()
-				dialog.ShowError(fmt.Errorf("the stored key derived a different address than this wallet"), p.app.window)
+				errD := dialog.NewError(fmt.Errorf("the stored key derived a different address than this wallet"), p.app.window)
+				errD.SetOnClosed(func() {
+					p.showPassphraseUnlockDialog(desc, "Touch ID unlock didn't match this wallet — enter your passphrase instead:")
+				})
+				errD.Show()
 				return
 			}
 			p.app.setSigner(desc.ID, w)

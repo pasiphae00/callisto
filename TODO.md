@@ -55,7 +55,7 @@ Scope + layout decided 2026-07-19. Safe tab becomes **inner sub-tabs**
 Deferred (own large features, not v0.11 core): tx simulation, Claude multi-step (see
 their sections below).
 
-## v0.10 — hot-wallet key management (next major, user-approved 2026-07-19)
+## v0.10 — hot-wallet key management — ✅ shipped v0.10.0; #4 (Touch ID) completed properly in v0.14.0
 
 All four areas approved. Key material is the #1 correctness/security concern
 (PRINCIPLES), so plan carefully and keep the passphrase-encrypted keystore the
@@ -79,7 +79,17 @@ platform/CGo Keychain last):
    Touch ID via LocalAuthentication/LAContext) that holds the keystore's *wrapping
    key* (never the seed); passphrase file stays the fallback. Enroll/remove UI;
    graceful degrade off macOS. Supersedes the "OS keychain-backed keystore" item
-   below. Needs live-device verification. Then wire Touch ID into #3's re-auth.
+   below. **✅ Shipped v0.14.0, live-device verified** (see that TODO entry for
+   the real fix path — the first attempt via keychain ACLs turned out not to
+   enforce presence at all). **Still open: "wire Touch ID into #3's re-auth"** —
+   there is no per-signature re-auth today; unlock just decrypts the seed into
+   memory once, and every `SignTx`/`SignTypedData`/etc. after that signs
+   immediately with no re-prompt (hardware wallets already require a physical
+   tap per signature, so this only matters for hot wallets). A
+   "require Touch ID for every signature" toggle was scoped in the same
+   conversation that shipped Touch ID unlock but not built — settings field +
+   Settings UI checkbox + a guard at the top of `hot.Wallet.SignTx`/`signDigest`
+   that calls the same `touchid_auth_darwin.m` gate. Rough estimate: half a day.
 
 ## bugs
 
@@ -246,9 +256,17 @@ platform/CGo Keychain last):
   - Wipe-on-remove must also clear the OS keychain entry (extend
     `maybeWipeKeystore`). Enrolling/removing keychain backing needs UI in Settings
     or the wallet's context menu.
-- **Status:** designed-for, not built. Supersedes the brief roadmap note under the
-  v0.5.0 keystore item below. Primary user is on macOS, so lead with the macOS
-  Keychain + Touch ID path.
+- **Status:** macOS **shipped in v0.14.0** — Touch ID via a direct `LocalAuthentication`
+  binding (`internal/keystore/touchid_auth_darwin.m`, small Objective-C shim as
+  anticipated below), not the OS keychain's own `kSecAttrAccessControl` gate (that
+  turned out not to be reliably enforced on the legacy keychain a Developer-ID app
+  must use). The keychain holds the derived AES key, not the raw seed, per the
+  design constraint above; the passphrase-encrypted file remains the portable
+  fallback, unaffected. Wipe-on-remove clears the keychain entry
+  (`disableTouchIDSelected`). **Linux (Secret Service/libsecret) and Windows
+  (DPAPI) backends are still not built** — `internal/keystore/secretstore_other.go`
+  currently reports `Available() == false` on both, degrading cleanly to
+  passphrase-only as designed.
 
 ### GridPlus Lattice1 signer
 - **What:** add the GridPlus Lattice1 as a hardware `signer.Signer` alongside

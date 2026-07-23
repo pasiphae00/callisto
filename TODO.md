@@ -401,10 +401,10 @@ platform/CGo Keychain last):
   - **Packaging:** `Makefile` (+ `FyneApp.toml`) builds `Callisto.app` (macOS) and a
     Linux `.tar.gz` via `fyne package` (CLI installed locally to `./bin`, no new
     module dep). `make release` = package + `SHA256SUMS` + ed25519 signature, ready
-    to upload to a Codeberg release. Version is single-sourced from
-    `internal/buildinfo`. See `RELEASING.md`.
+    to upload to a GitHub release (moved from Codeberg 2026-07, see `CHANGELOG.md`).
+    Version is single-sourced from `internal/buildinfo`. See `RELEASING.md`.
   - **In-app updates (`internal/updater`):** Settings → Check for updates hits the
-    Forgejo releases API, compares via `x/mod/semver`, shows the changelog, then
+    GitHub releases API, compares via `x/mod/semver`, shows the changelog, then
     downloads → **verifies (embedded ed25519 maintainer key over SHA256SUMS +
     per-artifact SHA-256)** → swaps the bundle in place → relaunches. Refuses any
     unverified/tampered artifact. User data lives in the OS config dir (outside the
@@ -432,18 +432,17 @@ platform/CGo Keychain last):
     verified headlessly (unit tests) + local packaging; the live
     download→install→relaunch is verified on the user's machine.
 
-### CI/CD: automate releases on tag push (user, 2026-07-19)
+### CI/CD: automate releases on tag push (user, 2026-07-19; host moved to GitHub 2026-07-23)
 - **Goal:** pushing a `vX.Y.Z` tag triggers CI to build, package, checksum, **sign**,
-  and publish the Codeberg release automatically — no manual `make release` +
-  web-UI upload. Builds on the v0.8.0 pipeline (`make release` already does
+  and publish the GitHub release automatically — no manual `make release` +
+  `gh release create`. Builds on the v0.8.0 pipeline (`make release` already does
   everything; CI just needs to run it per-OS and upload).
-- **Runner:** Codeberg supports **Forgejo Actions** (GitHub-Actions-compatible
-  workflows in `.forgejo/workflows/`). A tag-triggered job matrix over macOS +
-  Linux runners runs `make package-<os>`, then a job collects artifacts, runs
-  `make checksums` + `make sign`, and creates the release via the Forgejo API
-  (`POST /repos/pasiphae/callisto/releases` + asset uploads). Fyne is CGo, so each
-  OS needs a native runner (or fyne-cross for Linux); confirm Codeberg's hosted
-  runner availability vs. self-hosting one.
+- **Runner:** GitHub Actions, workflows in `.github/workflows/`. A tag-triggered job
+  matrix over macOS + Linux runners runs `make package-<os>`, then a job collects
+  artifacts, runs `make checksums` + `make sign`, and creates the release via
+  `gh release create` (or the REST API). Fyne is CGo, so each OS needs a native
+  runner (GitHub-hosted `macos-latest`/`ubuntu-latest` cover this directly, no
+  self-hosting needed, unlike the Codeberg-hosted-runner question this replaces).
 - **⭐ Signing on the CD server — the crux (security):** moving the ed25519 release
   key off the maintainer's offline machine into CI weakens the trust root (the
   updater installs anything signed by it). Options, roughly increasing safety:

@@ -9,6 +9,51 @@ changes; `v1.0.0` marks the first stable, documented release.
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-07-23
+
+Now hosted on GitHub. Real Touch ID unlock (the previous mechanism silently never
+enforced presence at all), and a security fix for raw-private-key wallets that
+had their passphrase changed.
+
+### Changed
+- **Now hosted on GitHub** (`github.com/pasiphae00/callisto`), moved from Codeberg
+  after Codeberg's 2026 Assembly banned both AI-authored and cryptocurrency-related
+  projects — Callisto is both. The Codeberg repo remains only as a frozen
+  historical mirror. The in-app self-updater now points at GitHub's releases API;
+  `internal/updater`'s existing signature verification (embedded ed25519 key over
+  `SHA256SUMS`) is unchanged, so this move made no security-relevant changes.
+
+### Added
+- **Real Touch ID unlock.** Biometric enforcement now happens via an explicit
+  `LocalAuthentication` call (`internal/keystore/touchid_auth_darwin.m`) before
+  every keychain read, rather than relying on the OS keychain's own
+  `kSecAttrAccessControl` gate — that gate turned out not to be reliably enforced
+  on macOS's legacy (non-Data-Protection) keychain, which Developer-ID
+  (non-App-Store) apps must use to avoid a `keychain-access-groups` entitlement
+  that makes such a binary refuse to launch at all. Unlock now also goes straight
+  to the Touch ID prompt when a wallet is enrolled (no intermediate dialog),
+  falling back to the passphrase prompt if Touch ID fails, is cancelled, or is
+  disabled.
+- **`cmd/keystore-recover`**, a standalone, local-only diagnostic/repair CLI for a
+  keystore file that won't unlock as expected: it tries a passphrase (typed
+  directly into your own terminal — it never passes through any other tool) plus
+  a few deterministic variants (whitespace/newline trimmed, Unicode NFC/NFD
+  normalized, curly vs. straight quotes), shows the derived address both as a raw
+  private key and as an HD seed, and can repair a mislabeled `secret` field (see
+  Fixed, below) after backing up the original file.
+
+### Fixed
+- **Security: `keystore.Rekey` silently dropped the `Secret` label.** Changing a
+  raw-private-key wallet's passphrase re-encrypted it correctly but lost the
+  `"private-key"` label that tells Callisto not to run those bytes through HD
+  derivation. On the next unlock, the (correctly decrypted) private key was
+  instead mis-derived as if it were a BIP-39 seed — right passphrase, **wrong
+  address** — surfacing as "the keystore derived a different address than this
+  wallet." Fixed and regression-tested (`TestRekeyPreservesSecretLabel`). If
+  you've ever changed the passphrase on a wallet imported via **Import private
+  key…**, check it still unlocks to the expected address; `cmd/keystore-recover`
+  can diagnose and repair an affected keystore file in place.
+
 ## [0.13.0] - 2026-07-21
 
 macOS builds are now **Apple-notarized** (they open with no Gatekeeper prompt), plus a

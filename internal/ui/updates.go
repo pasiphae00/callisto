@@ -10,13 +10,13 @@ import (
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
 
-	"codeberg.org/pasiphae/callisto/internal/buildinfo"
-	"codeberg.org/pasiphae/callisto/internal/updater"
+	"github.com/pasiphae00/callisto/internal/buildinfo"
+	"github.com/pasiphae00/callisto/internal/updater"
 )
 
 // buildUpdatesBox is the "Application" strip at the bottom of the Settings pane:
 // the running version and a Check-for-updates button. Updates are pulled from the
-// Codeberg releases API and cryptographically verified before install (see
+// GitHub releases API and cryptographically verified before install (see
 // internal/updater).
 func (p *settingsPane) buildUpdatesBox() fyne.CanvasObject {
 	label := "Callisto v" + buildinfo.Version

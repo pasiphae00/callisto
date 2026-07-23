@@ -9,18 +9,18 @@
 </p>
 
 <p align="left">
-  <a href="https://codeberg.org/pasiphae/callisto/src/branch/main/FEATURES.md">Features</a> ·
-  <a href="https://codeberg.org/pasiphae/callisto/src/branch/main/CHANGELOG.md">Changelog</a> ·
-  <a href="https://codeberg.org/pasiphae/callisto/src/branch/main/DESIGN.md">Design</a> ·
-  <a href="https://codeberg.org/pasiphae/callisto/src/branch/main/PRINCIPLES.md">Principles</a> ·
-  <a href="https://codeberg.org/pasiphae/callisto/src/branch/main/RELEASING.md">Releasing</a> ·
-  <a href="https://codeberg.org/pasiphae/callisto/src/branch/main/docs/security-review-2026-07.md">Security Review</a>
+  <a href="https://github.com/pasiphae00/callisto/blob/main/FEATURES.md">Features</a> ·
+  <a href="https://github.com/pasiphae00/callisto/blob/main/CHANGELOG.md">Changelog</a> ·
+  <a href="https://github.com/pasiphae00/callisto/blob/main/DESIGN.md">Design</a> ·
+  <a href="https://github.com/pasiphae00/callisto/blob/main/PRINCIPLES.md">Principles</a> ·
+  <a href="https://github.com/pasiphae00/callisto/blob/main/RELEASING.md">Releasing</a> ·
+  <a href="https://github.com/pasiphae00/callisto/blob/main/docs/security-review-2026-07.md">Security Review</a>
 </p>
 
 · · ·
 
 <p align="left">
-  <a href="https://codeberg.org/pasiphae/callisto/releases"><strong>Download here</strong></a> 
+  <a href="https://github.com/pasiphae00/callisto/releases"><strong>Download here</strong></a> 
 </p>
 
 ---
@@ -31,7 +31,7 @@ It manages hot wallets, Trezor and Ledger hardware wallets, and Safe multi-signa
 
 _Screenshots [here](./FEATURES.md)._
 
-> **Status: pre-1.0 (`v0.13.0`).** Distributed as a native, self-updating desktop app (see [Download](https://codeberg.org/pasiphae/callisto/releases)). The features below are in place and usable; transaction simulation and multi-step Safe recipes are still planned — see [Roadmap](#roadmap).
+> **Status: pre-1.0 (`v0.14.0`).** Distributed as a native, self-updating desktop app (see [Download](https://github.com/pasiphae00/callisto/releases)). The features below are in place and usable; transaction simulation and multi-step Safe recipes are still planned — see [Roadmap](#roadmap).
 
 ## Features
 
@@ -63,7 +63,7 @@ _Screenshots [here](./FEATURES.md)._
 
 ### Download a release (recommended)
 
-Get the latest build from the **[releases page](https://codeberg.org/pasiphae/callisto/releases)**:
+Get the latest build from the **[releases page](https://github.com/pasiphae00/callisto/releases)**:
 
 1. Download the archive for your platform — `Callisto-v<version>-darwin-arm64.zip` / `-darwin-amd64.zip` (macOS) or `-linux-amd64.tar.gz` (Linux).
 2. **(Recommended) verify it:** `shasum -a 256 -c SHA256SUMS`. `SHA256SUMS` is itself ed25519-signed (`SHA256SUMS.sig`) with the maintainer key — the same key Callisto's in-app updater checks.
@@ -80,7 +80,7 @@ macOS builds are **Developer ID signed and notarized by Apple**, so they open on
 Needs **Go 1.24+** and a C toolchain (Fyne uses CGo — see Fyne's [prerequisites](https://docs.fyne.io/started/); on macOS the Xcode command-line tools suffice).
 
 ```sh
-git clone https://codeberg.org/pasiphae/callisto.git
+git clone https://github.com/pasiphae00/callisto.git
 cd callisto
 go run ./cmd/callisto
 ```

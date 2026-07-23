@@ -108,11 +108,10 @@ go run ./cmd/callisto-release verify --pub internal/updater/release_pubkey.ed255
 strings dist/*/Callisto.app/Contents/MacOS/callisto | grep -F "$GANYMEDE_TOKEN"   # must be empty
 ```
 
-### 4. Create the Codeberg release & upload
+### 4. Create the GitHub release & upload
 
-Web UI → Releases → New release → pick `vX.Y.Z` → paste the notes (template in
-`RELEASING.md`) → attach **all**: both `-darwin-*.zip`, the `-linux-*.tar.gz`,
-`SHA256SUMS`, `SHA256SUMS.sig` → Publish.
+`gh release create vX.Y.Z` with all artifacts attached — see "Publishing on
+GitHub" in `RELEASING.md`.
 
 ### 5. Post-release
 

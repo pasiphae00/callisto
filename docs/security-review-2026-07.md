@@ -136,7 +136,7 @@ estimate, no new heavy dep required).
 ### 7 — No explicit anti-downgrade in the updater *(Low)*
 
 `Check` trusts the releases API for the "latest" version/tag; the artifact is signed, but
-an attacker able to tamper with the API response (TLS MITM, or a Codeberg compromise)
+an attacker able to tamper with the API response (TLS MITM, or a GitHub compromise)
 could **replay a genuinely-signed older release** with a higher tag and downgrade a user
 to known-vulnerable code. TLS + the signature make this hard, but it's a gap.
 **Fix:** refuse to "update" to a version ≤ current, and/or bind the version into the

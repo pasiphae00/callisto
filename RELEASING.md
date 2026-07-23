@@ -1,7 +1,10 @@
 # Releasing Callisto
 
-Callisto is hosted on **Codeberg** (a Forgejo instance). This document defines
-the branch, versioning, and release workflow. It is intentionally lightweight but
+Callisto is hosted on **GitHub** (`github.com/pasiphae00/callisto`). Previously on
+Codeberg; moved after Codeberg's 2026 Terms of Use banned both AI-authored and
+cryptocurrency-related projects. The Codeberg repo remains only as a frozen
+historical mirror — not pushed to going forward. This document defines the
+branch, versioning, and release workflow. It is intentionally lightweight but
 consistent, so releases are reproducible and well documented.
 
 ## Branching model
@@ -32,9 +35,8 @@ as Added / Changed / Fixed / Removed / Security. On release, rename the
 
 ## Cutting a release
 
-Because Codeberg runs Forgejo, the GitHub `gh` CLI does **not** apply here.
-Releases are created from an annotated tag, then published via the Codeberg web
-UI or the Forgejo API.
+Releases are created from an annotated tag, then published with the `gh` CLI
+(`gh auth login` once beforehand).
 
 ### Release checklist
 
@@ -50,7 +52,7 @@ Do these in order on `main` (replace `X.Y.Z` throughout). Steps 1–5 are one co
 - [ ] 4. **`README.md`** — update the status line (`Status: pre-1.0 (vX.Y.Z)`) if the
       milestone/feature summary changed.
 - [ ] 5. **`docs/release-notes/vX.Y.Z.md`** — add the release notes (fill the template
-      below); this is the canonical copy pasted into the Codeberg release.
+      below); this is the canonical copy passed to `gh release create`.
 - [ ] 6. **`RELEASING.md` / `TODO.md`** — update if the process or roadmap
       changed. Commit steps 1–6: `git commit -m "release: vX.Y.Z"`.
 
@@ -65,7 +67,7 @@ Do these in order on `main` (replace `X.Y.Z` throughout). Steps 1–5 are one co
 - [ ] 9. `git push origin main --follow-tags`
 
 **Build, sign, publish artifacts** (see below): run `make release` on each target
-OS, collect `dist/`, then create the Codeberg release and upload every artifact. For
+OS, collect `dist/`, then create the GitHub release and upload every artifact. For
 **notarized macOS** builds (no Gatekeeper prompt) pass your Developer ID identity —
 `make release CALLISTO_SIGN_ID="Developer ID Application: NAME (TEAMID)"` — see
 [docs/macos-signing.md](docs/macos-signing.md) for the one-time cert/notary setup.
@@ -74,14 +76,18 @@ OS, collect `dist/`, then create the Codeberg release and upload every artifact.
 - [ ] 10. Install the published build and confirm **Settings → Check for updates**
       reports up-to-date; on the *next* release, confirm it updates from the prior one.
 
-### Publishing on Codeberg
+### Publishing on GitHub
 
-- **Web UI:** repo → Releases → **New release** → pick the `vX.Y.Z` tag → title
-  `Callisto vX.Y.Z` → paste the release message (template below) → attach **all**
-  artifacts (each `*.zip`/`*.tar.gz`, `SHA256SUMS`, `SHA256SUMS.sig`) → leave
-  "pre-release" unchecked → Publish.
-- **API (Forgejo):** `POST /api/v1/repos/pasiphae/callisto/releases` (token,
-  `tag_name`, `name`, `body`), then `POST …/releases/{id}/assets` per file.
+```sh
+gh release create vX.Y.Z dist/Callisto-vX.Y.Z-darwin-arm64.zip \
+  dist/Callisto-vX.Y.Z-darwin-amd64.zip dist/Callisto-vX.Y.Z-linux-amd64.tar.gz \
+  dist/SHA256SUMS dist/SHA256SUMS.sig \
+  --title "Callisto vX.Y.Z" --notes-file docs/release-notes/vX.Y.Z.md
+```
+
+Include whichever artifacts `dist/` actually has for this release (Linux may lag
+macOS — see the build-target matrix below). Omit `--notes-file` and pass
+`--notes "..."` for a short inline message instead, if preferred.
 
 Keep the Makefile's artifact filenames — the in-app updater matches its platform
 build by the `-<goos>-<goarch>` fragment and fetches `SHA256SUMS`/`.sig` by name.
@@ -90,7 +96,7 @@ build by the `-<goos>-<goarch>` fragment and fetches `SHA256SUMS`/`.sig` by name
 
 Callisto ships as a native, double-clickable app, built by the `Makefile`. The
 in-app updater (Settings → **Check for updates**) pulls new releases from the
-Codeberg releases API and verifies them against a maintainer signing key before
+GitHub releases API and verifies them against a maintainer signing key before
 installing, so **every release must carry a signed `SHA256SUMS`**.
 
 ### One-time setup: the release signing key
@@ -179,8 +185,8 @@ right-click/`xattr` instructions from the release notes and README.
 Keep the release body short: a one/two-line summary, install + checksum steps, and a
 link to the version's `CHANGELOG.md` section for the details — don't paste the whole
 changelog. Fill this out, save it as **`docs/release-notes/vX.Y.Z.md`** (the canonical
-copy — see [docs/release-notes/](docs/release-notes/)), and paste the same into the
-Codeberg release. Replace `X.Y.Z` and the summary.
+copy — see [docs/release-notes/](docs/release-notes/)), and pass it via
+`--notes-file` to `gh release create`. Replace `X.Y.Z` and the summary.
 
 ```markdown
 ## Callisto `vX.Y.Z`
@@ -209,6 +215,6 @@ same key the in-app updater checks).
 
 ### Changes
 
-See the [`vX.Y.Z` changelog](https://codeberg.org/pasiphae/callisto/src/branch/main/CHANGELOG.md#0xyz---yyyy-mm-dd)
+See the [`vX.Y.Z` changelog](https://github.com/pasiphae00/callisto/blob/main/CHANGELOG.md#0xyz---yyyy-mm-dd)
 for the full list.
 ```

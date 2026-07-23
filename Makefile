@@ -52,7 +52,7 @@ CALLISTO_NOTARY_PROFILE ?= callisto-notary
 # and fall back to Flashbots. OBF_CMD emits the obfuscated token (or nothing); it's
 # evaluated inside recipes so a plain `make` doesn't run it.
 ENV_FILE   := GANYMEDE_RPC_TOKEN.env
-OBF_VAR    := codeberg.org/pasiphae/callisto/internal/buildsecrets.ganymedeObf
+OBF_VAR    := github.com/pasiphae00/callisto/internal/buildsecrets.ganymedeObf
 OBF_CMD    := [ -f $(ENV_FILE) ] && ( set -a; . ./$(ENV_FILE); set +a; go run ./cmd/callisto-release obf-token ) || true
 
 .PHONY: all build test vet package-mac package-mac-arm package-mac-intel mac-arch \
@@ -182,8 +182,8 @@ release:
 	@echo "Release artifacts in $(DIST)/ (v$(VERSION)):"
 	@ls -1 $(DIST) | sed 's/^/  /'
 	@echo
-	@echo "Next: create the v$(VERSION) release on Codeberg and upload the .zip/.tar.gz,"
-	@echo "SHA256SUMS, and SHA256SUMS.sig. See docs/RELEASING.md."
+	@echo "Next: gh release create v$(VERSION) with the .zip/.tar.gz, SHA256SUMS,"
+	@echo "and SHA256SUMS.sig attached. See RELEASING.md."
 
 clean:
 	rm -rf $(DIST)

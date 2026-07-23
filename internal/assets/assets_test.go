@@ -9,6 +9,7 @@ import (
 	ethereum "github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	gethrpc "github.com/ethereum/go-ethereum/rpc"
 )
 
 // mockClient implements rpc.Client; only BalanceAt and CallContract are used by
@@ -115,7 +116,8 @@ func (m *mockClient) SubscribeFilterLogs(context.Context, ethereum.FilterQuery, 
 func (m *mockClient) SubscribeNewHead(context.Context, chan<- *types.Header) (ethereum.Subscription, error) {
 	return nil, nil
 }
-func (m *mockClient) Close() {}
+func (m *mockClient) RawClient() *gethrpc.Client { return nil }
+func (m *mockClient) Close()                     {}
 
 func sel(method string) [4]byte {
 	var s [4]byte

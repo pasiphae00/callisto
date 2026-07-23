@@ -7,6 +7,7 @@ import (
 	ethereum "github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	gethrpc "github.com/ethereum/go-ethereum/rpc"
 )
 
 // Client is the subset of go-ethereum's ethclient surface that Callisto's domain
@@ -48,4 +49,14 @@ type Client interface {
 
 	// Close releases the underlying connection.
 	Close()
+
+	// RawClient exposes the underlying raw JSON-RPC client for methods ethclient
+	// doesn't wrap (eth_simulateV1, debug_traceCall, state-overridden eth_call —
+	// used by internal/sim). *ethclient.Client's Client() method satisfies this
+	// directly, so it costs nothing for the real implementation; test doubles can
+	// return nil since none of them exercise raw-call paths. Deliberately not
+	// named "Client": a struct embedding this interface (a common test-mock
+	// pattern here) implicitly gets a field named "Client", which would collide
+	// with and shadow a same-named promoted method.
+	RawClient() *gethrpc.Client
 }

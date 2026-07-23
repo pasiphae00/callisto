@@ -172,8 +172,9 @@ sign:
 # builds BOTH mac architectures (Intel first, Apple-silicon last so the leftover
 # dist/Callisto.app is native for this machine). Linux artifacts are built on Linux.
 release:
+	@$(MAKE) clean
 	@if [ "$(GOOS)" = "darwin" ]; then \
-		$(MAKE) mac-arch ARCH=amd64; \
+		$(MAKE) mac-arch ARCH=amd64 && \
 		$(MAKE) mac-arch ARCH=arm64; \
 	else $(MAKE) package-linux; fi
 	@$(MAKE) checksums

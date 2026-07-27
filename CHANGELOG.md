@@ -9,6 +9,16 @@ changes; `v1.0.0` marks the first stable, documented release.
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-07-27
+
+### Added
+- **Robinhood Chain** added to the built-in multi-chain catalog (`config.ChainCatalog`,
+  `internal/chain` registry) — chain ID 4663, an Arbitrum-Orbit L2 settling to
+  Ethereum. Ships with a default PublicNode HTTPS RPC
+  (`https://robinhood-rpc.publicnode.com`), selectable via Settings **Switch
+  chain…** alongside the existing L2s. Multicall3 is deployed on-chain, so
+  balance loads batch the same way as the other L2s.
+
 ## [0.14.0] - 2026-07-23
 
 Now hosted on GitHub. Real Touch ID unlock (the previous mechanism silently never

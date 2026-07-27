@@ -124,6 +124,7 @@ func ChainCatalog() []ChainOption {
 		{ChainID: 137, Label: "Polygon", Endpoints: []rpc.Endpoint{{Name: "Polygon (PublicNode)", URL: "https://polygon-bor-rpc.publicnode.com"}}},
 		{ChainID: 324, Label: "zkSync Era", Endpoints: []rpc.Endpoint{{Name: "zkSync Era (official)", URL: "https://mainnet.era.zksync.io"}}},
 		{ChainID: 56, Label: "BNB Smart Chain", Endpoints: []rpc.Endpoint{{Name: "BSC (PublicNode)", URL: "https://bsc-rpc.publicnode.com"}}},
+		{ChainID: 4663, Label: "Robinhood Chain", Endpoints: []rpc.Endpoint{{Name: "Robinhood Chain (PublicNode)", URL: "https://robinhood-rpc.publicnode.com"}}},
 	}
 }
 

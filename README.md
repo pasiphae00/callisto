@@ -31,17 +31,17 @@ It manages hot wallets, Trezor and Ledger hardware wallets, and Safe multi-signa
 
 _Screenshots [here](./FEATURES.md)._
 
-> **Status: pre-1.0 (`v0.14.0`).** Distributed as a native, self-updating desktop app (see [Download](https://github.com/pasiphae00/callisto/releases)). The features below are in place and usable; transaction simulation and multi-step Safe recipes are still planned — see [Roadmap](#roadmap).
+> **Status: pre-1.0 (`v0.15.0`).** Distributed as a native, self-updating desktop app (see [Download](https://github.com/pasiphae00/callisto/releases)). The features below are in place and usable; transaction simulation and multi-step Safe recipes are still planned — see [Roadmap](#roadmap).
 
 ## Features
 
 - **Bring your own node — or switch chains in one click.** 
-  - **Switch chain** between Ethereum and the major L2s (Base, Arbitrum One, Optimism, Polygon, zkSync Era, BNB Smart Chain), each bundled with a default public RPC. Out of the box Callisto connects to a maintainer-run Ethereum **archive** node (so approval history and live subscriptions work immediately) and **falls over to [Flashbots Protect](https://protectrpc.flashbots.net/about)** if it's unreachable. Configure your own endpoints (`https://` or `wss://`, optional bearer auth) under Manage endpoints — WebSocket gets live block updates, HTTP is polled. Public L2 endpoints are rate-limited, so balances load via a single **Multicall3** call and only the visible pane refreshes.
+  - **Switch chain** between Ethereum and the major L2s (Base, Arbitrum One, Optimism, Polygon, zkSync Era, BNB Smart Chain, Robinhood Chain), each bundled with a default public RPC. Out of the box Callisto connects to a maintainer-run Ethereum **archive** node (so approval history and live subscriptions work immediately) and **falls over to [Flashbots Protect](https://protectrpc.flashbots.net/about)** if it's unreachable. Configure your own endpoints (`https://` or `wss://`, optional bearer auth) under Manage endpoints — WebSocket gets live block updates, HTTP is polled. Public L2 endpoints are rate-limited, so balances load via a single **Multicall3** call and only the visible pane refreshes.
 - **Multiple wallets, multiple signers.**
   - *Hot wallets* — import a BIP-39 seed **once**, pick the account(s) to add, and set an encryption passphrase; the seed is stored only as a scrypt+AES-GCM keystore and unlocked thereafter with just the passphrase. Keys live in memory only while unlocked and are wiped on lock. Full key management: change passphrase, reveal a private key, export an encrypted backup, derive more accounts, import a raw key / MetaMask JSON / watch-only address, idle auto-lock, and Touch ID unlock on macOS.
   - *Hardware wallets* — Ledger and Trezor over direct USB via a common signing interface; keys never leave the device. **No Trezor Suite or Bridge required** — Callisto talks to the Trezor directly over libusb (Bridge is kept only as a fallback). Trezor hidden wallets (passphrase-protected, incl. on-device entry) are supported.
 - **Chain-aware.** 
-  - Native asset and block explorer adapt to the connected chain (Ethereum, Base, Arbitrum, Optimism, Polygon, zkSync Era, BNB Smart Chain, Gnosis, Sepolia, Holesky, …) with a safe fallback for unknown chains.
+  - Native asset and block explorer adapt to the connected chain (Ethereum, Base, Arbitrum, Optimism, Polygon, zkSync Era, BNB Smart Chain, Robinhood Chain, Gnosis, Sepolia, Holesky, …) with a safe fallback for unknown chains.
 - **Balances.** 
   - Held ETH and ERC-20 tokens are **discovered automatically** from on-chain transfer history (with name/symbol/decimals, incl. legacy `bytes32` tokens) and refresh automatically — no manual refresh — batched into a single Multicall3 read to stay light on public endpoints. Hide spam tokens (persisted), or add a token by address.
 - **ENS everywhere.** 

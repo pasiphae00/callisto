@@ -97,6 +97,12 @@ var registry = map[uint64]Info{
 		Native:      ether("ETH"),
 		ExplorerURL: "https://era.zksync.network",
 	},
+	4663: {
+		ID:          4663,
+		Name:        "Robinhood Chain",
+		Native:      ether("ETH"),
+		ExplorerURL: "https://robinhoodchain.blockscout.com",
+	},
 }
 
 // Lookup returns metadata for a chain ID. For unknown chains it synthesizes a

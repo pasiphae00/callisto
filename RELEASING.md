@@ -188,6 +188,12 @@ changelog. Fill this out, save it as **`docs/release-notes/vX.Y.Z.md`** (the can
 copy — see [docs/release-notes/](docs/release-notes/)), and pass it via
 `--notes-file` to `gh release create`. Replace `X.Y.Z` and the summary.
 
+**Write each paragraph as a single unwrapped line, however long.** GitHub renders a
+release body as GFM "comment" style, where a lone `\n` becomes a visible `<br>` —
+unlike normal file rendering, where it collapses to a space. A paragraph hard-wrapped
+at ~80 columns (fine in a repo file) shows up as broken mid-sentence line breaks on
+the release page. Only a blank line should start a new line on the rendered page.
+
 ```markdown
 ## Callisto `vX.Y.Z`
 
@@ -195,14 +201,11 @@ copy — see [docs/release-notes/](docs/release-notes/)), and pass it via
 
 ### Install
 
-**macOS** — download `Callisto-vX.Y.Z-darwin-arm64.zip` (Apple silicon) or
-`-darwin-amd64.zip` (Intel), unzip, and move **Callisto.app** to /Applications.
-(Notarized by Apple — opens with no Gatekeeper prompt.)
+**macOS** — download `Callisto-vX.Y.Z-darwin-arm64.zip` (Apple silicon) or `-darwin-amd64.zip` (Intel), unzip, and move **Callisto.app** to /Applications. (Notarized by Apple — opens with no Gatekeeper prompt.)
 
 **Linux** — download `Callisto-vX.Y.Z-linux-amd64.tar.gz` and extract.
 
-Already running Callisto? Just use **Settings → Check for updates** — it verifies
-and installs this release for you.
+Already running Callisto? Just use **Settings → Check for updates** — it verifies and installs this release for you.
 
 ### Verify (optional)
 
@@ -210,11 +213,9 @@ and installs this release for you.
 shasum -a 256 -c SHA256SUMS
 ```
 
-`SHA256SUMS` is ed25519-signed as `SHA256SUMS.sig` with the maintainer key (the
-same key the in-app updater checks).
+`SHA256SUMS` is ed25519-signed as `SHA256SUMS.sig` with the maintainer key (the same key the in-app updater checks).
 
 ### Changes
 
-See the [`vX.Y.Z` changelog](https://github.com/pasiphae00/callisto/blob/main/CHANGELOG.md#0xyz---yyyy-mm-dd)
-for the full list.
+See the [`vX.Y.Z` changelog](https://github.com/pasiphae00/callisto/blob/main/CHANGELOG.md#0xyz---yyyy-mm-dd) for the full list.
 ```

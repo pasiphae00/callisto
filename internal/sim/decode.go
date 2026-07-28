@@ -47,17 +47,25 @@ func mustType(t string) abi.Type {
 // decodeTransfer reports the signed delta for `account` from an ERC-20
 // Transfer log, or ok=false if the log isn't a well-formed Transfer touching
 // account.
+//
+// Exactly three topics are required: an ERC-721 Transfer shares this signature
+// but indexes tokenId as a fourth topic (and carries no data), so the length
+// check is what keeps NFT transfers from being misread as ERC-20 amounts.
 func decodeTransfer(lg types.Log, account common.Address) (token common.Address, delta *big.Int, ok bool) {
-	if lg.Topics[0] != transferSig || len(lg.Topics) < 3 || len(lg.Data) < 32 {
+	if len(lg.Topics) != 3 || lg.Topics[0] != transferSig || len(lg.Data) < 32 {
 		return common.Address{}, nil, false
 	}
 	from := common.BytesToAddress(lg.Topics[1].Bytes())
 	to := common.BytesToAddress(lg.Topics[2].Bytes())
 	value := new(big.Int).SetBytes(lg.Data[:32])
-	switch account {
-	case from:
+	switch {
+	case from == to && from == account:
+		// A self-transfer touches the account but changes nothing; report a
+		// zero delta rather than letting one arm below claim it as a debit.
+		return lg.Address, new(big.Int), true
+	case from == account:
 		return lg.Address, new(big.Int).Neg(value), true
-	case to:
+	case to == account:
 		return lg.Address, value, true
 	default:
 		return common.Address{}, nil, false
@@ -67,7 +75,7 @@ func decodeTransfer(lg types.Log, account common.Address) (token common.Address,
 // decodeApproval reports an ERC-20 Approval log as an ApprovalChange, or
 // ok=false if malformed.
 func decodeApproval(lg types.Log) (owner common.Address, ac ApprovalChange, ok bool) {
-	if lg.Topics[0] != approvalSig || len(lg.Topics) < 3 || len(lg.Data) < 32 {
+	if len(lg.Topics) != 3 || lg.Topics[0] != approvalSig || len(lg.Data) < 32 {
 		return common.Address{}, ApprovalChange{}, false
 	}
 	owner = common.BytesToAddress(lg.Topics[1].Bytes())
@@ -85,7 +93,7 @@ func decodeApproval(lg types.Log) (owner common.Address, ac ApprovalChange, ok b
 // indexed, amount+expiration in data) as an ApprovalChange, or ok=false if
 // malformed or not from the canonical Permit2 contract.
 func decodePermit2Approval(lg types.Log) (owner common.Address, ac ApprovalChange, ok bool) {
-	if lg.Address != permit2Address || lg.Topics[0] != permit2ApprovalSig || len(lg.Topics) < 4 {
+	if lg.Address != permit2Address || len(lg.Topics) < 4 || lg.Topics[0] != permit2ApprovalSig {
 		return common.Address{}, ApprovalChange{}, false
 	}
 	owner = common.BytesToAddress(lg.Topics[1].Bytes())
@@ -106,4 +114,3 @@ func decodePermit2Approval(lg types.Log) (owner common.Address, ac ApprovalChang
 		Amount:    amount,
 	}, true
 }
-

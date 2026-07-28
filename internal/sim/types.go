@@ -92,6 +92,7 @@ type NFTDelta struct {
 type ApprovalChange struct {
 	Token     common.Address
 	Symbol    string
+	Decimals  uint8
 	Spender   common.Address
 	Unlimited bool
 	Amount    *big.Int // meaningless when Unlimited

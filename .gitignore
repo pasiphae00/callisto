@@ -387,6 +387,10 @@ myetherwallet/
 # Same reasoning: the keystore-recover diagnostic tool's directory name matches
 # *keystore* too.
 !cmd/keystore-recover/
+# Same reasoning again: this package's directory name matches *secret*. It holds
+# only the obfuscated-token embedding logic, not a secret itself — the actual
+# Ganymede token lives in the gitignored GANYMEDE_RPC_TOKEN.env, never here.
+!internal/buildsecrets/
 # ...but never let a real secrets/keystore directory back in.
 /.local/
 /keystore/

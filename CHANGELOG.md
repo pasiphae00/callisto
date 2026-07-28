@@ -9,6 +9,40 @@ changes; `v1.0.0` marks the first stable, documented release.
 
 ## [Unreleased]
 
+### Added
+- **Transaction simulation before signing** (`internal/sim`) — every pre-sign review
+  now shows what a transaction would actually do, simulated against current chain
+  state through your own RPC. No third-party simulation service; nothing leaves the
+  machine except the call to the endpoint you already chose.
+  - **Automatic revert check.** Opening a review runs one `eth_call` (for Safe
+    transactions, `simulateAndRevert` via the Safe's `SimulateTxAccessor` — no
+    signatures and no met threshold required). A transaction that would fail is
+    flagged prominently with its decoded reason (`Error(string)` require messages,
+    Solidity `Panic` codes, or the raw selector of a custom error), so you don't
+    sign something that burns gas and changes nothing. Works on every endpoint.
+  - **Asset-change preview**, behind an explicit **Simulate…** button. Shows the
+    signed balance and allowance changes for your account — `-1 ETH`,
+    `+0.998 stETH`, `Approve UNLIMITED USDC -> 0x2222...222b` — with unlimited
+    allowances called out as a warning. Needs a capable endpoint: `eth_simulateV1`
+    (preferred; its `traceTransfers` reports native ETH moves alongside event logs)
+    or `debug_traceCall` with `callTracer` on an archive node such as Ganymede.
+    Endpoint capability is probed once per connection and cached; bare RPCs say so
+    rather than showing an empty preview.
+  - Wired into all four review surfaces: **Send**, **WalletConnect**
+    `eth_sendTransaction` (the highest-value case — arbitrary dApp calldata, where
+    the existing static decode only recognizes known call shapes), the Safe
+    **Build** tab, and Safe **Proposals** (actionable proposals only).
+  - Deltas are netted per token, so a multi-hop swap reads as one line per asset and
+    tokens that net to zero (flash loans, pass-through hops) are omitted; logs from
+    reverted sub-calls are discarded, since they never took effect. Token symbols are
+    sanitized through `internal/textsafe` before display.
+  - Safe `DelegateCall`/MultiSend batches get the revert check but not yet an asset
+    preview — that needs signature-bypass state overrides (planned as P3b in
+    `docs/transaction-simulation.md`).
+  - A simulation never blocks signing and is always labelled as a snapshot of
+    current state, not a guarantee about the block the transaction lands in. A
+    simulation that fails to run says explicitly that it proves nothing.
+
 ## [0.15.0] - 2026-07-27
 
 ### Added

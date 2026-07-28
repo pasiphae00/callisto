@@ -9,6 +9,7 @@ import (
 	ethereum "github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	gethrpc "github.com/ethereum/go-ethereum/rpc"
 )
 
 // --- NameHash known-answer vectors (EIP-137) --------------------------------
@@ -84,7 +85,8 @@ func (m *mockRPC) SubscribeFilterLogs(context.Context, ethereum.FilterQuery, cha
 func (m *mockRPC) SubscribeNewHead(context.Context, chan<- *types.Header) (ethereum.Subscription, error) {
 	return nil, nil
 }
-func (m *mockRPC) Close() {}
+func (m *mockRPC) RawClient() *gethrpc.Client { return nil }
+func (m *mockRPC) Close()                     {}
 
 // selectors for routing in the mock.
 var (

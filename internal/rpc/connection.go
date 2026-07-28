@@ -28,6 +28,17 @@ type Connection struct {
 	Known bool
 }
 
+// ethClient wraps *ethclient.Client to additionally satisfy Client's RawClient
+// method. ethclient.Client already holds the raw *gethrpc.Client internally
+// (exposed via its own Client() accessor) -- this just surfaces it under our
+// interface's method name (see RawClient's doc comment for why it isn't named
+// "Client").
+type ethClient struct {
+	*ethclient.Client
+}
+
+func (c ethClient) RawClient() *gethrpc.Client { return c.Client.Client() }
+
 // dialFunc is the dialer used to establish connections; overridable in tests. When
 // authToken is non-empty an Authorization: Bearer header is sent — on the request
 // for HTTP, or on the upgrade handshake for WS.
@@ -37,15 +48,14 @@ var dialFunc = func(ctx context.Context, rawURL, authToken string) (Client, erro
 		if err != nil {
 			return nil, err
 		}
-		return ethclient.NewClient(rc), nil
+		return ethClient{ethclient.NewClient(rc)}, nil
 	}
-	// ethclient.DialContext handles http(s) and ws(s) transparently and returns
-	// a *Client that satisfies our Client interface.
+	// ethclient.DialContext handles http(s) and ws(s) transparently.
 	c, err := ethclient.DialContext(ctx, rawURL)
 	if err != nil {
 		return nil, err
 	}
-	return c, nil
+	return ethClient{c}, nil
 }
 
 // authTokenFor resolves an endpoint's bearer token (empty if none / unconfigured).

@@ -536,7 +536,7 @@ platform/CGo Keychain last):
   2-of-4) broadcast and confirmed. Ledger's eth_sign path uses upstream go-ethereum
   `SignText` unchanged; not separately device-tested but shares the same code path.
 
-### transaction simulation
+### transaction simulation — 🚧 in progress, branch `feat/tx-simulation` (started 2026-07-23)
 - lets plan and figure out the best way to surface to the user the option to "simulate" a transaction against a blockchain snapshot
 - we can implement it ourself, we could also use tenderly
   - i lean towards keeping everything within callisto instead of relying on a external api
@@ -544,6 +544,32 @@ platform/CGo Keychain last):
   - if a user presses simulate, they should ulatimately see a dialogue box (or maybe be directed to a separate pane) that shows the relevant before and after state of the account (and ether balance before and after) to confirm the transaction does what they expect
   - if a simulation is run, the user should be prompted after to continue to an actual sign and submission, or a reject path if something is wrong
   - if we implement this well, we should advertise it in the documentation as an imporant safety feature
+- **Full design:** `docs/transaction-simulation.md` (P3a/P3b/P3c phasing). Resolved the
+  open "trigger" question there: automatic revert-check (universal, any RPC) +
+  explicit **"Simulate…"** button for the real asset-change preview (not auto-run).
+- **Progress on `feat/tx-simulation`** (pushed to origin, 2 commits so far):
+  1. `internal/rpc.Client` widened with `RawClient() *gethrpc.Client` (needed for
+     `eth_simulateV1`/`debug_traceCall`, which `ethclient` doesn't wrap). Note: named
+     `RawClient` not `Client` — a test mock in `internal/safe` embeds the `Client`
+     interface anonymously, which creates an implicit field named `Client` that would
+     shadow a same-named method.
+  2. `internal/sim` package started: `types.go` (Tier/Request/Result/TokenDelta/
+     ApprovalChange), `decode.go` (unit-tested ERC-20 Transfer/Approval + Permit2
+     Approval log decoders — deliberately not shared with `internal/approvals`,
+     see that file's comment for why).
+- **Next steps** (not started): capability probing (`eth_simulateV1` →
+  `debug_traceCall` → `eth_call` fallback chain) — needs live verification against
+  Ganymede (has `debug`) and a Tier-0 public L2 endpoint before trusting it; the EOA
+  simulation call; Safe simulation (`SimulateTxAccessor`/`simulateAndRevert` for the
+  universal revert-check, `eth_simulateV1 from:safe` for `Operation==Call` asset
+  diffs — verified `SimulateTxAccessor` v1.3.0 address is
+  `0x59AD6735bCd8152B84860Cb256dD9e96b85F69Da`, v1.4.1's needs re-verification
+  against the raw `safe-deployments` JSON, not a paraphrased fetch); then wiring
+  into the Send/WalletConnect/Safe-Build/Safe-Proposals review dialogs (no shared
+  review-dialog widget exists today — each is bespoke, see
+  `internal/ui/send_pane.go:314`, `walletconnect_pane.go:212`, `safe_build.go:298`,
+  `safe_pane.go:862`). `DelegateCall`/MultiSend asset-diffs (needs a signature-bypass
+  state override) are explicitly deferred to P3b, out of scope for this branch.
 
 ### claude-assisted advanced transaction preparation
 - can be used for both EOA and Safe wallets

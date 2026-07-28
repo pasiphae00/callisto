@@ -8,6 +8,7 @@ import (
 	ethereum "github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	gethrpc "github.com/ethereum/go-ethereum/rpc"
 )
 
 // txMock implements rpc.Client for prepare/estimate tests.
@@ -62,7 +63,8 @@ func (m *txMock) SubscribeFilterLogs(context.Context, ethereum.FilterQuery, chan
 func (m *txMock) SubscribeNewHead(context.Context, chan<- *types.Header) (ethereum.Subscription, error) {
 	return nil, nil
 }
-func (m *txMock) Close() {}
+func (m *txMock) RawClient() *gethrpc.Client { return nil }
+func (m *txMock) Close()                     {}
 
 func TestEstimateFees(t *testing.T) {
 	m := &txMock{

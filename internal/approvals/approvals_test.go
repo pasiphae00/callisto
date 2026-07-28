@@ -9,7 +9,6 @@ import (
 	ethereum "github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	gethrpc "github.com/ethereum/go-ethereum/rpc"
 )
 
 // fakeClient implements rpc.Client for tests via hook functions; unused methods
@@ -62,8 +61,7 @@ func (f *fakeClient) SubscribeNewHead(context.Context, chan<- *types.Header) (et
 func (f *fakeClient) SubscribeFilterLogs(context.Context, ethereum.FilterQuery, chan<- types.Log) (ethereum.Subscription, error) {
 	return nil, nil
 }
-func (f *fakeClient) RawClient() *gethrpc.Client { return nil }
-func (f *fakeClient) Close()                     {}
+func (f *fakeClient) Close() {}
 
 // stubMeta gives every token a fixed symbol so tests don't hit CallContract for
 // metadata.

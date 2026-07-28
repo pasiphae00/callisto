@@ -20,6 +20,7 @@ import (
 	"github.com/pasiphae00/callisto/internal/chain"
 	"github.com/pasiphae00/callisto/internal/history"
 	"github.com/pasiphae00/callisto/internal/rpc"
+	"github.com/pasiphae00/callisto/internal/sim"
 	"github.com/pasiphae00/callisto/internal/tx"
 )
 
@@ -360,7 +361,19 @@ func (p *sendPane) showReview(prep tx.Prepared, info chain.Info) {
 	notice := widget.NewLabel(signMsg)
 	notice.Wrapping = fyne.TextWrapWord
 
-	content := container.NewVBox(grid, widget.NewSeparator(), notice)
+	// Simulation: auto revert-check on open, asset preview on request.
+	simulation := newSimSection(p.app, func(ctx context.Context, sm *sim.Simulator, rich bool) (sim.Result, error) {
+		req := sim.Request{From: s.From, To: s.Call.To, Value: s.Call.Value, Data: s.Call.Data}
+		if rich {
+			return sm.SimulateEOA(ctx, req)
+		}
+		return sm.RevertCheckEOA(ctx, req)
+	})
+
+	// Scrolled: the simulation section grows with however many asset changes
+	// the transaction produces, and must not push Sign & send off the dialog.
+	content := container.NewVScroll(
+		container.NewVBox(grid, simulation.object(), widget.NewSeparator(), notice))
 
 	d := dialog.NewCustomConfirm("Review transaction", "Sign & send", "Cancel", content,
 		func(confirm bool) {

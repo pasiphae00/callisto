@@ -27,6 +27,7 @@ import (
 	"github.com/pasiphae00/callisto/internal/history"
 	"github.com/pasiphae00/callisto/internal/safe"
 	"github.com/pasiphae00/callisto/internal/signer"
+	"github.com/pasiphae00/callisto/internal/sim"
 	"github.com/pasiphae00/callisto/internal/tx"
 )
 
@@ -44,8 +45,8 @@ type safePane struct {
 	detailsBox   *fyne.Container    // Overview tab body
 	proposalBox  *fyne.Container    // Proposals tab body
 	status       *widget.Label
-	assetsView   *assetsView     // Assets tab: balances for the selected Safe
-	buildView    *safeBuildView  // Build tab: curated ecosystem actions as proposals
+	assetsView   *assetsView    // Assets tab: balances for the selected Safe
+	buildView    *safeBuildView // Build tab: curated ecosystem actions as proposals
 
 	proposals []safe.Proposal
 
@@ -928,10 +929,39 @@ func (p *safePane) reviewObjects(desc safe.Descriptor, prop safe.Proposal, rende
 		objs = append(objs, errLbl)
 	}
 
+	// Simulate only while the proposal is still actionable. Re-simulating an
+	// executed or rejected proposal against today's state would be misleading:
+	// it describes a hypothetical execution that already happened, or never will.
+	if prop.Status == safe.StatusCollecting || prop.Status == safe.StatusReady {
+		objs = append(objs, newSimSection(p.app, safeSimRun(desc, prop.SafeTx())).object())
+	}
+
 	signMsg := widget.NewLabel(p.signGuidance(desc, prop))
 	signMsg.Wrapping = fyne.TextWrapWord
 	objs = append(objs, signMsg, p.reviewButtons(desc, prop, render))
 	return objs
+}
+
+// safeSimRun builds the simulation closure for a Safe transaction, shared by the
+// Build tab (a proposal about to be created) and the Proposals tab (one awaiting
+// signatures). Neither needs signatures or a met threshold to simulate.
+func safeSimRun(desc safe.Descriptor, stx safe.SafeTx) simRun {
+	safeAddr, _ := address.Parse(desc.Address)
+	return func(ctx context.Context, sm *sim.Simulator, rich bool) (sim.Result, error) {
+		req := sim.SafeRequest{
+			Safe:      safeAddr,
+			Version:   desc.Version,
+			ChainID:   desc.ChainID,
+			To:        stx.To,
+			Value:     stx.Value,
+			Data:      stx.Data,
+			Operation: uint8(stx.Operation),
+		}
+		if rich {
+			return sm.SimulateSafe(ctx, req)
+		}
+		return sm.RevertCheckSafe(ctx, req)
+	}
 }
 
 // --- distributed signing: export / import proposals + signatures ------------

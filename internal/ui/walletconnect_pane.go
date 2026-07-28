@@ -23,6 +23,7 @@ import (
 	"github.com/pasiphae00/callisto/internal/history"
 	"github.com/pasiphae00/callisto/internal/rpc"
 	"github.com/pasiphae00/callisto/internal/signer"
+	"github.com/pasiphae00/callisto/internal/sim"
 	"github.com/pasiphae00/callisto/internal/tx"
 	"github.com/pasiphae00/callisto/internal/walletconnect"
 )
@@ -100,7 +101,9 @@ func (p *walletConnectPane) ensureClient(ctx context.Context) (*walletconnect.Cl
 	c.OnRequest(func(req walletconnect.Request) { fyne.Do(func() { p.showRequest(req) }) })
 	c.OnSessionDelete(func(string) { fyne.Do(p.refreshSessions) })
 	c.OnError(func(err error) { fyne.Do(func() { p.status.SetText("WalletConnect disconnected: " + err.Error()) }) })
-	c.OnReconnecting(func() { fyne.Do(func() { p.status.SetText("WalletConnect: relay cycled the connection — reconnecting…") }) })
+	c.OnReconnecting(func() {
+		fyne.Do(func() { p.status.SetText("WalletConnect: relay cycled the connection — reconnecting…") })
+	})
 	c.OnReconnected(func() { fyne.Do(func() { p.status.SetText("WalletConnect reconnected — sessions active.") }) })
 	if err := c.Connect(ctx); err != nil {
 		c.Close()
@@ -258,16 +261,32 @@ func (p *walletConnectPane) describeRequest(req walletconnect.Request) (title st
 		)
 		// Decode known high-risk calls (token approvals/transfers) so an "approve
 		// unlimited to attacker" hidden in the calldata is visible, not opaque hex.
-		body := fyne.CanvasObject(formGrid(rows))
+		parts := []fyne.CanvasObject{formGrid(rows)}
 		if summary, warn, ok := decodeDangerousCall(tp.Data); ok {
 			box := cautionBox("This call does: " + summary)
 			if warn {
 				box = dangerBox("⚠ Token approval — read carefully:\n" + summary +
 					"\n\nApproving lets the spender move your tokens. Only approve contracts you trust, and prefer a specific amount over UNLIMITED.")
 			}
-			body = container.NewVBox(formGrid(rows), box)
+			parts = append(parts, box)
 		}
-		return "Transaction request", body, true
+
+		// Simulation matters most here: a dApp's calldata is arbitrary, and the
+		// static decode above only recognizes the call shapes we know about.
+		// Simulating shows what the call actually does to the account, whatever
+		// it is. Contract creations (no To) have no address to simulate against.
+		if tp.To != nil {
+			to := *tp.To
+			parts = append(parts, newSimSection(p.app, func(ctx context.Context, sm *sim.Simulator, rich bool) (sim.Result, error) {
+				r := sim.Request{From: tp.From, To: to, Value: tp.Value, Data: tp.Data}
+				if rich {
+					return sm.SimulateEOA(ctx, r)
+				}
+				return sm.RevertCheckEOA(ctx, r)
+			}).object())
+		}
+
+		return "Transaction request", container.NewVScroll(container.NewVBox(parts...)), true
 
 	case walletconnect.MethodPersonalSign, walletconnect.MethodSign:
 		msg, addr, err := walletconnect.DecodePersonalSign(req.Params)

@@ -30,6 +30,7 @@ import (
 	"github.com/pasiphae00/callisto/internal/rpc"
 	"github.com/pasiphae00/callisto/internal/safe"
 	"github.com/pasiphae00/callisto/internal/signer"
+	"github.com/pasiphae00/callisto/internal/sim"
 	"github.com/pasiphae00/callisto/internal/store"
 	"github.com/pasiphae00/callisto/internal/walletconnect"
 )
@@ -74,6 +75,13 @@ type App struct {
 	svcMu  sync.Mutex
 	svc    *assets.Service
 	svcKey string
+
+	// sim caches a sim.Simulator per client so the endpoint capability probe
+	// (which methods it serves) runs once per connection rather than once per
+	// review dialog.
+	simMu  sync.Mutex
+	sim    *sim.Simulator
+	simKey string
 
 	// Live signer session for the currently unlocked wallet, if any. Held in
 	// memory only; wiped on lock/disconnect/close. Never persisted.
@@ -346,7 +354,7 @@ func (a *App) buildRoot() fyne.CanvasObject {
 	content := container.NewStack()
 	buttons := make([]*widget.Button, len(items))
 	selectItem := func(i int) {
-		a.touchActivity() // switching panes counts as activity
+		a.touchActivity()            // switching panes counts as activity
 		a.currentNav = items[i].name // gates head-driven refreshes to the visible pane
 		content.Objects = []fyne.CanvasObject{items[i].content}
 		content.Refresh()

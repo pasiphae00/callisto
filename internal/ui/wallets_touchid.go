@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 
@@ -133,6 +134,22 @@ func (p *walletsPane) unlockWithTouchID(desc wallet.Descriptor) {
 		}
 		fyne.Do(func() {
 			progress.Hide()
+			// An enrolment made by a different build of Callisto can never be read
+			// by this one, so retrying it on every unlock only produces the same
+			// failure. Drop the enrolment, say why in plain terms, and go straight
+			// to the passphrase — the user can re-enable Touch ID from this build.
+			if errors.Is(err, keystore.ErrSecretForeignIdentity) {
+				_ = keystore.OSSecretStore().Delete(touchIDRef(desc.KeystoreID))
+				p.app.cfg.SetTouchIDEnrolled(desc.KeystoreID, false)
+				if saveErr := p.app.cfg.Save(); saveErr != nil {
+					dialog.ShowError(saveErr, p.app.window)
+				}
+				p.showPassphraseUnlockDialog(desc,
+					"This wallet's Touch ID enrolment was created by a different build of Callisto, "+
+						"so this one can't read it. Unlock with your passphrase, then re-enable Touch ID.")
+				p.refresh()
+				return
+			}
 			if err != nil {
 				errD := dialog.NewError(fmt.Errorf("Touch ID unlock failed: %w", err), p.app.window)
 				errD.SetOnClosed(func() {

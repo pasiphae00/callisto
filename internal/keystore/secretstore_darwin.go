@@ -101,6 +101,20 @@ static OSStatus ks_set(const char* service, const char* account, const void* dat
 // ks_get fetches the value for (service, account). Caller must have already run
 // la_authenticate successfully -- this function itself does not gate on presence.
 // On success sets *out (malloc'd, caller frees) and *outLen.
+//
+// Keychain UI is suppressed for the duration of the read, so a legacy-keychain ACL
+// mismatch returns an error code instead of putting up the OS "Callisto wants to
+// use your confidential information ... enter the login keychain password" dialog.
+// Measured against a real foreign-ACL item on macOS 15, the code is
+// errSecAuthFailed (-25293), not the errSecInteractionNotAllowed (-25308) the API
+// naming implies; both are treated alike since the mapping is undocumented.
+//
+// That dialog is the wrong answer here twice over: the user proved presence via
+// Touch ID a moment earlier, and typing a login password is exactly what enabling
+// Touch ID was meant to avoid. A mismatch means the item was written by a different
+// build of Callisto and the enrolment is no longer usable -- see
+// ErrSecretForeignIdentity, which the UI turns into a re-enrol prompt with a
+// passphrase fallback.
 static OSStatus ks_get(const char* service, const char* account, void** out, int* outLen) {
     CFStringRef svc = ks_cfstr(service);
     CFStringRef acct = ks_cfstr(account);
@@ -109,7 +123,16 @@ static OSStatus ks_get(const char* service, const char* account, void** out, int
     CFDictionaryRef q = CFDictionaryCreate(NULL, keys, vals, 6,
         &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
     CFTypeRef result = NULL;
+    // SecKeychain* is deprecated wholesale in favour of the Data Protection
+    // Keychain, which this file cannot use at all (see ks_delete). Suppressing
+    // keychain UI has no replacement on the legacy keychain, so the deprecated
+    // call is the only option and the warning is noise.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+    SecKeychainSetUserInteractionAllowed(FALSE);
     OSStatus st = SecItemCopyMatching(q, &result);
+    SecKeychainSetUserInteractionAllowed(TRUE);
+#pragma clang diagnostic pop
     CFRelease(q); CFRelease(svc); CFRelease(acct);
     if (st != errSecSuccess) return st;
     CFDataRef d = (CFDataRef)result;
@@ -133,8 +156,18 @@ import (
 // keychainService namespaces Callisto's keychain items.
 const keychainService = "io.pasiphae.callisto"
 
-// errSecItemNotFound is the Security framework OSStatus for a missing item.
-const errSecItemNotFound = -25300
+// Security framework OSStatus values we distinguish.
+const (
+	errSecItemNotFound = -25300
+	// errSecAuthFailed and errSecInteractionNotAllowed both mean "this read
+	// needed OS authorization UI, which ks_get suppresses" -- i.e. on the legacy
+	// keychain, the item's ACL does not trust this binary. Measured against a
+	// real foreign-ACL item on macOS 15, the code returned is errSecAuthFailed;
+	// errSecInteractionNotAllowed is the one the API naming implies. Which one
+	// surfaces is undocumented, so both map to ErrSecretForeignIdentity.
+	errSecAuthFailed            = -25293
+	errSecInteractionNotAllowed = -25308
+)
 
 // ErrAuthenticationFailed is returned by Get when the LocalAuthentication challenge
 // (Touch ID / macOS login password) is cancelled, fails, or isn't available.
@@ -200,8 +233,11 @@ func (darwinSecretStore) Get(ref string) ([]byte, error) {
 	var out unsafe.Pointer
 	var n C.int
 	st := C.ks_get(cs, ca, &out, &n)
-	if int(st) == errSecItemNotFound {
+	switch int(st) {
+	case errSecItemNotFound:
 		return nil, ErrSecretNotFound
+	case errSecInteractionNotAllowed, errSecAuthFailed:
+		return nil, ErrSecretForeignIdentity
 	}
 	if st != 0 {
 		return nil, fmt.Errorf("keychain get failed (OSStatus %d)", int(st))

@@ -95,6 +95,15 @@ changes; `v1.0.0` marks the first stable, documented release.
   macOS password prompts instead of a fingerprint tap. Callisto now checks its own
   signing identity directly, so Touch ID appears only where it works. This also
   stops the check writing to the user's keychain on every launch.
+- **Touch ID unlock asked for the macOS login password anyway.** When a keychain
+  item had been written by a different build of Callisto, the fingerprint scan
+  succeeded and macOS then demanded the login keychain password to authorize the
+  read — the exact prompt Touch ID exists to replace. Callisto now suppresses that
+  OS dialog, recognizes the condition, and says what actually happened: the
+  enrolment belongs to another build, so it is dropped and the wallet falls back to
+  its passphrase, ready to re-enable Touch ID. Nothing was ever at risk — the
+  keystore file remains the source of truth — but the enrolment was unusable and
+  retried on every unlock.
 - **Callisto's own encrypted backups could not be imported.** "Import keystore
   file…" only understood the geth/MetaMask V3 format, so restoring a file produced
   by "Export encrypted backup" failed with "wrong password or unsupported format"

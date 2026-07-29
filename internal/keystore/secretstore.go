@@ -9,6 +9,21 @@ var ErrSecretUnavailable = errors.New("keystore: OS secret store unavailable")
 // ErrSecretNotFound is returned by Get when no secret exists for the reference.
 var ErrSecretNotFound = errors.New("keystore: secret not found in the OS store")
 
+// ErrSecretForeignIdentity is returned by Get when the item exists but was written
+// by a different build of Callisto, so this build cannot read it.
+//
+// macOS keychain ACLs bind an item to the code identity that created it. A
+// Developer-ID-signed release and a local `go build` are different identities, and
+// two local builds differ from each other, so an enrolment made in one cannot be
+// used by another. Nothing is lost — the wallet still unlocks with its passphrase —
+// but the Touch ID enrolment must be redone by whichever build the user runs.
+//
+// Reads deliberately fail with this rather than letting macOS put up its own
+// "enter the login keychain password" dialog: the user proved presence with Touch
+// ID moments earlier, and typing a login password is the very thing Touch ID was
+// enabled to avoid.
+var ErrSecretForeignIdentity = errors.New("keystore: this Touch ID enrolment was created by a different build of Callisto")
+
 // SecretStore stores a small secret (Callisto uses it for a keystore's derived AES
 // key) in the operating system's secure store, gated by user presence (Touch ID or
 // the device passcode) on read. It lets a wallet unlock biometrically without the

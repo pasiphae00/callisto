@@ -163,9 +163,9 @@ var (
 // Canonical mainnet contract addresses (verified). Add chains by adding vetted
 // entries (code review), never by trusting an external source at runtime.
 var (
-	wethMainnet    = common.HexToAddress("0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2")
-	stethMainnet   = common.HexToAddress("0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84")
-	wstethMainnet  = common.HexToAddress("0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0")
+	wethMainnet     = common.HexToAddress("0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2")
+	stethMainnet    = common.HexToAddress("0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84")
+	wstethMainnet   = common.HexToAddress("0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0")
 	lidoUnstMainnet = common.HexToAddress("0x889edC2eDab5f40e902b864aD4d7AdE8E412F9B1") // Withdrawal Queue
 )
 

@@ -9,6 +9,7 @@ import (
 	"github.com/pasiphae00/callisto/internal/chain"
 	"github.com/pasiphae00/callisto/internal/rpc"
 	"github.com/pasiphae00/callisto/internal/safe"
+	"github.com/pasiphae00/callisto/internal/tx"
 	"github.com/pasiphae00/callisto/internal/wallet"
 )
 
@@ -328,5 +329,27 @@ func TestUpsertRejectsInvalid(t *testing.T) {
 	}
 	if err := c.UpsertWallet(wallet.Descriptor{ID: "", Address: "0x", Kind: wallet.KindHot}); err == nil {
 		t.Error("invalid wallet should be rejected")
+	}
+}
+
+func TestTxPriorityDefaultsToFast(t *testing.T) {
+	// A config written before this setting existed has no value; it must read as
+	// the default rather than as tier zero (Standard).
+	c := &Config{}
+	if got := c.TxPriorityTier(); got != tx.PriorityFast {
+		t.Errorf("TxPriorityTier() = %v on a config with no value; want Fast", got)
+	}
+	if got := defaultConfig().TxPriorityTier(); got != tx.PriorityFast {
+		t.Errorf("fresh install TxPriorityTier() = %v; want Fast", got)
+	}
+}
+
+func TestTxPriorityRoundTripsThroughConfig(t *testing.T) {
+	c := &Config{}
+	for _, want := range tx.Priorities() {
+		c.SetTxPriorityTier(want)
+		if got := c.TxPriorityTier(); got != want {
+			t.Errorf("round trip of %v gave %v (stored %q)", want, got, c.TxPriority)
+		}
 	}
 }

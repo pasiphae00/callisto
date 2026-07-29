@@ -1407,11 +1407,13 @@ func (p *safePane) executeProposal(desc safe.Descriptor, prop safe.Proposal, aft
 	from := executor.Address()
 	send := tx.Send{From: from, Call: tx.Call{To: safeAddr, Value: big.NewInt(0), Data: execData}}
 
+	priority := p.app.cfg.TxPriorityTier()
+
 	p.status.SetText("Estimating gas for execution…")
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		prep, perr := tx.Prepare(ctx, client, new(big.Int).Set(conn.ChainID), send)
+		prep, perr := tx.Prepare(ctx, client, new(big.Int).Set(conn.ChainID), send, priority)
 		if perr != nil {
 			fyne.Do(func() {
 				p.status.SetText("")

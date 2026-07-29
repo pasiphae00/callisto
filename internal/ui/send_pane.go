@@ -268,11 +268,13 @@ func (p *sendPane) prepare() {
 	p.status.SetText("Estimating gas…")
 	client := conn.Client
 	chainID := new(big.Int).Set(conn.ChainID)
+	// Read the fee tier here, on the UI thread, rather than inside the goroutine.
+	priority := p.app.cfg.TxPriorityTier()
 
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()
-		prep, prepErr := tx.Prepare(ctx, client, chainID, send)
+		prep, prepErr := tx.Prepare(ctx, client, chainID, send, priority)
 		fyne.Do(func() {
 			p.prepareBtn.Enable()
 			p.updatePrepareState()
@@ -335,7 +337,9 @@ func (p *sendPane) showReview(prep tx.Prepared, info chain.Info) {
 	rows = append(rows,
 		[2]string{"Gas limit", fmt.Sprintf("%d", prep.Fees.GasLimit)},
 		[2]string{"Base fee", assets.FormatUnits(prep.Fees.BaseFee, 9) + " gwei"},
-		[2]string{"Priority tip", assets.FormatUnits(prep.Fees.GasTipCap, 9) + " gwei"},
+		// Name the tier alongside the number: the tip is otherwise an unanchored
+		// figure, and this is where a mis-set default becomes visible.
+		[2]string{"Priority tip", assets.FormatUnits(prep.Fees.GasTipCap, 9) + " gwei (" + prep.Fees.Priority.Label() + ")"},
 		[2]string{"Max fee/gas", assets.FormatUnits(prep.Fees.GasFeeCap, 9) + " gwei"},
 		[2]string{"Max total fee", assets.FormatUnits(prep.Fees.MaxFeeWei(), 18) + " " + nativeSym},
 	)

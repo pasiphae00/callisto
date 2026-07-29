@@ -75,7 +75,7 @@ func TestEstimateFees(t *testing.T) {
 	from := common.HexToAddress("0x1")
 	call := Call{To: common.HexToAddress("0x2"), Value: big.NewInt(1), Data: nil}
 
-	fees, err := EstimateFees(context.Background(), m, from, call)
+	fees, err := EstimateFees(context.Background(), m, from, call, PriorityFast)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +100,7 @@ func TestEstimateFees(t *testing.T) {
 func TestEstimateFeesNoBaseFee(t *testing.T) {
 	m := &txMock{gasEstimate: 21000, tip: big.NewInt(1), baseFee: nil}
 	_, err := EstimateFees(context.Background(), m, common.HexToAddress("0x1"),
-		Call{To: common.HexToAddress("0x2"), Value: big.NewInt(1)})
+		Call{To: common.HexToAddress("0x2"), Value: big.NewInt(1)}, PriorityFast)
 	if err != ErrNoBaseFee {
 		t.Errorf("err = %v, want ErrNoBaseFee", err)
 	}
@@ -118,7 +118,7 @@ func TestPrepareAssemblesDynamicTx(t *testing.T) {
 	send, _ := BuildNativeSend(from, to, big.NewInt(1_000_000_000_000_000_000), "ETH", 18)
 
 	chainID := big.NewInt(11155111)
-	prep, err := Prepare(context.Background(), m, chainID, send)
+	prep, err := Prepare(context.Background(), m, chainID, send, PriorityFast)
 	if err != nil {
 		t.Fatal(err)
 	}

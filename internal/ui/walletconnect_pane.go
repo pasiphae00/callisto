@@ -370,7 +370,7 @@ func (p *walletConnectPane) dispatchSendTx(ctx context.Context, req walletconnec
 	}
 
 	send := tx.Send{From: s.Address(), Call: tx.Call{To: *tp.To, Value: tp.Value, Data: tp.Data}}
-	prep, err := tx.Prepare(ctx, conn.Client, new(big.Int).Set(conn.ChainID), send)
+	prep, err := tx.Prepare(ctx, conn.Client, new(big.Int).Set(conn.ChainID), send, p.app.cfg.TxPriorityTier())
 	if err != nil {
 		p.failRequest(req, "prepare: "+err.Error())
 		return
@@ -463,7 +463,7 @@ func (p *walletConnectPane) dispatchSignTx(ctx context.Context, req walletconnec
 		return
 	}
 	send := tx.Send{From: s.Address(), Call: tx.Call{To: *tp.To, Value: tp.Value, Data: tp.Data}}
-	prep, err := tx.Prepare(ctx, conn.Client, new(big.Int).Set(conn.ChainID), send)
+	prep, err := tx.Prepare(ctx, conn.Client, new(big.Int).Set(conn.ChainID), send, p.app.cfg.TxPriorityTier())
 	if err != nil {
 		p.failRequest(req, "prepare: "+err.Error())
 		return

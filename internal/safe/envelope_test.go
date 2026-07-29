@@ -99,8 +99,8 @@ func TestRecoverAndFilterSignatures(t *testing.T) {
 	strSig, _ := crypto.Sign(hash.Bytes(), strangerKey)
 	strSig[64] += 27
 	input := []Signature{
-		{Signer: common.Address{}, Sig: sig},    // advisory signer deliberately wrong (zero)
-		{Signer: owner, Sig: strSig},             // advisory claims owner, but signed by stranger
+		{Signer: common.Address{}, Sig: sig}, // advisory signer deliberately wrong (zero)
+		{Signer: owner, Sig: strSig},         // advisory claims owner, but signed by stranger
 	}
 	valid, rejected := FilterOwnerSignatures(hash, input, []common.Address{owner})
 	if len(valid) != 1 {

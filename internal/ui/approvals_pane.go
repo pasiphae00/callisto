@@ -345,11 +345,12 @@ func (p *approvalsPane) revoke(ap approvals.Approval) {
 
 	client := conn.Client
 	chainID := new(big.Int).Set(conn.ChainID)
+	priority := p.app.cfg.TxPriorityTier()
 	p.status.SetText("Estimating gas…")
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()
-		prep, prepErr := tx.Prepare(ctx, client, chainID, send)
+		prep, prepErr := tx.Prepare(ctx, client, chainID, send, priority)
 		fyne.Do(func() {
 			p.status.SetText("")
 			if prepErr != nil {

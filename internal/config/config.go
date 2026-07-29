@@ -22,6 +22,7 @@ import (
 	"github.com/pasiphae00/callisto/internal/buildsecrets"
 	"github.com/pasiphae00/callisto/internal/rpc"
 	"github.com/pasiphae00/callisto/internal/safe"
+	"github.com/pasiphae00/callisto/internal/tx"
 	"github.com/pasiphae00/callisto/internal/wallet"
 )
 
@@ -150,6 +151,11 @@ type Config struct {
 	AutoDetectApprovals bool `json:"auto_detect_approvals"`
 	// Security holds wallet auto-lock preferences.
 	Security SecuritySettings `json:"security"`
+	// TxPriority is the default fee tier new transactions are prepared at
+	// ("standard"/"fast"/"rapid"). Read through TxPriorityTier, which maps an
+	// empty or unrecognized value to the default — configs written before this
+	// setting existed have no value here.
+	TxPriority string `json:"tx_priority,omitempty"`
 	// TouchIDKeystores lists the KeystoreIDs enrolled for Touch ID unlock (the
 	// derived key is held in the OS keychain, never here). Per keystore, so all
 	// accounts sharing it are covered.
@@ -353,6 +359,15 @@ func (c *Config) ConnectCandidates() []rpc.Endpoint {
 	add(c.EndpointByName(FallbackEndpointName))
 	return out
 }
+
+// TxPriorityTier returns the configured default fee tier, resolving an empty or
+// unrecognized stored value to tx.DefaultPriority. Always read the setting through
+// this rather than off the raw string field.
+func (c *Config) TxPriorityTier() tx.Priority { return tx.ParsePriority(c.TxPriority) }
+
+// SetTxPriorityTier records the default fee tier. It does not save; the caller
+// saves once after a batch of settings changes, as elsewhere in this package.
+func (c *Config) SetTxPriorityTier(p tx.Priority) { c.TxPriority = p.String() }
 
 // FallbackEndpoint returns the endpoint Callisto fails over to (Flashbots), if it
 // is configured.

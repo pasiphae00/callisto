@@ -9,6 +9,25 @@ changes; `v1.0.0` marks the first stable, documented release.
 
 ## [Unreleased]
 
+### Added
+- **Default transaction priority** (Settings › Transaction fees) — a **Standard /
+  Fast / Rapid** selector, defaulting to **Fast**, applied to every transaction
+  Callisto prepares (Send, WalletConnect, Safe execution, approval revocation).
+  It sets the **priority fee only**; the base fee is fixed by the protocol from the
+  parent block's gas usage and is identical for every transaction in a block.
+  - Tiers are derived from **`eth_feeHistory`** — the 20th / 60th / 90th percentile
+    of what transactions in the last 20 blocks actually paid, taking the median
+    across blocks so one desperate transaction can't drag the estimate up. This is
+    how public gas trackers produce their numbers, rather than a multiplier we
+    invented. Endpoints that don't serve `eth_feeHistory` fall back to scaling the
+    node's own `eth_maxPriorityFeePerGas` suggestion (×½ / ×1 / ×2).
+  - A percentile of zero is treated as no answer rather than as a bid of zero: it
+    is valid post-merge but many builders won't include such a transaction. A
+    Standard bid that comes back positive-but-low *is* honoured — bidding low is
+    the point of that tier.
+  - The review step now names the tier next to the tip (`0.025 gwei (Fast)`), so a
+    mis-set default is visible before signing.
+
 ### Changed
 - **Consistent actions wherever Callisto hands you a transaction hash.** Every such
   dialog now shows the full hash in monospace with the same three actions —

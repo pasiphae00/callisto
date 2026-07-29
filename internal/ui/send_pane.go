@@ -457,18 +457,20 @@ func (p *sendPane) signAndSend(prep tx.Prepared, info chain.Info) {
 
 		fyne.Do(func() {
 			p.status.SetText("Submitted: " + hash.Hex())
-			p.showBroadcastResult(hash.Hex(), info)
+			broadcastDlg := p.showBroadcastResult(hash.Hex(), info)
 			p.notifyHistory()
+			// Started from here, rather than after the fyne.Do, so the dialog
+			// handle is already assigned. Tracking runs on its own context and
+			// outlives the dialog; the handle lets the inclusion result replace
+			// this dialog instead of stacking on top of it.
+			go p.trackInclusion(recID, client, hash, info, broadcastDlg)
 		})
-
-		// Track inclusion in the background (own context, survives the dialog).
-		go p.trackInclusion(recID, client, hash, info)
 	}()
 }
 
 // trackInclusion waits for the receipt, records the outcome, and notifies the
 // user. It uses its own context so it outlives the review dialog.
-func (p *sendPane) trackInclusion(recID int64, client rpc.Client, hash common.Hash, info chain.Info) {
+func (p *sendPane) trackInclusion(recID int64, client rpc.Client, hash common.Hash, info chain.Info, broadcastDlg *dialog.CustomDialog) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 
@@ -494,14 +496,15 @@ func (p *sendPane) trackInclusion(recID int64, client rpc.Client, hash common.Ha
 		}
 		p.status.SetText(fmt.Sprintf("Tx %s in block %d", outcome, blockNum))
 		p.notifyHistory()
+		dismissTxResult(broadcastDlg)
 		p.showInclusionResult(hash.Hex(), blockNum, blockTime, success, info)
 	})
 }
 
 // showBroadcastResult shows the submitted hash with the shared post-broadcast
 // actions (see App.showTxResult).
-func (p *sendPane) showBroadcastResult(hash string, info chain.Info) {
-	p.app.showTxResult("Broadcast", hash, info,
+func (p *sendPane) showBroadcastResult(hash string, info chain.Info) *dialog.CustomDialog {
+	return p.app.showTxResult("Broadcast", hash, info,
 		widget.NewLabel("Transaction submitted. Waiting for inclusion…"))
 }
 

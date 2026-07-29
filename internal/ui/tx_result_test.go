@@ -85,3 +85,52 @@ func TestCopyToClipboardWithoutAnAppDoesNotPanic(t *testing.T) {
 	a := &App{}
 	a.copyToClipboard("0xabc")
 }
+
+// TestTxResultDialogIsReplacedNotStacked covers the two-popups-per-transaction
+// bug: the "included" dialog must replace the "submitted" one, so a single
+// transaction never leaves two dialogs to dismiss.
+func TestTxResultDialogIsReplacedNotStacked(t *testing.T) {
+	a := testApp(t)
+	w := test.NewWindow(widget.NewLabel("root"))
+	defer w.Close()
+	a.window = w
+
+	info, _ := chain.Lookup(1)
+	hash := "0xb062cc048ef8a1179e7dc16008ff330ebd3926581a67ebc83ce584235376ab1f"
+
+	submitted := a.showTxResult("Broadcast", hash, info, widget.NewLabel("Waiting for inclusion…"))
+	if submitted == nil {
+		t.Fatal("showTxResult returned no dialog handle to dismiss later")
+	}
+	if n := len(w.Canvas().Overlays().List()); n != 1 {
+		t.Fatalf("%d overlays after broadcast; want 1", n)
+	}
+
+	// What trackInclusion does when the receipt arrives.
+	dismissTxResult(submitted)
+	a.showTxResult("Transaction included", hash, info, widget.NewLabel("success"))
+
+	if n := len(w.Canvas().Overlays().List()); n != 1 {
+		t.Fatalf("%d overlays after inclusion; want 1 — the result must replace the broadcast dialog, not stack on it", n)
+	}
+}
+
+func TestDismissTxResultToleratesNilAndRepeats(t *testing.T) {
+	a := testApp(t)
+	w := test.NewWindow(widget.NewLabel("root"))
+	defer w.Close()
+	a.window = w
+
+	// Nil: the broadcast dialog may never have been created.
+	dismissTxResult(nil)
+
+	// Repeat: the user may already have closed it by hand.
+	info, _ := chain.Lookup(1)
+	d := a.showTxResult("Broadcast", "0xabc", info)
+	dismissTxResult(d)
+	dismissTxResult(d)
+
+	if n := len(w.Canvas().Overlays().List()); n != 0 {
+		t.Fatalf("%d overlays left; want none", n)
+	}
+}

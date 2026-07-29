@@ -27,11 +27,31 @@ const copiedFlashFor = 2 * time.Second
 // The hash is always shown in full: it is the one piece of state the user may
 // need to take somewhere else (a block explorer, a support thread, a wallet on
 // another machine), and truncating it would defeat that.
-func (a *App) showTxResult(title, hash string, info chain.Info, top ...fyne.CanvasObject) {
+//
+// The returned dialog lets a later stage of the same transaction replace this
+// one — see dismissTxResult. A transaction produces two of these in sequence
+// (submitted, then included), and they must not stack up.
+func (a *App) showTxResult(title, hash string, info chain.Info, top ...fyne.CanvasObject) *dialog.CustomDialog {
 	body := container.NewVBox(top...)
 	body.Add(monoLabel(hash))
 	body.Add(a.txActionRow(hash, info))
-	dialog.ShowCustom(title, "Close", body, a.window)
+
+	d := dialog.NewCustom(title, "Close", body, a.window)
+	d.Show()
+	return d
+}
+
+// dismissTxResult closes an earlier stage's dialog, if it is still up, so the
+// next one replaces it rather than stacking on top.
+//
+// Without this the user is left closing two dialogs for one transaction: the
+// "included" result appears over a "submitted" result that is still waiting for
+// the very thing that just happened. Hiding an already-dismissed dialog is a
+// no-op, so there is no need to track whether the user closed it themselves.
+func dismissTxResult(d *dialog.CustomDialog) {
+	if d != nil {
+		d.Hide()
+	}
 }
 
 // txActionRow builds the Copy hash / View on explorer pair. The explorer button

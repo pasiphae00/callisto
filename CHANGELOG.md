@@ -29,6 +29,11 @@ changes; `v1.0.0` marks the first stable, documented release.
     mis-set default is visible before signing.
 
 ### Fixed
+- **Two dialogs to dismiss per transaction.** The "included" result now *replaces*
+  the "submitted" dialog instead of stacking on top of it — closing the result no
+  longer reveals a stale "Waiting for inclusion…" dialog underneath, still waiting
+  for the thing that just happened. Affects Send and Safe execution; WalletConnect
+  already updated a single dialog in place.
 - **Simulation showed native ETH as an unknown token.** A plain ETH send previewed as
   `-10000000000000 0xEeee...EEeE` instead of `-0.00001 ETH`: `eth_simulateV1`
   attributes native transfers to the ERC-7528 placeholder address, while

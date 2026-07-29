@@ -1444,21 +1444,23 @@ func (p *safePane) executeProposal(desc safe.Descriptor, prop safe.Proposal, aft
 		fyne.Do(func() {
 			p.status.SetText("Execution submitted: " + hash.Hex())
 			p.refreshProposals(desc)
-			p.showExecResult(hash.Hex(), info)
+			execDlg := p.showExecResult(hash.Hex(), info)
 			p.notifyHistory()
 			if after != nil {
 				after()
 			}
+			// Started from here so the dialog handle is already assigned; the
+			// inclusion result replaces this dialog rather than stacking on it.
+			go p.trackExecInclusion(desc, prop, recID, hash, info, execDlg)
 		})
-		go p.trackExecInclusion(desc, prop, recID, hash, info)
 	}()
 }
 
 // trackExecInclusion waits for the execution receipt and reflects the outcome: it
 // marks the history record included/failed, updates the proposal on a revert, and
-// pops a result dialog (matching the Send flow) so the user gets clear confirmation
-// that the execution landed — the "Execution submitted" dialog itself is static.
-func (p *safePane) trackExecInclusion(desc safe.Descriptor, prop safe.Proposal, recID int64, hash common.Hash, info chain.Info) {
+// replaces the "Execution submitted" dialog with a result dialog (matching the
+// Send flow) so the user gets clear confirmation that the execution landed.
+func (p *safePane) trackExecInclusion(desc safe.Descriptor, prop safe.Proposal, recID int64, hash common.Hash, info chain.Info, execDlg *dialog.CustomDialog) {
 	conn, ok := p.app.rpc.Active()
 	if !ok {
 		return
@@ -1492,6 +1494,7 @@ func (p *safePane) trackExecInclusion(desc safe.Descriptor, prop safe.Proposal, 
 		p.status.SetText(fmt.Sprintf("Execution %s in block %d", outcome, blockNum))
 		p.refreshProposals(desc)
 		p.notifyHistory()
+		dismissTxResult(execDlg)
 		p.showExecInclusionResult(hash.Hex(), blockNum, blockTime, success, info)
 	})
 }
@@ -1573,8 +1576,8 @@ func (p *safePane) createRejection(desc safe.Descriptor, prop safe.Proposal) {
 
 // --- helpers ----------------------------------------------------------------
 
-func (p *safePane) showExecResult(hash string, info chain.Info) {
-	p.app.showTxResult("Safe execution", hash, info,
+func (p *safePane) showExecResult(hash string, info chain.Info) *dialog.CustomDialog {
+	return p.app.showTxResult("Safe execution", hash, info,
 		widget.NewLabel("Execution submitted. Waiting for inclusion…"))
 }
 

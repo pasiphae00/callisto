@@ -86,6 +86,15 @@ changes; `v1.0.0` marks the first stable, documented release.
     geth treats as optional) — both now produce full asset previews.
 
 ### Fixed
+- **Touch ID unlock was offered in builds where it cannot work.** The check that
+  hides the feature until Callisto is Developer-ID-signed probed by writing and
+  deleting a throwaway keychain item, on the theory that an unsigned build could
+  not create one. It can — measured — so the check passed in local `go build`
+  binaries. Enrolling there stores a secret whose keychain ACL is bound to a code
+  identity that does not survive the next rebuild, and unlocking then produces
+  macOS password prompts instead of a fingerprint tap. Callisto now checks its own
+  signing identity directly, so Touch ID appears only where it works. This also
+  stops the check writing to the user's keychain on every launch.
 - **Callisto's own encrypted backups could not be imported.** "Import keystore
   file…" only understood the geth/MetaMask V3 format, so restoring a file produced
   by "Export encrypted backup" failed with "wrong password or unsupported format"

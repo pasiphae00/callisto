@@ -27,33 +27,6 @@ changes; `v1.0.0` marks the first stable, documented release.
     the point of that tier.
   - The review step now names the tier next to the tip (`0.025 gwei (Fast)`), so a
     mis-set default is visible before signing.
-
-### Fixed
-- **Two dialogs to dismiss per transaction.** The "included" result now *replaces*
-  the "submitted" dialog instead of stacking on top of it — closing the result no
-  longer reveals a stale "Waiting for inclusion…" dialog underneath, still waiting
-  for the thing that just happened. Affects Send and Safe execution; WalletConnect
-  already updated a single dialog in place.
-- **Simulation showed native ETH as an unknown token.** A plain ETH send previewed as
-  `-10000000000000 0xEeee...EEeE` instead of `-0.00001 ETH`: `eth_simulateV1`
-  attributes native transfers to the ERC-7528 placeholder address, while
-  go-ethereum's own doc comment for that constant still describes the zero address
-  it used previously. Both are now recognized. (Unreleased regression — simulation
-  has not shipped.)
-
-### Changed
-- **Consistent actions wherever Callisto hands you a transaction hash.** Every such
-  dialog now shows the full hash in monospace with the same three actions —
-  **Copy hash**, **View on explorer**, **Close**. Previously some rendered the hash
-  as a clickable link (WalletConnect, approval revocation, history detail, Safe
-  executed-tx) and others as a plain label with an explorer button (Send, Safe
-  execution), and none offered a way to copy the hash without selecting it by hand.
-  One shared implementation (`App.showTxResult` / `txActionRow`) now backs Send,
-  WalletConnect, Safe execution, approval revocation, the inclusion reports that
-  follow each, the History detail dialog, and a Safe proposal's executed-tx row. The
-  explorer button is omitted rather than shown dead on a chain with no known explorer.
-
-### Added
 - **Transaction simulation before signing** (`internal/sim`) — every pre-sign review
   now shows what a transaction would actually do, simulated against current chain
   state through your own RPC. No third-party simulation service; nothing leaves the
@@ -86,6 +59,37 @@ changes; `v1.0.0` marks the first stable, documented release.
   - A simulation never blocks signing and is always labelled as a snapshot of
     current state, not a guarantee about the block the transaction lands in. A
     simulation that fails to run says explicitly that it proves nothing.
+
+### Fixed
+- **Callisto's own encrypted backups could not be imported.** "Import keystore
+  file…" only understood the geth/MetaMask V3 format, so restoring a file produced
+  by "Export encrypted backup" failed with "wrong password or unsupported format"
+  however correct the password was — leaving the one feature meant for recovery
+  unable to recover anything. Both formats are now accepted, and an unrecognized
+  file says so rather than blaming the password.
+- **Two dialogs to dismiss per transaction.** The "included" result now *replaces*
+  the "submitted" dialog instead of stacking on top of it — closing the result no
+  longer reveals a stale "Waiting for inclusion…" dialog underneath, still waiting
+  for the thing that just happened. Affects Send and Safe execution; WalletConnect
+  already updated a single dialog in place.
+- **Simulation showed native ETH as an unknown token.** A plain ETH send previewed as
+  `-10000000000000 0xEeee...EEeE` instead of `-0.00001 ETH`: `eth_simulateV1`
+  attributes native transfers to the ERC-7528 placeholder address, while
+  go-ethereum's own doc comment for that constant still describes the zero address
+  it used previously. Both are now recognized. (Unreleased regression — simulation
+  has not shipped.)
+
+### Changed
+- **Consistent actions wherever Callisto hands you a transaction hash.** Every such
+  dialog now shows the full hash in monospace with the same three actions —
+  **Copy hash**, **View on explorer**, **Close**. Previously some rendered the hash
+  as a clickable link (WalletConnect, approval revocation, history detail, Safe
+  executed-tx) and others as a plain label with an explorer button (Send, Safe
+  execution), and none offered a way to copy the hash without selecting it by hand.
+  One shared implementation (`App.showTxResult` / `txActionRow`) now backs Send,
+  WalletConnect, Safe execution, approval revocation, the inclusion reports that
+  follow each, the History detail dialog, and a Safe proposal's executed-tx row. The
+  explorer button is omitted rather than shown dead on a chain with no known explorer.
 
 ## [0.15.0] - 2026-07-27
 

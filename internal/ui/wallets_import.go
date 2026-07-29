@@ -172,18 +172,7 @@ func (p *walletsPane) doImportKeystoreFile(label string, data []byte, filePass, 
 	progress := dialog.NewCustomWithoutButtons("Importing…", widget.NewLabel("Decrypting the keystore file…"), p.app.window)
 	progress.Show()
 	go func() {
-		key, derr := gethkeystore.DecryptKey(data, filePass)
-		var (
-			ks   *keystore.Keystore
-			addr common.Address
-			err  error
-		)
-		if derr != nil {
-			err = fmt.Errorf("could not decrypt the keystore file (wrong password or unsupported format)")
-		} else {
-			privHex := common.Bytes2Hex(crypto.FromECDSA(key.PrivateKey))
-			ks, addr, err = hot.NewPrivateKeyKeystore(privHex, pass)
-		}
+		ks, addr, err := decryptImportedKeystore(data, filePass, pass)
 		fyne.Do(func() {
 			progress.Hide()
 			if err != nil {
@@ -193,6 +182,53 @@ func (p *walletsPane) doImportKeystoreFile(label string, data []byte, filePass, 
 			p.finishImport(label, "Imported", ks, addr)
 		})
 	}()
+}
+
+// decryptImportedKeystore opens a keystore file in whichever supported format it
+// is, and re-encrypts the recovered key under the new Callisto passphrase.
+//
+// Two formats are accepted:
+//
+//   - geth / MetaMask V3 ({"version":3,"crypto":{…}}), the interchange format
+//     other wallets export.
+//   - Callisto's own encrypted backup ({"version":1,"cipher":"aes-256-gcm",…}),
+//     which "Export encrypted backup" produces. Callisto must be able to read
+//     back the file it wrote — a backup you cannot restore is not a backup, and
+//     restoring one is exactly when a user needs it to work.
+//
+// Callisto's format is tried second and only when the file actually looks like
+// one, so a wrong password on a V3 file still reports a wrong password rather
+// than a format problem.
+func decryptImportedKeystore(data []byte, filePass, newPass string) (*keystore.Keystore, common.Address, error) {
+	if key, err := gethkeystore.DecryptKey(data, filePass); err == nil {
+		privHex := common.Bytes2Hex(crypto.FromECDSA(key.PrivateKey))
+		return hot.NewPrivateKeyKeystore(privHex, newPass)
+	}
+
+	native, nerr := keystore.Decode(data)
+	if nerr != nil {
+		// Not a Callisto backup either, so the V3 attempt above was the right
+		// one and its failure is what to report.
+		return nil, common.Address{}, fmt.Errorf(
+			"could not decrypt the keystore file (wrong password, or a format Callisto doesn't recognize)")
+	}
+
+	// A Callisto backup holds either a raw account key or a BIP-39 seed. Opening
+	// it yields the wallet either way, which is also how the passphrase is
+	// verified. The path is only consulted for a seed backup; a raw-key backup
+	// ignores it (hot.OpenFromKeystore), so the first standard account is the
+	// right choice for both.
+	w, err := hot.OpenFromKeystore(native, filePass, hot.DefaultPath(0))
+	if err != nil {
+		return nil, common.Address{}, fmt.Errorf("could not decrypt the Callisto backup: %w", err)
+	}
+	defer w.Lock() // clear the recovered key material from memory
+
+	privHex, err := w.ExportPrivateKey()
+	if err != nil {
+		return nil, common.Address{}, fmt.Errorf("recover key from backup: %w", err)
+	}
+	return hot.NewPrivateKeyKeystore(privHex, newPass)
 }
 
 // finishImport persists a single-key import: saves its keystore, adds an active

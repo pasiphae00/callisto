@@ -230,3 +230,48 @@ func TestWipeRemovesFile(t *testing.T) {
 		t.Errorf("Wipe of missing file should be nil, got %v", err)
 	}
 }
+
+func TestDecodeAcceptsAKeystoreWeWrote(t *testing.T) {
+	ks, err := Encrypt([]byte("a secret worth keeping"), "correct horse battery staple")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ks.Secret = "private-key"
+	data, err := json.Marshal(ks)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := Decode(data)
+	if err != nil {
+		t.Fatalf("Decode rejected our own output: %v", err)
+	}
+	if got.Version != Version || got.KDF != kdfScrypt || got.Cipher != cipherAESGCM {
+		t.Errorf("decoded header = %d/%s/%s; want %d/%s/%s",
+			got.Version, got.KDF, got.Cipher, Version, kdfScrypt, cipherAESGCM)
+	}
+	if got.Secret != "private-key" {
+		t.Errorf("Secret = %q; the label must survive a round trip", got.Secret)
+	}
+}
+
+func TestDecodeRejectsForeignAndMalformedJSON(t *testing.T) {
+	// encoding/json ignores unknown fields and zeroes missing ones, so without
+	// an explicit header check every one of these would decode "successfully"
+	// into an empty Keystore and fail later as a confusing decryption error.
+	tests := []struct {
+		name string
+		json string
+	}{
+		{"geth V3 keystore", `{"version":3,"id":"x","address":"abc","crypto":{"cipher":"aes-128-ctr"}}`},
+		{"empty object", `{}`},
+		{"right version, wrong cipher", `{"version":1,"kdf":"scrypt","cipher":"aes-128-ctr","nonce":"00","ciphertext":"00","kdfparams":{"salt":"00"}}`},
+		{"right header, no ciphertext", `{"version":1,"kdf":"scrypt","cipher":"aes-256-gcm","nonce":"00","kdfparams":{"salt":"00"}}`},
+		{"not json at all", `sorry`},
+	}
+	for _, tc := range tests {
+		if _, err := Decode([]byte(tc.json)); err == nil {
+			t.Errorf("%s: Decode accepted it; want an error", tc.name)
+		}
+	}
+}

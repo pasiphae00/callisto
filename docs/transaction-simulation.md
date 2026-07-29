@@ -211,6 +211,12 @@ four review surfaces. P3b and P3c remain open.
   with `from: <safe>` — `msg.sender` is then exactly what `execTransaction` produces, and
   one round trip gives both the revert check and the deltas. The accessor path is for bare
   RPCs and for `DelegateCall`, where it is the only faithful option.
+- **`eth_simulateV1` attributes native transfers to the ERC-7528 placeholder**
+  `0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE`, not the zero address — and go-ethereum's
+  own doc comment in `internal/ethapi/logtracer.go` says `0x0`, describing an earlier
+  implementation. Trust the constant, not the comment. Both are accepted as native
+  markers, which is safe because neither address holds code and only executing code can
+  emit a log.
 - **`types.Log` cannot be used for simulated logs**: its `UnmarshalJSON` rejects anything
   missing `transactionHash`/`blockHash`, which are meaningless for a transaction that was
   never mined. The wire types use a minimal log struct and convert.

@@ -41,9 +41,9 @@ func aggregate(logs []*types.Log, account common.Address) changes {
 			continue
 		}
 
-		// Native ETH, reported by eth_simulateV1's traceTransfers as a
-		// Transfer log from the zero address.
-		if lg.Address == zeroAddress {
+		// Native currency, reported by eth_simulateV1's traceTransfers as a
+		// Transfer log from a sentinel address rather than a real token.
+		if isNativeLogAddress(lg.Address) {
 			if _, delta, ok := decodeTransfer(*lg, account); ok {
 				out.ETH.Add(out.ETH, delta)
 			}

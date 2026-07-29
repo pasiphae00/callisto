@@ -8,12 +8,31 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 )
 
-// zeroAddress doubles as eth_simulateV1's pseudo-token address: with
-// traceTransfers enabled, geth reports native ETH movements as ERC-20-shaped
-// Transfer logs emitted by the zero address (see go-ethereum
-// internal/ethapi/simulate.go). Nothing else legitimately logs from 0x0, so
-// that address is an unambiguous "this is ETH, not a token" marker.
+// zeroAddress is the all-zero address, used as a harmless `to` for the
+// debug_traceCall capability probe.
 var zeroAddress common.Address
+
+// nativeSentinel is the pseudo-token address eth_simulateV1 attributes native
+// ETH movements to. With traceTransfers enabled the node reports value transfers
+// as ERC-20-shaped Transfer logs from this address, which is the ERC-7528
+// "native asset" placeholder (go-ethereum internal/ethapi/logtracer.go).
+//
+// Beware go-ethereum's own doc comment directly above that constant, which still
+// claims the address is 0x0 — it describes an earlier implementation and is
+// simply wrong about the current one. Trust the constant, not the comment.
+var nativeSentinel = common.HexToAddress("0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE")
+
+// isNativeLogAddress reports whether a Transfer log from this address represents
+// native currency rather than an ERC-20.
+//
+// Both sentinels are accepted: the ERC-7528 address current geth uses, and the
+// zero address, which geth's stale comment documents and other clients may still
+// emit. Accepting both is safe because neither address holds code on any chain
+// Callisto connects to, and only executing code can emit a log — so no genuine
+// token transfer can ever be misread as native.
+func isNativeLogAddress(a common.Address) bool {
+	return a == nativeSentinel || a == zeroAddress
+}
 
 // ---------------------------------------------------------------------------
 // eth_simulateV1

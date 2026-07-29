@@ -112,6 +112,46 @@ func TestApplyETHMovesNetsSelfPayment(t *testing.T) {
 	}
 }
 
+func TestAggregateRecognizesBothNativeSentinels(t *testing.T) {
+	wallet := common.HexToAddress("0x1111111111111111111111111111111111111a")
+	to := common.HexToAddress("0x2222222222222222222222222222222222222b")
+	amount := big.NewInt(10_000_000_000_000) // 0.00001 ETH
+
+	// geth emits native transfers from the ERC-7528 placeholder; its own stale
+	// doc comment claims the zero address. Both must read as native, or a plain
+	// ETH send renders as an unknown token with raw base units and no symbol.
+	for _, sentinel := range []common.Address{nativeSentinel, zeroAddress} {
+		logs := []*types.Log{{
+			Address: sentinel,
+			Topics:  []common.Hash{transferSig, topicOf(wallet), topicOf(to)},
+			Data:    word(amount),
+		}}
+
+		got := aggregate(logs, wallet)
+		if got.ETH.Cmp(new(big.Int).Neg(amount)) != 0 {
+			t.Errorf("%s: ETH = %v; want -%v", sentinel.Hex(), got.ETH, amount)
+		}
+		if len(got.Tokens) != 0 {
+			t.Errorf("%s: native transfer leaked into Tokens as %+v", sentinel.Hex(), got.Tokens)
+		}
+	}
+}
+
+func TestRowsRenderASmallNativeSendReadably(t *testing.T) {
+	// Regression: a 0.00001 ETH send rendered as "-10000000000000 0xEeee...EEeE"
+	// because the sentinel wasn't recognized, so the amount fell through to the
+	// token path with no decimals and no symbol.
+	res := Result{Status: StatusOK, ETHDelta: big.NewInt(-10_000_000_000_000)}
+
+	rows := res.Rows(1)
+	if len(rows) != 1 {
+		t.Fatalf("Rows = %+v; want one native row", rows)
+	}
+	if rows[0].Text != "-0.00001 ETH" {
+		t.Errorf("row = %q; want \"-0.00001 ETH\"", rows[0].Text)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // revert decoding
 // ---------------------------------------------------------------------------

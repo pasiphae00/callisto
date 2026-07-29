@@ -28,6 +28,14 @@ changes; `v1.0.0` marks the first stable, documented release.
   - The review step now names the tier next to the tip (`0.025 gwei (Fast)`), so a
     mis-set default is visible before signing.
 
+### Fixed
+- **Simulation showed native ETH as an unknown token.** A plain ETH send previewed as
+  `-10000000000000 0xEeee...EEeE` instead of `-0.00001 ETH`: `eth_simulateV1`
+  attributes native transfers to the ERC-7528 placeholder address, while
+  go-ethereum's own doc comment for that constant still describes the zero address
+  it used previously. Both are now recognized. (Unreleased regression — simulation
+  has not shipped.)
+
 ### Changed
 - **Consistent actions wherever Callisto hands you a transaction hash.** Every such
   dialog now shows the full hash in monospace with the same three actions —

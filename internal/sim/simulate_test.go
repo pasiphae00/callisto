@@ -262,8 +262,8 @@ func TestSimulateEOAViaSimulateV1DecodesDeltas(t *testing.T) {
 	tokensOut := big.NewInt(3_500_000_000)
 
 	node := newFakeNode(t).ok("eth_simulateV1", simOK(120_000,
-		// traceTransfers surfaces the native leg as a log from 0x0.
-		logJSON(zeroAddress, []common.Hash{transferSig, topicOf(wallet), topicOf(pool)}, word(oneETH)),
+		// traceTransfers surfaces the native leg as a log from the ERC-7528 sentinel.
+		logJSON(nativeSentinel, []common.Hash{transferSig, topicOf(wallet), topicOf(pool)}, word(oneETH)),
 		// and the pool pays out tokens.
 		logJSON(token, []common.Hash{transferSig, topicOf(pool), topicOf(wallet)}, word(tokensOut)),
 	))

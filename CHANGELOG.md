@@ -9,6 +9,18 @@ changes; `v1.0.0` marks the first stable, documented release.
 
 ## [Unreleased]
 
+### Changed
+- **Consistent actions wherever Callisto hands you a transaction hash.** Every such
+  dialog now shows the full hash in monospace with the same three actions —
+  **Copy hash**, **View on explorer**, **Close**. Previously some rendered the hash
+  as a clickable link (WalletConnect, approval revocation, history detail, Safe
+  executed-tx) and others as a plain label with an explorer button (Send, Safe
+  execution), and none offered a way to copy the hash without selecting it by hand.
+  One shared implementation (`App.showTxResult` / `txActionRow`) now backs Send,
+  WalletConnect, Safe execution, approval revocation, the inclusion reports that
+  follow each, the History detail dialog, and a Safe proposal's executed-tx row. The
+  explorer button is omitted rather than shown dead on a chain with no known explorer.
+
 ### Added
 - **Transaction simulation before signing** (`internal/sim`) — every pre-sign review
   now shows what a transaction would actually do, simulated against current chain

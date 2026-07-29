@@ -441,17 +441,13 @@ func (p *walletConnectPane) trackInclusion(recID int64, client rpc.Client, hash 
 	})
 }
 
-// showTxResult presents a submitted transaction with the hash in the monospace font
-// and a clickable explorer link. It returns the status label so trackInclusion can
+// showTxResult presents a submitted transaction using the shared post-broadcast
+// dialog (see App.showTxResult). It returns the status label so trackInclusion can
 // update it in place ("submitted" → "included") while the dialog stays open.
 func (p *walletConnectPane) showTxResult(hash string, info chain.Info) *widget.Label {
 	status := widget.NewLabel("Transaction submitted. Waiting for inclusion…")
 	status.Wrapping = fyne.TextWrapWord
-	body := container.NewVBox(
-		status,
-		monoHyperlink(hash, info.TxURL(hash)),
-	)
-	dialog.ShowCustom("WalletConnect transaction", "Close", body, p.app.window)
+	p.app.showTxResult("WalletConnect transaction", hash, info, status)
 	return status
 }
 

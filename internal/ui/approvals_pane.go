@@ -457,11 +457,8 @@ func (p *approvalsPane) signAndRevoke(prep tx.Prepared, ap approvals.Approval, i
 		fyne.Do(func() {
 			p.status.SetText("Revoke submitted: " + hash.Hex())
 			p.notifyHistory()
-			body := container.NewVBox(
-				widget.NewLabel("Revocation submitted. Waiting for inclusion…"),
-				monoHyperlink(hash.Hex(), info.TxURL(hash.Hex())),
-			)
-			dialog.ShowCustom("Revoke approval", "Close", body, p.app.window)
+			p.app.showTxResult("Revoke approval", hash.Hex(), info,
+				widget.NewLabel("Revocation submitted. Waiting for inclusion…"))
 		})
 		p.trackRevoke(recID, conn.Client, hash, ap, prep.Send.From, info)
 	}()

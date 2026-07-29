@@ -915,13 +915,10 @@ func (p *safePane) reviewObjects(desc safe.Descriptor, prop safe.Proposal, rende
 	// For an executed proposal, link the execution tx; for a failed one, show why.
 	if prop.ExecutedTxHash != "" {
 		info, _ := chain.Lookup(prop.ChainID)
-		if url := info.TxURL(prop.ExecutedTxHash); url != "" {
-			objs = append(objs, container.NewHBox(
-				widget.NewLabelWithStyle("Executed tx", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
-				monoHyperlink(prop.ExecutedTxHash, url)))
-		} else {
-			objs = append(objs, monoLabel("Executed tx: "+prop.ExecutedTxHash))
-		}
+		objs = append(objs,
+			widget.NewLabelWithStyle("Executed tx", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
+			monoLabel(prop.ExecutedTxHash),
+			p.app.txActionRow(prop.ExecutedTxHash, info))
 	}
 	if prop.Error != "" {
 		errLbl := widget.NewLabel("Error: " + prop.Error)
@@ -1517,11 +1514,7 @@ func (p *safePane) showExecInclusionResult(hash string, block, blockTime int64, 
 		grid.Add(widget.NewLabel(r[0]))
 		grid.Add(monoLabel(r[1]))
 	}
-	body := container.NewVBox(grid)
-	if link := info.TxURL(hash); link != "" {
-		body.Add(widget.NewButton("View on explorer", func() { p.app.openURL(link) }))
-	}
-	dialog.ShowCustom(title, "Close", body, p.app.window)
+	p.app.showTxResult(title, hash, info, grid)
 }
 
 // rejectProposal creates a rejection proposal at the same Safe nonce.
@@ -1579,14 +1572,8 @@ func (p *safePane) createRejection(desc safe.Descriptor, prop safe.Proposal) {
 // --- helpers ----------------------------------------------------------------
 
 func (p *safePane) showExecResult(hash string, info chain.Info) {
-	body := container.NewVBox(
-		widget.NewLabel("Execution submitted. Waiting for inclusion…"),
-		monoLabel(hash),
-	)
-	if link := info.TxURL(hash); link != "" {
-		body.Add(widget.NewButton("View on explorer", func() { p.app.openURL(link) }))
-	}
-	dialog.ShowCustom("Safe execution", "Close", body, p.app.window)
+	p.app.showTxResult("Safe execution", hash, info,
+		widget.NewLabel("Execution submitted. Waiting for inclusion…"))
 }
 
 // recordExecHistory inserts a history record for a Safe execution and returns its

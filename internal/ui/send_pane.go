@@ -494,17 +494,11 @@ func (p *sendPane) trackInclusion(recID int64, client rpc.Client, hash common.Ha
 	})
 }
 
-// showBroadcastResult shows the submitted hash with a link to the explorer. Matches
-// the Safe execution dialog: the full hash in mono, then a "View on explorer" button.
+// showBroadcastResult shows the submitted hash with the shared post-broadcast
+// actions (see App.showTxResult).
 func (p *sendPane) showBroadcastResult(hash string, info chain.Info) {
-	body := container.NewVBox(
-		widget.NewLabel("Transaction submitted. Waiting for inclusion…"),
-		monoLabel(hash),
-	)
-	if link := info.TxURL(hash); link != "" {
-		body.Add(widget.NewButton("View on explorer", func() { p.app.openURL(link) }))
-	}
-	dialog.ShowCustom("Broadcast", "Close", body, p.app.window)
+	p.app.showTxResult("Broadcast", hash, info,
+		widget.NewLabel("Transaction submitted. Waiting for inclusion…"))
 }
 
 // showInclusionResult reports the mined outcome. Field values (status, block,
@@ -528,11 +522,7 @@ func (p *sendPane) showInclusionResult(hash string, block, blockTime int64, succ
 		grid.Add(widget.NewLabel(r[0]))
 		grid.Add(monoLabel(r[1]))
 	}
-	body := container.NewVBox(grid)
-	if link := info.TxURL(hash); link != "" {
-		body.Add(widget.NewButton("View on explorer", func() { p.app.openURL(link) }))
-	}
-	dialog.ShowCustom(title, "Close", body, p.app.window)
+	p.app.showTxResult(title, hash, info, grid)
 	// Refresh balances after a state change.
 	p.reload()
 }

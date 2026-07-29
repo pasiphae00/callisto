@@ -152,11 +152,11 @@ func (p *historyPane) showDetail(i int) {
 	if rec.TxHash != "" {
 		body.Add(widget.NewSeparator())
 		body.Add(widget.NewLabelWithStyle("Transaction", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}))
-		if link := info.TxURL(rec.TxHash); link != "" {
-			body.Add(monoHyperlink(rec.TxHash, link))
-		} else {
-			body.Add(monoLabel(rec.TxHash))
-		}
+		// Same hash presentation as the post-broadcast dialogs (App.showTxResult):
+		// this is the pane you come back to precisely to retrieve an old hash, so
+		// it needs the same Copy affordance rather than a link you can only click.
+		body.Add(monoLabel(rec.TxHash))
+		body.Add(p.app.txActionRow(rec.TxHash, info))
 	}
 
 	d := dialog.NewCustom("Transaction details", "Close", container.NewVScroll(body), p.app.window)

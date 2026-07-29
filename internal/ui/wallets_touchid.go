@@ -33,7 +33,7 @@ func (p *walletsPane) enableTouchIDSelected() {
 	pass := widget.NewPasswordEntry()
 	pass.SetPlaceHolder("wallet passphrase")
 	content := container.NewVBox(
-		widget.NewLabel("Confirm your passphrase to enable Touch ID unlock. Your passphrase still works as a fallback, and the recovery phrase is never stored."),
+		widget.NewLabel("Confirm your passphrase to enable Touch ID unlock.\n\nYour passphrase still works as a fallback, and the recovery phrase is never stored."),
 		widget.NewForm(widget.NewFormItem("Passphrase", pass)),
 	)
 	d := dialog.NewCustomConfirm("Enable Touch ID — "+displayName(desc), "Enable", "Cancel", content,

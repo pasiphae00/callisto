@@ -19,10 +19,20 @@ import (
 // noteCallOnly is shown when the endpoint can only answer "would this revert?".
 const noteCallOnly = "Revert check only — connect an eth_simulateV1 or archive (debug) endpoint to preview asset changes."
 
+// noteEndpointCannotSimulate is shown when even eth_call is refused, so the UI
+// says why there is no verdict instead of implying the transaction is fine.
+const noteEndpointCannotSimulate = "This endpoint does not serve eth_call, so Callisto cannot check this transaction. Switch to a general-purpose RPC to simulate it."
+
 // simulateGasCap is the gas budget handed to a simulation. Simulations run
 // with zero fees and a generous limit so that an account which cannot afford
 // the real transaction still gets to see what the transaction would *do*; the
 // user-facing fee estimate is produced separately by internal/tx.
+//
+// Deliberately *not* sent to eth_simulateV1: that method sums the gas of every
+// call in the block and rejects the request outright (-38015) when the total
+// exceeds the chain's block gas limit, which on Optimism (40M) is below this
+// cap. Omitting the field lets each node apply its own block limit, which is
+// both chain-correct and always at least as generous as a number we'd pick.
 const simulateGasCap = 50_000_000
 
 // Simulator runs pre-sign simulations against one RPC connection, reusing a
@@ -46,10 +56,20 @@ func (s *Simulator) Caps(ctx context.Context) Caps { return s.prober.Caps(ctx) }
 // SimulateEOA simulates req as sent from req.From against current chain state
 // and reports the resulting asset changes, or the revert that would occur.
 //
-// Strategy, best first, falling through when the endpoint rejects a method:
+// Strategy, best first, falling through when a method doesn't work out:
 // eth_simulateV1 (standardized, returns logs *and* native transfers), then
 // debug_traceCall with callTracer (archive nodes), then a bare eth_call, which
-// every endpoint serves but which can only distinguish success from revert.
+// can only distinguish success from revert.
+//
+// Fall-through is unconditional: *any* failure of a richer method drops to the
+// next one, not just an outright "method not found". An endpoint can serve a
+// method and still reject our particular request -- zkSync Era's callTracer
+// refuses a tracerConfig geth accepts, and eth_simulateV1 rejects a gas budget
+// above the chain's block limit. Losing the universal revert check because a
+// richer method misbehaved is the wrong trade: a downgraded preview is a
+// nuisance, an unanswered "would this revert?" is a hazard. The reason the
+// richer method failed is kept and surfaced on the downgraded result, so a
+// broken endpoint is visible rather than silently degrading forever.
 //
 // An error is returned only when no strategy could be run at all; a transaction
 // that *would revert* is a successful simulation reporting StatusRevert.
@@ -60,15 +80,14 @@ func (s *Simulator) SimulateEOA(ctx context.Context, req Request) (Result, error
 
 	caps := s.prober.Caps(ctx)
 	raw := s.client.RawClient()
+	var downgrade error
 
 	if caps.SimulateV1 && raw != nil {
 		res, err := s.viaSimulateV1(ctx, raw, req, nil)
 		if err == nil {
 			return res, nil
 		}
-		if !methodUnavailable(err) {
-			return Result{Status: StatusUnavailable, Tier: TierSimulate}, err
-		}
+		downgrade = fmt.Errorf("eth_simulateV1: %w", err)
 	}
 
 	if caps.DebugTrace && raw != nil {
@@ -76,12 +95,20 @@ func (s *Simulator) SimulateEOA(ctx context.Context, req Request) (Result, error
 		if err == nil {
 			return res, nil
 		}
-		if !methodUnavailable(err) {
-			return Result{Status: StatusUnavailable, Tier: TierDebug}, err
-		}
+		downgrade = fmt.Errorf("debug_traceCall: %w", err)
 	}
 
-	return s.viaCall(ctx, req)
+	res, err := s.viaCall(ctx, req)
+	if err == nil && downgrade != nil {
+		res.Note = noteDowngraded(downgrade)
+	}
+	return res, err
+}
+
+// noteDowngraded explains a preview that fell back to the revert check because a
+// richer method failed, naming the reason so the endpoint's problem is visible.
+func noteDowngraded(err error) string {
+	return "Revert check only — this endpoint's asset preview failed (" + err.Error() + ")."
 }
 
 // RevertCheckEOA answers only "would this revert, and why?", using the
@@ -116,10 +143,10 @@ func (s *Simulator) RevertCheckSafe(ctx context.Context, req SafeRequest) (Resul
 // ETH movements as pseudo-logs alongside the real event logs, so a single round
 // trip yields the complete asset picture. overrides may be nil.
 func (s *Simulator) viaSimulateV1(ctx context.Context, raw *gethrpc.Client, req Request, overrides map[common.Address]stateOverride) (Result, error) {
+	// Gas is left unset on purpose -- see simulateGasCap's doc comment.
 	call := simCallPayload{
 		From:                 addrPtr(req.From),
 		To:                   addrPtr(req.To),
-		Gas:                  gasPtr(simulateGasCap),
 		MaxFeePerGas:         zeroFee(),
 		MaxPriorityFeePerGas: zeroFee(),
 		Value:                bigPtr(req.Value),
@@ -272,6 +299,19 @@ func (s *Simulator) viaCall(ctx context.Context, req Request) (Result, error) {
 			RevertReason: reason,
 			Tier:         TierCallOnly,
 			Note:         noteCallOnly,
+		}, nil
+	}
+	// Some endpoints don't serve eth_call at all -- Flashbots Protect, the
+	// mainnet failover target, whitelists only the methods needed to submit a
+	// transaction and answers -32601 "rpc method is not whitelisted". That is a
+	// property of the endpoint, not a fault to report as an error: say plainly
+	// that this RPC can't answer, so the UI shows the reason rather than an
+	// error dialog on every review.
+	if methodUnavailable(err) {
+		return Result{
+			Status: StatusUnavailable,
+			Tier:   TierCallOnly,
+			Note:   noteEndpointCannotSimulate,
 		}, nil
 	}
 	return Result{Status: StatusUnavailable, Tier: TierCallOnly}, fmt.Errorf("eth_call: %w", err)

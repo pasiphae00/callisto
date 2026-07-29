@@ -222,3 +222,40 @@ four review surfaces. P3b and P3c remain open.
   never mined. The wire types use a minimal log struct and convert.
 - **Reverted sub-calls must be pruned from a `callTracer` tree** before their logs are
   counted — a caught `try/catch` failure emits logs that never took effect.
+- **Serving a method is not the same as accepting our request.** Three endpoints in
+  `config.ChainCatalog` prove it, so fall-through in `SimulateEOA` is unconditional: any
+  failure of a richer method drops to the next, keeping the revert check. A downgraded
+  preview is a nuisance; an unanswered "would this revert?" is a hazard. The reason is
+  carried onto the downgraded result so a broken endpoint stays visible.
+  - **Never send `gas` to `eth_simulateV1`.** It sums the gas of every call in the block
+    and rejects the request with `-38015` when the total exceeds the chain's block gas
+    limit — Optimism's is 40M, below the 50M cap we used to send, so *every* simulation
+    on Optimism failed. Omitting it lets each node apply its own limit.
+  - **`callTracer`'s `tracerConfig` must always carry `onlyTopCall`.** geth defaults it
+    when absent; zkSync Era's Rust implementation deserializes strictly and rejects the
+    request with ``missing field `onlyTopCall` ``.
+- **`eth_call` is not universal.** Flashbots Protect — the mainnet failover target —
+  whitelists only the methods needed to submit a transaction and answers `-32601 "rpc
+  method is not whitelisted"`. Both `viaCall` and the Safe accessor path detect this and
+  report a stated limitation rather than an error, since an error dialog on every review
+  after a failover trains the user to dismiss them. (Without the check the Safe path was
+  worse: no revert payload reads as "this Safe returned no revert data", blaming the Safe
+  for the endpoint's limitation.)
+
+### Measured endpoint capabilities
+
+From `go test -tags integration -run TestIntegrationProbeCatalogEndpoints ./internal/sim/`,
+which probes every chain in `config.ChainCatalog` and then re-issues each capability the
+probe claimed. Re-run it when the catalog changes — the design's assumptions about
+endpoint tiers have been wrong twice.
+
+| endpoint | `eth_simulateV1` | `debug_traceCall` | effective tier |
+|---|---|---|---|
+| Ganymede archive | ✓ | ✗ | `eth_simulateV1` |
+| Flashbots Protect | ✗ | ✗ | none — no `eth_call` either |
+| Base, Arbitrum, Optimism, Polygon, BSC, Robinhood (PublicNode) | ✓ | ✗ | `eth_simulateV1` |
+| zkSync Era (official) | ✗ | ✓ | `debug_traceCall` |
+
+Two assumptions this corrected: public L2 endpoints are **not** Tier-0 — they all serve
+`eth_simulateV1`, so asset previews work on every supported L2 — and **Ganymede serves no
+`debug` namespace**, reaching the same tier via `eth_simulateV1` instead.

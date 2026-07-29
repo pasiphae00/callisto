@@ -59,6 +59,21 @@ changes; `v1.0.0` marks the first stable, documented release.
   - A simulation never blocks signing and is always labelled as a snapshot of
     current state, not a guarantee about the block the transaction lands in. A
     simulation that fails to run says explicitly that it proves nothing.
+  - Verified against every endpoint Callisto ships (`internal/sim`'s
+    `integration` test sweeps the chain catalog). Asset previews work on **all
+    supported L2s** — the public PublicNode endpoints serve `eth_simulateV1`,
+    which the design had assumed they would not.
+  - An endpoint that cannot simulate now says so. **Flashbots Protect** — where
+    Callisto lands after a mainnet connection failure — serves no `eth_call` at
+    all, and previously produced an error on every review; it now reports the
+    limitation and points at switching RPC. On a **Safe**, that same case used to
+    read as "this Safe returned no revert data", blaming the Safe for the
+    endpoint.
+  - Simulation no longer fails outright when an endpoint rejects one particular
+    method: it falls back to the revert check and names what went wrong. This
+    fixes **Optimism** (a gas budget above its 40M block limit had every
+    simulation rejected) and **zkSync Era** (its tracer requires a config field
+    geth treats as optional) — both now produce full asset previews.
 
 ### Fixed
 - **Callisto's own encrypted backups could not be imported.** "Import keystore

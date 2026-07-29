@@ -110,8 +110,16 @@ type traceConfig struct {
 	TracerConfig *callTracerConfig `json:"tracerConfig,omitempty"`
 }
 
+// callTracerConfig configures geth's callTracer.
+//
+// OnlyTopCall is always emitted, never omitempty: geth defaults it to false when
+// absent, but zkSync Era's Rust implementation deserializes this struct strictly
+// and rejects the whole request with "missing field `onlyTopCall`". Sending the
+// field explicitly satisfies both, and false is what we want either way -- the
+// asset diff needs the full call tree, not just the root frame.
 type callTracerConfig struct {
-	WithLog bool `json:"withLog"`
+	WithLog     bool `json:"withLog"`
+	OnlyTopCall bool `json:"onlyTopCall"`
 }
 
 // callFrame is one node of callTracer's call tree. Logs is populated only when

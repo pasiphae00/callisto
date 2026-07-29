@@ -560,11 +560,15 @@ Original scope notes retained at the bottom of this entry.
   3. `internal/ui/sim_section.go` — one shared `simSection` widget wired into Send,
      WalletConnect, Safe Build, and Safe Proposals. Auto revert-check on open;
      **Simulate…** for the asset preview.
-- **Still open — verify against live nodes.** Everything above is tested against a
-  fake node; the wire shapes have *not* been confirmed against real endpoints yet.
-  Check: Ganymede (should be both `eth_simulateV1` and `debug`), a public L2
-  PublicNode endpoint (expect Tier-0, confirm the probe degrades cleanly rather than
-  reporting a false positive), and one real Safe proposal end-to-end.
+- **Live-node verification — done (2026-07-29).** `internal/sim/integration_test.go`
+  (build tag `integration`) probes every chain in `config.ChainCatalog`, then
+  re-issues each capability the probe claimed and fails on a false positive. All
+  nine endpoints pass; a real Safe proposal was run end-to-end by hand. **Re-run it
+  whenever the chain catalog changes.** It found no probe false positives but three
+  real bugs, all fixed — see the capability table and notes in
+  `docs/transaction-simulation.md`. Two design assumptions were wrong: public L2
+  endpoints are not Tier-0 (they all serve `eth_simulateV1`), and Ganymede serves no
+  `debug` namespace.
 - **P3b (deferred):** Safe `DelegateCall`/MultiSend asset diffs, which need
   `execTransaction` with a signature-bypass state override (`stateOverride.StateDiff`
   is already modelled in `rpcwire.go` for this). Today those get the revert check

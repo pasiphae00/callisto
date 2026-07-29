@@ -161,6 +161,13 @@ func (s *Simulator) viaAccessor(ctx context.Context, req SafeRequest) (Result, e
 			Note: "Simulation unavailable — simulateAndRevert returned instead of reverting; this may not be a Safe 1.3.0+."}, nil
 	}
 
+	// An endpoint that doesn't serve eth_call produces no revert payload either,
+	// and would otherwise be reported as a Safe that returned no revert data --
+	// blaming the Safe for the endpoint's limitation. See viaCall.
+	if methodUnavailable(callErr) {
+		return Result{Status: StatusUnavailable, Tier: TierCallOnly, Note: noteEndpointCannotSimulate}, nil
+	}
+
 	payload := revertDataFrom(callErr)
 	if len(payload) == 0 {
 		return Result{Status: StatusUnavailable, Tier: TierCallOnly, Note: noteSafeNoRevertData}, nil

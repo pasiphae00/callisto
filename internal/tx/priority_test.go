@@ -52,10 +52,23 @@ func TestPercentilesAreOrdered(t *testing.T) {
 // feeHistoryNode serves eth_feeHistory (and eth_maxPriorityFeePerGas) so the
 // derivation can be tested over the real JSON-RPC wire encoding.
 type feeHistoryNode struct {
-	rewards       [][]string // per block, per requested percentile, as hex wei
+	rewards [][]string // per block, per requested percentile, as hex wei
+	// ratios is each block's gasUsedRatio. Nil means the field is omitted
+	// entirely, as an endpoint that doesn't report it would.
+	ratios        []float64
 	suggestion    string
 	serveHistory  bool
 	sawPercentile float64
+}
+
+// fullBlocks marks every block as completely full, isolating the percentile
+// derivation from the congestion blend in tests that are about the percentile.
+func fullBlocks(n int) []float64 {
+	r := make([]float64, n)
+	for i := range r {
+		r[i] = 1
+	}
+	return r
 }
 
 func (n *feeHistoryNode) client(t *testing.T) *feeHistoryClient {
@@ -78,7 +91,11 @@ func (n *feeHistoryNode) client(t *testing.T) *feeHistoryClient {
 			if len(pcts) > 0 {
 				n.sawPercentile = pcts[0]
 			}
-			resp["result"] = map[string]interface{}{"reward": n.rewards}
+			result := map[string]interface{}{"reward": n.rewards}
+			if n.ratios != nil {
+				result["gasUsedRatio"] = n.ratios
+			}
+			resp["result"] = result
 		default:
 			resp["error"] = map[string]interface{}{
 				"code": -32601, "message": "the method " + req.Method + " does not exist/is not available",
@@ -123,6 +140,7 @@ func TestSuggestTipUsesFeeHistoryMedian(t *testing.T) {
 	node := &feeHistoryNode{
 		serveHistory: true,
 		suggestion:   "0x1",
+		ratios:       fullBlocks(5), // full blocks: bid the percentile outright
 		rewards: [][]string{
 			{"0x" + gwei(1).Text(16)},
 			{"0x" + gwei(2).Text(16)},
@@ -153,12 +171,52 @@ func TestSuggestTipRequestsTheTiersPercentile(t *testing.T) {
 	}
 }
 
-func TestSuggestTipHonoursALowStandardBid(t *testing.T) {
-	// Bidding low is the point of Standard: a positive-but-small percentile must
-	// be used as-is, not clamped up to the node's own suggestion.
+func TestSuggestTipScalesWithCongestion(t *testing.T) {
+	// The core of the design: the same observed percentile is bid in full only
+	// when blocks are actually contested. In a half-empty block every
+	// transaction is included whatever it paid, so what others chose to pay is
+	// no evidence of what inclusion costs.
+	//
+	// Fast's floor is 2x the 1 gwei suggestion = 2 gwei; the percentile is
+	// 10 gwei; so the tip is 2 + congestion*(10-2) gwei.
+	cases := []struct {
+		name  string
+		ratio float64
+		want  *big.Int
+	}{
+		{"empty blocks bid the floor", 0, gwei(2)},
+		{"half full interpolates", 0.5, gwei(6)},
+		{"full blocks bid the percentile", 1, gwei(10)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			node := &feeHistoryNode{
+				serveHistory: true,
+				suggestion:   "0x" + gwei(1).Text(16),
+				ratios:       []float64{tc.ratio, tc.ratio},
+				rewards:      [][]string{{"0x" + gwei(10).Text(16)}, {"0x" + gwei(10).Text(16)}},
+			}
+
+			got, err := SuggestTip(context.Background(), node.client(t), PriorityFast)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.Cmp(tc.want) != 0 {
+				t.Errorf("at %.0f%% full: tip = %v; want %v", tc.ratio*100, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestSuggestTipNeverBidsBelowTheMarginalPrice(t *testing.T) {
+	// The node's suggestion is what the cheapest *included* transaction paid, so
+	// an observed percentile below it is not a cheaper way in — it is stale or
+	// contradictory data. Standard bids low, but not below the price of getting
+	// in at all.
 	node := &feeHistoryNode{
 		serveHistory: true,
 		suggestion:   "0x" + gwei(50).Text(16),
+		ratios:       fullBlocks(1),
 		rewards:      [][]string{{"0x" + big.NewInt(1000).Text(16)}},
 	}
 
@@ -166,17 +224,19 @@ func TestSuggestTipHonoursALowStandardBid(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Cmp(big.NewInt(1000)) != 0 {
-		t.Errorf("tip = %v; want the observed 1000 wei, not the node's much larger suggestion", got)
+	if got.Cmp(gwei(50)) != 0 {
+		t.Errorf("tip = %v; want the 50 gwei marginal price, not the lower observed percentile", got)
 	}
 }
 
-func TestSuggestTipTreatsZeroAsNoAnswer(t *testing.T) {
-	// A zero tip is valid post-merge but many builders won't include it, so a
-	// zero percentile falls back to scaling the node's suggestion.
+func TestSuggestTipClampsAZeroPercentileToTheFloor(t *testing.T) {
+	// A zero tip is valid post-merge but widely dropped by builders. This used to
+	// need a special-cased zero-guard; the floor clamp now subsumes it, since
+	// zero is necessarily at or below the floor.
 	node := &feeHistoryNode{
 		serveHistory: true,
 		suggestion:   "0x" + gwei(10).Text(16),
+		ratios:       fullBlocks(3),
 		rewards:      [][]string{{"0x0"}, {"0x0"}, {"0x0"}},
 	}
 
@@ -185,10 +245,42 @@ func TestSuggestTipTreatsZeroAsNoAnswer(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got.Sign() == 0 {
-		t.Fatal("tip = 0; a zero percentile must fall back, not prepare an unmineable transaction")
+		t.Fatal("tip = 0; that prepares a transaction builders may never include")
 	}
-	if got.Cmp(gwei(5)) != 0 {
-		t.Errorf("tip = %v; want half the 10 gwei suggestion", got)
+	if got.Cmp(gwei(10)) != 0 {
+		t.Errorf("tip = %v; want Standard's 10 gwei floor", got)
+	}
+}
+
+// TestSuggestTipAgreesAcrossBothPaths pins the bug this design replaced: the
+// eth_feeHistory path and the no-feeHistory path used to disagree by ~2700x for
+// the same tier, because the fallback was calibrated on the false premise that
+// the node's suggestion sits at the 60th percentile. With no congestion the
+// blend *is* the floor, so the two paths now agree exactly.
+func TestSuggestTipAgreesAcrossBothPaths(t *testing.T) {
+	const suggestion = "0x" + "2540be400" // 10 gwei
+
+	for _, tier := range Priorities() {
+		quiet := &feeHistoryNode{
+			serveHistory: true,
+			suggestion:   suggestion,
+			ratios:       []float64{0, 0},
+			rewards:      [][]string{{"0x" + gwei(500).Text(16)}, {"0x" + gwei(500).Text(16)}},
+		}
+		bare := &feeHistoryNode{serveHistory: false, suggestion: suggestion}
+
+		withHistory, err := SuggestTip(context.Background(), quiet.client(t), tier)
+		if err != nil {
+			t.Fatal(err)
+		}
+		withoutHistory, err := SuggestTip(context.Background(), bare.client(t), tier)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if withHistory.Cmp(withoutHistory) != 0 {
+			t.Errorf("%v: feeHistory path gives %v, fallback gives %v; they must agree with no congestion",
+				tier, withHistory, withoutHistory)
+		}
 	}
 }
 
@@ -200,9 +292,9 @@ func TestSuggestTipFallsBackWhenFeeHistoryIsUnavailable(t *testing.T) {
 		tier Priority
 		want *big.Int
 	}{
-		{PriorityStandard, gwei(5)},
-		{PriorityFast, gwei(10)},
-		{PriorityRapid, gwei(20)},
+		{PriorityStandard, gwei(10)}, // the marginal price of inclusion
+		{PriorityFast, gwei(20)},
+		{PriorityRapid, gwei(40)},
 	}
 	for _, tc := range cases {
 		got, err := SuggestTip(context.Background(), client, tc.tier)
@@ -210,21 +302,40 @@ func TestSuggestTipFallsBackWhenFeeHistoryIsUnavailable(t *testing.T) {
 			t.Fatalf("%v: %v", tc.tier, err)
 		}
 		if got.Cmp(tc.want) != 0 {
-			t.Errorf("%v tip = %v; want %v (scaled from the node suggestion)", tc.tier, got, tc.want)
+			t.Errorf("%v tip = %v; want %v (the tier's floor)", tc.tier, got, tc.want)
 		}
 	}
 }
 
+func TestSuggestTipTreatsMissingGasUsedRatioAsNoCongestion(t *testing.T) {
+	// An endpoint that serves rewards but omits gasUsedRatio leaves us no
+	// congestion evidence. Falling to the floor is the safe direction: it is the
+	// cheaper of the two anchors, and still the price of inclusion.
+	node := &feeHistoryNode{
+		serveHistory: true,
+		suggestion:   "0x" + gwei(1).Text(16),
+		rewards:      [][]string{{"0x" + gwei(500).Text(16)}},
+	}
+
+	got, err := SuggestTip(context.Background(), node.client(t), PriorityStandard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Cmp(gwei(1)) != 0 {
+		t.Errorf("tip = %v; want the 1 gwei floor, not the unweighted percentile", got)
+	}
+}
+
 func TestSuggestTipWithoutARawClientStillWorks(t *testing.T) {
-	// Every existing test double returns a nil raw client; the fallback path must
+	// Every existing test double returns a nil raw client; the floor path must
 	// carry them rather than erroring.
 	m := &txMock{tip: gwei(10)}
 	got, err := SuggestTip(context.Background(), m, PriorityRapid)
 	if err != nil {
 		t.Fatalf("SuggestTip: %v", err)
 	}
-	if got.Cmp(gwei(20)) != 0 {
-		t.Errorf("tip = %v; want 20 gwei", got)
+	if got.Cmp(gwei(40)) != 0 {
+		t.Errorf("tip = %v; want Rapid's 40 gwei floor", got)
 	}
 }
 

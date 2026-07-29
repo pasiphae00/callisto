@@ -15,16 +15,26 @@ changes; `v1.0.0` marks the first stable, documented release.
   Callisto prepares (Send, WalletConnect, Safe execution, approval revocation).
   It sets the **priority fee only**; the base fee is fixed by the protocol from the
   parent block's gas usage and is identical for every transaction in a block.
-  - Tiers are derived from **`eth_feeHistory`** — the 20th / 60th / 90th percentile
-    of what transactions in the last 20 blocks actually paid, taking the median
-    across blocks so one desperate transaction can't drag the estimate up. This is
-    how public gas trackers produce their numbers, rather than a multiplier we
-    invented. Endpoints that don't serve `eth_feeHistory` fall back to scaling the
-    node's own `eth_maxPriorityFeePerGas` suggestion (×½ / ×1 / ×2).
-  - A percentile of zero is treated as no answer rather than as a bid of zero: it
-    is valid post-merge but many builders won't include such a transaction. A
-    Standard bid that comes back positive-but-low *is* honoured — bidding low is
-    the point of that tier.
+  - Tiers blend two different measurements rather than bidding either one alone.
+    The node's `eth_maxPriorityFeePerGas` is the **price of inclusion** — what the
+    cheapest transaction that still got into recent blocks paid — and sets each
+    tier's floor (×1 / ×2 / ×4). `eth_feeHistory`'s 20th / 60th / 90th percentile
+    is **willingness to pay** — what transactions chose to bid — taking the median
+    across the last 20 blocks so one desperate transaction can't drag the estimate
+    up.
+  - The percentile is approached only to the degree blocks are actually contested,
+    weighted by the gas-used ratios `eth_feeHistory` returns anyway. Bidding what
+    others chose to pay is only meaningful when there is competition for space: in
+    a half-empty block every transaction is included whatever it paid, so paying a
+    competitive rate there is paying for nothing. Empty blocks bid the floor, full
+    blocks bid the percentile, and the common case interpolates.
+  - Consequently a tier costs what the moment demands: on a quiet chain all three
+    sit near the price of inclusion, and they separate as the network fills up.
+    Endpoints that don't serve `eth_feeHistory` use the tier floor, which is
+    exactly what the blend converges to without congestion, so the two paths agree
+    instead of diverging.
+  - A percentile of zero — valid post-merge, but widely dropped by builders —
+    needs no special case: it falls below the floor and is clamped away to it.
   - The review step now names the tier next to the tip (`0.025 gwei (Fast)`), so a
     mis-set default is visible before signing.
 - **Transaction simulation before signing** (`internal/sim`) — every pre-sign review

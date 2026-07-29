@@ -99,18 +99,31 @@ func (p Priority) rewardPercentile() float64 {
 	}
 }
 
-// fallbackScale multiplies the node's own tip suggestion when eth_feeHistory is
-// unavailable. geth's suggestion sits around the 60th percentile of recent
-// blocks, so Fast maps to it unchanged and the other tiers scale from there.
-// Expressed as a fraction to stay in integer arithmetic.
-func (p Priority) fallbackScale() (num, den int64) {
+// floorScale multiplies the node's own tip suggestion to give each tier its
+// floor — the least it will ever bid, used as-is when there is no congestion to
+// bid against (and when eth_feeHistory is unavailable, which is the same thing
+// with no data).
+//
+// The anchor is the *marginal price of inclusion*, not a mid-market rate. geth's
+// oracle sorts each block's transactions ascending by effective tip, keeps only
+// the cheapest three (`sampleNumber`), pools those across 20 blocks and returns
+// the 60th percentile of that pool — so it tracks what the cheapest transaction
+// that still got included paid. Measured against mainnet it lands around the 5th
+// percentile of all transactions, not the 60th. An earlier version of this file
+// claimed the latter and mapped Fast to 1x on that basis, which put the
+// eth_feeHistory path and this one ~2700x apart for the same tier.
+//
+// Standard is therefore exactly the marginal price: the cheapest bid that still
+// gets in. Fast and Rapid are urgency multiples of it. Expressed as a fraction to
+// stay in integer arithmetic.
+func (p Priority) floorScale() (num, den int64) {
 	switch p {
 	case PriorityStandard:
-		return 1, 2 // half the suggestion
+		return 1, 1 // the marginal price of inclusion
 	case PriorityRapid:
-		return 2, 1 // double it
+		return 4, 1
 	default:
-		return 1, 1
+		return 2, 1
 	}
 }
 
@@ -119,59 +132,98 @@ func (p Priority) fallbackScale() (num, den int64) {
 // genuine change in congestion.
 const feeHistoryBlocks = 20
 
+// congestionScale is the fixed-point denominator for the blend weight. Integer
+// arithmetic throughout: these are wei, and float64 cannot hold them exactly.
+const congestionScale = 1000
+
 // SuggestTip returns the priority fee to bid for the given tier.
 //
-// It prefers eth_feeHistory, which reports what transactions in recent blocks
-// actually paid, so the tiers are grounded in observed data rather than in a
-// multiplier we invented — this is how public gas trackers derive their
-// Standard/Fast/Rapid numbers. Where that isn't available (an endpoint that
-// doesn't serve it, or a test double with no raw client) it scales the node's own
-// eth_maxPriorityFeePerGas suggestion instead.
+// Two different things are measured, and the tier is a blend of them:
 //
-// A zero result is treated as no answer rather than as a bid of zero. A low
-// percentile on a quiet chain genuinely can be zero, and while a zero tip is
-// valid post-merge, many builders will not include such a transaction — so we
-// fall back to scaling the node's suggestion instead of preparing a transaction
-// that may never be mined. Note this is *only* a zero-guard: a Standard bid that
-// comes back positive-but-low is honoured, because bidding low is the entire
-// point of that tier.
+//   - The node's eth_maxPriorityFeePerGas is the *marginal price of inclusion* —
+//     what the cheapest transaction that still got into recent blocks paid (see
+//     floorScale). Scaled per tier, this is the floor.
+//   - eth_feeHistory's percentiles are *willingness to pay* — what transactions
+//     in recent blocks chose to bid, which is what public gas trackers report.
+//
+// Willingness to pay is the wrong number to bid on its own: in a half-empty block
+// every transaction is included whatever it paid, so the p20 transaction paid
+// what it did by choice, not by necessity. Bidding it means paying a competitive
+// price in a market with no competition — measured on mainnet at ~52% full, that
+// was 187x the marginal price for Standard alone.
+//
+// So the percentile is approached only to the degree blocks are actually
+// contested, using the gas-used ratios eth_feeHistory already returns alongside
+// the rewards:
+//
+//	tip = floor + congestion * (percentile - floor)      (never below floor)
+//
+// Empty blocks bid the floor; full blocks bid the percentile; the common case
+// interpolates. This also subsumes what used to be a special-cased zero-guard: a
+// percentile of zero (valid post-merge, and common on a quiet chain, but widely
+// dropped by builders) now falls below the floor and is clamped away to it,
+// rather than being detected and handled separately.
+//
+// Where eth_feeHistory is unavailable — an endpoint that doesn't serve it, or a
+// test double with no raw client — the tier's floor is used alone, which is
+// exactly what the blend converges to when there is no congestion. The two paths
+// therefore agree rather than diverging by orders of magnitude.
 func SuggestTip(ctx context.Context, client rpc.Client, p Priority) (*big.Int, error) {
-	if tip, ok := tipFromFeeHistory(ctx, client, p); ok && tip.Sign() > 0 {
-		return tip, nil
-	}
-
 	suggested, err := client.SuggestGasTipCap(ctx)
 	if err != nil {
 		return nil, err
 	}
-	num, den := p.fallbackScale()
-	scaled := new(big.Int).Mul(suggested, big.NewInt(num))
-	return scaled.Div(scaled, big.NewInt(den)), nil
+
+	num, den := p.floorScale()
+	floor := new(big.Int).Mul(suggested, big.NewInt(num))
+	floor.Div(floor, big.NewInt(den))
+
+	target, congestion, ok := sampleFeeHistory(ctx, client, p)
+	if !ok {
+		return floor, nil
+	}
+
+	// floor + congestion*(target-floor), in integer arithmetic.
+	delta := new(big.Int).Sub(target, floor)
+	delta.Mul(delta, big.NewInt(congestion))
+	delta.Div(delta, big.NewInt(congestionScale))
+	tip := delta.Add(delta, floor)
+
+	if tip.Cmp(floor) < 0 {
+		return floor, nil
+	}
+	return tip, nil
 }
 
-// feeHistoryResult is eth_feeHistory's response. Only the reward matrix matters
-// here; the base fee is read from the head block instead, since that is the value
-// the transaction will actually be priced against.
+// feeHistoryResult is eth_feeHistory's response. The base fee is ignored here —
+// it is read from the head block instead, since that is the value the transaction
+// will actually be priced against.
 type feeHistoryResult struct {
 	Reward [][]hexutil.Big `json:"reward"`
+	// GasUsedRatio is each block's gas used over its gas limit, in [0,1]. It is
+	// the congestion signal: how much competition for space there actually was.
+	GasUsedRatio []float64 `json:"gasUsedRatio"`
 }
 
-// tipFromFeeHistory samples what recent blocks paid at the tier's percentile and
-// returns the median across those blocks.
+// sampleFeeHistory returns the tier's percentile across recent blocks and how
+// contested those blocks were, in one round trip.
 //
-// Median, not mean: a single block containing one desperate transaction paying a
-// thousandfold tip would drag a mean far above what inclusion actually costs.
-func tipFromFeeHistory(ctx context.Context, client rpc.Client, p Priority) (*big.Int, bool) {
+// The percentile is the median across blocks, not the mean: a single block
+// containing one desperate transaction paying a thousandfold tip would drag a
+// mean far above what inclusion actually costs. Congestion is the mean, since
+// every block's spare capacity counts equally toward how easy inclusion is, and
+// it is returned as an integer fraction of congestionScale.
+func sampleFeeHistory(ctx context.Context, client rpc.Client, p Priority) (target *big.Int, congestion int64, ok bool) {
 	raw := client.RawClient()
 	if raw == nil {
-		return nil, false
+		return nil, 0, false
 	}
 
 	var out feeHistoryResult
 	err := raw.CallContext(ctx, &out, "eth_feeHistory",
 		hexutil.Uint64(feeHistoryBlocks), "latest", []float64{p.rewardPercentile()})
 	if err != nil || len(out.Reward) == 0 {
-		return nil, false
+		return nil, 0, false
 	}
 
 	samples := make([]*big.Int, 0, len(out.Reward))
@@ -182,9 +234,31 @@ func tipFromFeeHistory(ctx context.Context, client rpc.Client, p Priority) (*big
 		samples = append(samples, (*big.Int)(&block[0]))
 	}
 	if len(samples) == 0 {
-		return nil, false
+		return nil, 0, false
 	}
-
 	sort.Slice(samples, func(i, j int) bool { return samples[i].Cmp(samples[j]) < 0 })
-	return new(big.Int).Set(samples[len(samples)/2]), true
+
+	return new(big.Int).Set(samples[len(samples)/2]), meanCongestion(out.GasUsedRatio), true
+}
+
+// meanCongestion averages the per-block gas-used ratios into a weight in
+// [0,congestionScale]. An endpoint that omits gasUsedRatio yields zero, which
+// makes the blend fall back to the tier floor — the safe direction, since the
+// floor is the cheaper of the two anchors.
+func meanCongestion(ratios []float64) int64 {
+	if len(ratios) == 0 {
+		return 0
+	}
+	var sum float64
+	for _, r := range ratios {
+		sum += r
+	}
+	scaled := int64(sum / float64(len(ratios)) * congestionScale)
+	if scaled < 0 {
+		return 0
+	}
+	if scaled > congestionScale {
+		return congestionScale
+	}
+	return scaled
 }

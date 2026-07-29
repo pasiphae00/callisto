@@ -83,15 +83,17 @@ func TestEstimateFees(t *testing.T) {
 	if fees.GasLimit != 25200 {
 		t.Errorf("gas limit = %d, want 25200", fees.GasLimit)
 	}
-	if fees.GasTipCap.Cmp(big.NewInt(1_000_000_000)) != 0 {
-		t.Errorf("tip = %s", fees.GasTipCap)
+	// No raw client on the mock, so no eth_feeHistory: the tier falls to its
+	// floor, and Fast's floor is 2x the node's marginal-price suggestion.
+	if fees.GasTipCap.Cmp(big.NewInt(2_000_000_000)) != 0 {
+		t.Errorf("tip = %s, want 2e9", fees.GasTipCap)
 	}
-	// maxFee = 2*10gwei + 1gwei = 21 gwei
-	if fees.GasFeeCap.Cmp(big.NewInt(21_000_000_000)) != 0 {
-		t.Errorf("maxFee = %s, want 21e9", fees.GasFeeCap)
+	// maxFee = 2*10gwei + 2gwei = 22 gwei
+	if fees.GasFeeCap.Cmp(big.NewInt(22_000_000_000)) != 0 {
+		t.Errorf("maxFee = %s, want 22e9", fees.GasFeeCap)
 	}
-	// maxFeeWei = 25200 * 21e9
-	wantMax := new(big.Int).Mul(big.NewInt(25200), big.NewInt(21_000_000_000))
+	// maxFeeWei = 25200 * 22e9
+	wantMax := new(big.Int).Mul(big.NewInt(25200), big.NewInt(22_000_000_000))
 	if fees.MaxFeeWei().Cmp(wantMax) != 0 {
 		t.Errorf("maxFeeWei = %s, want %s", fees.MaxFeeWei(), wantMax)
 	}

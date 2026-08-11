@@ -33,6 +33,7 @@ type Fees struct {
 	GasTipCap *big.Int // maxPriorityFeePerGas
 	GasFeeCap *big.Int // maxFeePerGas
 	BaseFee   *big.Int // observed base fee (for display)
+	Priority  Priority // the tier GasTipCap was derived for (for display)
 }
 
 // MaxFeeWei is the maximum total fee the transaction could pay: gasLimit * maxFee.
@@ -41,9 +42,13 @@ func (f Fees) MaxFeeWei() *big.Int {
 }
 
 // EstimateFees derives EIP-1559 fee parameters for a call: gas limit (estimated +
-// buffer), priority tip (node suggestion), and a max fee that tolerates several
-// blocks of base-fee growth (2*baseFee + tip).
-func EstimateFees(ctx context.Context, client rpc.Client, from common.Address, call Call) (Fees, error) {
+// buffer), a priority tip for the requested tier (see SuggestTip), and a max fee
+// that tolerates several blocks of base-fee growth (2*baseFee + tip).
+//
+// priority affects only the tip. The base fee is set by the protocol from the
+// parent block's gas usage and is the same for every transaction in a block, so
+// no user setting can move it.
+func EstimateFees(ctx context.Context, client rpc.Client, from common.Address, call Call, priority Priority) (Fees, error) {
 	gasEstimate, err := client.EstimateGas(ctx, ethereum.CallMsg{
 		From:  from,
 		To:    &call.To,
@@ -55,7 +60,7 @@ func EstimateFees(ctx context.Context, client rpc.Client, from common.Address, c
 	}
 	gasLimit := gasEstimate * gasLimitBufferNum / gasLimitBufferDen
 
-	tip, err := client.SuggestGasTipCap(ctx)
+	tip, err := SuggestTip(ctx, client, priority)
 	if err != nil {
 		return Fees{}, fmt.Errorf("suggest tip: %w", err)
 	}
@@ -77,6 +82,7 @@ func EstimateFees(ctx context.Context, client rpc.Client, from common.Address, c
 		GasTipCap: tip,
 		GasFeeCap: maxFee,
 		BaseFee:   head.BaseFee,
+		Priority:  priority,
 	}, nil
 }
 
@@ -93,8 +99,8 @@ type Prepared struct {
 // Prepare turns a Send into a signed-ready transaction: it estimates fees, reads
 // the pending nonce, and assembles an EIP-1559 transaction. It performs no
 // signing or broadcast.
-func Prepare(ctx context.Context, client rpc.Client, chainID *big.Int, send Send) (Prepared, error) {
-	fees, err := EstimateFees(ctx, client, send.From, send.Call)
+func Prepare(ctx context.Context, client rpc.Client, chainID *big.Int, send Send, priority Priority) (Prepared, error) {
+	fees, err := EstimateFees(ctx, client, send.From, send.Call, priority)
 	if err != nil {
 		return Prepared{}, err
 	}

@@ -345,11 +345,12 @@ func (p *approvalsPane) revoke(ap approvals.Approval) {
 
 	client := conn.Client
 	chainID := new(big.Int).Set(conn.ChainID)
+	priority := p.app.cfg.TxPriorityTier()
 	p.status.SetText("Estimating gas…")
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()
-		prep, prepErr := tx.Prepare(ctx, client, chainID, send)
+		prep, prepErr := tx.Prepare(ctx, client, chainID, send, priority)
 		fyne.Do(func() {
 			p.status.SetText("")
 			if prepErr != nil {
@@ -457,11 +458,8 @@ func (p *approvalsPane) signAndRevoke(prep tx.Prepared, ap approvals.Approval, i
 		fyne.Do(func() {
 			p.status.SetText("Revoke submitted: " + hash.Hex())
 			p.notifyHistory()
-			body := container.NewVBox(
-				widget.NewLabel("Revocation submitted. Waiting for inclusion…"),
-				monoHyperlink(hash.Hex(), info.TxURL(hash.Hex())),
-			)
-			dialog.ShowCustom("Revoke approval", "Close", body, p.app.window)
+			p.app.showTxResult("Revoke approval", hash.Hex(), info,
+				widget.NewLabel("Revocation submitted. Waiting for inclusion…"))
 		})
 		p.trackRevoke(recID, conn.Client, hash, ap, prep.Send.From, info)
 	}()

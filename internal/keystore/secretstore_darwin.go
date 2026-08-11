@@ -17,6 +17,42 @@ static CFStringRef ks_cfstr(const char* s) {
     return CFStringCreateWithCString(NULL, s, kCFStringEncodingUTF8);
 }
 
+// ks_has_stable_identity reports whether this binary carries a real signing
+// identity (1) or not (0), by asking for its own Team Identifier.
+//
+// This is what decides whether Touch ID unlock is offered at all. Keychain items
+// on the legacy keychain are bound by ACL to the code identity that created them,
+// so a build with no stable identity can store a secret and then be unable to
+// read it back on the next launch -- the read falls through to an OS
+// authorization prompt for the login password, which is precisely the experience
+// Touch ID exists to avoid. An ad-hoc or linker-signed binary (what plain
+// `go build` produces: identifier "a.out", no team) has no such identity; a
+// Developer-ID-signed build does.
+//
+// The Team Identifier is the discriminator rather than the adhoc code-signing
+// flag: it is present exactly for the Developer-ID and App-Store signings whose
+// ACL survives a relaunch, and absent for ad-hoc, linker-signed and unsigned
+// binaries alike.
+static int ks_has_stable_identity(void) {
+    SecCodeRef self = NULL;
+    if (SecCodeCopySelf(kSecCSDefaultFlags, &self) != errSecSuccess || self == NULL) {
+        return 0;
+    }
+    CFDictionaryRef info = NULL;
+    OSStatus st = SecCodeCopySigningInformation(
+        (SecStaticCodeRef)self, kSecCSSigningInformation, &info);
+    CFRelease(self);
+    if (st != errSecSuccess || info == NULL) {
+        if (info) CFRelease(info);
+        return 0;
+    }
+    CFTypeRef team = CFDictionaryGetValue(info, kSecCodeInfoTeamIdentifier);
+    int ok = (team != NULL && CFGetTypeID(team) == CFStringGetTypeID()
+              && CFStringGetLength((CFStringRef)team) > 0) ? 1 : 0;
+    CFRelease(info);
+    return ok;
+}
+
 // ks_delete removes any generic-password item for (service, account). Missing is OK.
 //
 // All three functions pin kSecUseDataProtectionKeychain to false, i.e. they use
@@ -65,6 +101,20 @@ static OSStatus ks_set(const char* service, const char* account, const void* dat
 // ks_get fetches the value for (service, account). Caller must have already run
 // la_authenticate successfully -- this function itself does not gate on presence.
 // On success sets *out (malloc'd, caller frees) and *outLen.
+//
+// Keychain UI is suppressed for the duration of the read, so a legacy-keychain ACL
+// mismatch returns an error code instead of putting up the OS "Callisto wants to
+// use your confidential information ... enter the login keychain password" dialog.
+// Measured against a real foreign-ACL item on macOS 15, the code is
+// errSecAuthFailed (-25293), not the errSecInteractionNotAllowed (-25308) the API
+// naming implies; both are treated alike since the mapping is undocumented.
+//
+// That dialog is the wrong answer here twice over: the user proved presence via
+// Touch ID a moment earlier, and typing a login password is exactly what enabling
+// Touch ID was meant to avoid. A mismatch means the item was written by a different
+// build of Callisto and the enrolment is no longer usable -- see
+// ErrSecretForeignIdentity, which the UI turns into a re-enrol prompt with a
+// passphrase fallback.
 static OSStatus ks_get(const char* service, const char* account, void** out, int* outLen) {
     CFStringRef svc = ks_cfstr(service);
     CFStringRef acct = ks_cfstr(account);
@@ -73,7 +123,16 @@ static OSStatus ks_get(const char* service, const char* account, void** out, int
     CFDictionaryRef q = CFDictionaryCreate(NULL, keys, vals, 6,
         &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
     CFTypeRef result = NULL;
+    // SecKeychain* is deprecated wholesale in favour of the Data Protection
+    // Keychain, which this file cannot use at all (see ks_delete). Suppressing
+    // keychain UI has no replacement on the legacy keychain, so the deprecated
+    // call is the only option and the warning is noise.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+    SecKeychainSetUserInteractionAllowed(FALSE);
     OSStatus st = SecItemCopyMatching(q, &result);
+    SecKeychainSetUserInteractionAllowed(TRUE);
+#pragma clang diagnostic pop
     CFRelease(q); CFRelease(svc); CFRelease(acct);
     if (st != errSecSuccess) return st;
     CFDataRef d = (CFDataRef)result;
@@ -97,8 +156,18 @@ import (
 // keychainService namespaces Callisto's keychain items.
 const keychainService = "io.pasiphae.callisto"
 
-// errSecItemNotFound is the Security framework OSStatus for a missing item.
-const errSecItemNotFound = -25300
+// Security framework OSStatus values we distinguish.
+const (
+	errSecItemNotFound = -25300
+	// errSecAuthFailed and errSecInteractionNotAllowed both mean "this read
+	// needed OS authorization UI, which ks_get suppresses" -- i.e. on the legacy
+	// keychain, the item's ACL does not trust this binary. Measured against a
+	// real foreign-ACL item on macOS 15, the code returned is errSecAuthFailed;
+	// errSecInteractionNotAllowed is the one the API naming implies. Which one
+	// surfaces is undocumented, so both map to ErrSecretForeignIdentity.
+	errSecAuthFailed            = -25293
+	errSecInteractionNotAllowed = -25308
+)
 
 // ErrAuthenticationFailed is returned by Get when the LocalAuthentication challenge
 // (Touch ID / macOS login password) is cancelled, fails, or isn't available.
@@ -113,24 +182,21 @@ var (
 	availResult bool
 )
 
-// Available probes whether Callisto can actually create a keychain item: it stores
-// and deletes a throwaway item. An ad-hoc-signed binary (no stable code identity)
-// fails, so this returns false and the Touch ID UI stays hidden until Callisto is
-// code-signed with a Developer ID. The probe is silent (Set doesn't prompt) and
-// cached (signing state is fixed per run).
+// Available reports whether Touch ID unlock can work in this build, so the UI can
+// hide it entirely rather than offering an enrolment that degrades to OS password
+// prompts. Cached: signing state is fixed for the life of the process.
+//
+// It checks this binary's signing identity (see ks_has_stable_identity). It used
+// to store and delete a throwaway keychain item instead, on the theory that an
+// ad-hoc-signed binary could not create one — that theory is wrong, and was
+// measured to be wrong: `go test`'s ad-hoc binary stores and deletes its own item
+// happily and the probe returned true. Any binary can create an item whose ACL
+// trusts itself; what an unsigned build cannot do is read back an item created by
+// a *previous* launch, because its code identity is not stable across builds.
+// Writing an item was therefore never a test of the thing that matters, and it
+// also meant every launch touched the user's keychain for no reason.
 func (darwinSecretStore) Available() bool {
-	availOnce.Do(func() {
-		const probeRef = "__callisto_touchid_probe__"
-		cs := C.CString(keychainService)
-		defer C.free(unsafe.Pointer(cs))
-		ca := C.CString(probeRef)
-		defer C.free(unsafe.Pointer(ca))
-		probe := [1]byte{0x01}
-		if st := C.ks_set(cs, ca, unsafe.Pointer(&probe[0]), 1); st == 0 {
-			C.ks_delete(cs, ca)
-			availResult = true
-		}
-	})
+	availOnce.Do(func() { availResult = C.ks_has_stable_identity() == 1 })
 	return availResult
 }
 
@@ -167,8 +233,11 @@ func (darwinSecretStore) Get(ref string) ([]byte, error) {
 	var out unsafe.Pointer
 	var n C.int
 	st := C.ks_get(cs, ca, &out, &n)
-	if int(st) == errSecItemNotFound {
+	switch int(st) {
+	case errSecItemNotFound:
 		return nil, ErrSecretNotFound
+	case errSecInteractionNotAllowed, errSecAuthFailed:
+		return nil, ErrSecretForeignIdentity
 	}
 	if st != 0 {
 		return nil, fmt.Errorf("keychain get failed (OSStatus %d)", int(st))

@@ -20,6 +20,7 @@ import (
 	"github.com/pasiphae00/callisto/internal/chain"
 	"github.com/pasiphae00/callisto/internal/history"
 	"github.com/pasiphae00/callisto/internal/rpc"
+	"github.com/pasiphae00/callisto/internal/sim"
 	"github.com/pasiphae00/callisto/internal/tx"
 )
 
@@ -267,11 +268,13 @@ func (p *sendPane) prepare() {
 	p.status.SetText("Estimating gas…")
 	client := conn.Client
 	chainID := new(big.Int).Set(conn.ChainID)
+	// Read the fee tier here, on the UI thread, rather than inside the goroutine.
+	priority := p.app.cfg.TxPriorityTier()
 
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()
-		prep, prepErr := tx.Prepare(ctx, client, chainID, send)
+		prep, prepErr := tx.Prepare(ctx, client, chainID, send, priority)
 		fyne.Do(func() {
 			p.prepareBtn.Enable()
 			p.updatePrepareState()
@@ -334,7 +337,9 @@ func (p *sendPane) showReview(prep tx.Prepared, info chain.Info) {
 	rows = append(rows,
 		[2]string{"Gas limit", fmt.Sprintf("%d", prep.Fees.GasLimit)},
 		[2]string{"Base fee", assets.FormatUnits(prep.Fees.BaseFee, 9) + " gwei"},
-		[2]string{"Priority tip", assets.FormatUnits(prep.Fees.GasTipCap, 9) + " gwei"},
+		// Name the tier alongside the number: the tip is otherwise an unanchored
+		// figure, and this is where a mis-set default becomes visible.
+		[2]string{"Priority tip", assets.FormatUnits(prep.Fees.GasTipCap, 9) + " gwei (" + prep.Fees.Priority.Label() + ")"},
 		[2]string{"Max fee/gas", assets.FormatUnits(prep.Fees.GasFeeCap, 9) + " gwei"},
 		[2]string{"Max total fee", assets.FormatUnits(prep.Fees.MaxFeeWei(), 18) + " " + nativeSym},
 	)
@@ -360,7 +365,19 @@ func (p *sendPane) showReview(prep tx.Prepared, info chain.Info) {
 	notice := widget.NewLabel(signMsg)
 	notice.Wrapping = fyne.TextWrapWord
 
-	content := container.NewVBox(grid, widget.NewSeparator(), notice)
+	// Simulation: auto revert-check on open, asset preview on request.
+	simulation := newSimSection(p.app, func(ctx context.Context, sm *sim.Simulator, rich bool) (sim.Result, error) {
+		req := sim.Request{From: s.From, To: s.Call.To, Value: s.Call.Value, Data: s.Call.Data}
+		if rich {
+			return sm.SimulateEOA(ctx, req)
+		}
+		return sm.RevertCheckEOA(ctx, req)
+	})
+
+	// Scrolled: the simulation section grows with however many asset changes
+	// the transaction produces, and must not push Sign & send off the dialog.
+	content := container.NewVScroll(
+		container.NewVBox(grid, simulation.object(), widget.NewSeparator(), notice))
 
 	d := dialog.NewCustomConfirm("Review transaction", "Sign & send", "Cancel", content,
 		func(confirm bool) {
@@ -440,18 +457,20 @@ func (p *sendPane) signAndSend(prep tx.Prepared, info chain.Info) {
 
 		fyne.Do(func() {
 			p.status.SetText("Submitted: " + hash.Hex())
-			p.showBroadcastResult(hash.Hex(), info)
+			broadcastDlg := p.showBroadcastResult(hash.Hex(), info)
 			p.notifyHistory()
+			// Started from here, rather than after the fyne.Do, so the dialog
+			// handle is already assigned. Tracking runs on its own context and
+			// outlives the dialog; the handle lets the inclusion result replace
+			// this dialog instead of stacking on top of it.
+			go p.trackInclusion(recID, client, hash, info, broadcastDlg)
 		})
-
-		// Track inclusion in the background (own context, survives the dialog).
-		go p.trackInclusion(recID, client, hash, info)
 	}()
 }
 
 // trackInclusion waits for the receipt, records the outcome, and notifies the
 // user. It uses its own context so it outlives the review dialog.
-func (p *sendPane) trackInclusion(recID int64, client rpc.Client, hash common.Hash, info chain.Info) {
+func (p *sendPane) trackInclusion(recID int64, client rpc.Client, hash common.Hash, info chain.Info, broadcastDlg *dialog.CustomDialog) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 
@@ -477,21 +496,16 @@ func (p *sendPane) trackInclusion(recID int64, client rpc.Client, hash common.Ha
 		}
 		p.status.SetText(fmt.Sprintf("Tx %s in block %d", outcome, blockNum))
 		p.notifyHistory()
+		dismissTxResult(broadcastDlg)
 		p.showInclusionResult(hash.Hex(), blockNum, blockTime, success, info)
 	})
 }
 
-// showBroadcastResult shows the submitted hash with a link to the explorer. Matches
-// the Safe execution dialog: the full hash in mono, then a "View on explorer" button.
-func (p *sendPane) showBroadcastResult(hash string, info chain.Info) {
-	body := container.NewVBox(
-		widget.NewLabel("Transaction submitted. Waiting for inclusion…"),
-		monoLabel(hash),
-	)
-	if link := info.TxURL(hash); link != "" {
-		body.Add(widget.NewButton("View on explorer", func() { p.app.openURL(link) }))
-	}
-	dialog.ShowCustom("Broadcast", "Close", body, p.app.window)
+// showBroadcastResult shows the submitted hash with the shared post-broadcast
+// actions (see App.showTxResult).
+func (p *sendPane) showBroadcastResult(hash string, info chain.Info) *dialog.CustomDialog {
+	return p.app.showTxResult("Broadcast", hash, info,
+		widget.NewLabel("Transaction submitted. Waiting for inclusion…"))
 }
 
 // showInclusionResult reports the mined outcome. Field values (status, block,
@@ -515,11 +529,7 @@ func (p *sendPane) showInclusionResult(hash string, block, blockTime int64, succ
 		grid.Add(widget.NewLabel(r[0]))
 		grid.Add(monoLabel(r[1]))
 	}
-	body := container.NewVBox(grid)
-	if link := info.TxURL(hash); link != "" {
-		body.Add(widget.NewButton("View on explorer", func() { p.app.openURL(link) }))
-	}
-	dialog.ShowCustom(title, "Close", body, p.app.window)
+	p.app.showTxResult(title, hash, info, grid)
 	// Refresh balances after a state change.
 	p.reload()
 }

@@ -37,6 +37,14 @@ var ErrBadPassphrase = errors.New("keystore: wrong passphrase or corrupted keyst
 // Version is the current keystore file format version.
 const Version = 1
 
+// The KDF and cipher identifiers written into every keystore. Named so that
+// Encrypt (which writes them) and Decode (which requires them) cannot drift
+// apart and start disagreeing about what a Callisto keystore looks like.
+const (
+	kdfScrypt    = "scrypt"
+	cipherAESGCM = "aes-256-gcm"
+)
+
 // scrypt parameters. N is memory-hard cost (2^18, ~256 MB, ~1–2 s to derive) —
 // matching go-ethereum's StandardScryptN — chosen for security over unlock speed.
 const (
@@ -105,9 +113,9 @@ func Encrypt(secret []byte, passphrase string) (*Keystore, error) {
 
 	return &Keystore{
 		Version:    Version,
-		KDF:        "scrypt",
+		KDF:        kdfScrypt,
 		KDFParams:  KDFParams{N: scryptN, R: scryptR, P: scryptP, DKLen: scryptDKLen, Salt: hex.EncodeToString(salt)},
-		Cipher:     "aes-256-gcm",
+		Cipher:     cipherAESGCM,
 		Nonce:      hex.EncodeToString(nonce),
 		Ciphertext: hex.EncodeToString(ciphertext),
 		CreatedAt:  time.Now().Unix(),
@@ -248,9 +256,32 @@ func Load(path string) (*Keystore, error) {
 	if err != nil {
 		return nil, err
 	}
+	ks, err := Decode(data)
+	if err != nil {
+		return nil, fmt.Errorf("keystore: parse %s: %w", path, err)
+	}
+	return ks, nil
+}
+
+// Decode parses keystore JSON that did not come from a file — an exported
+// backup being imported, for instance.
+//
+// It rejects anything that isn't recognizably one of ours. encoding/json ignores
+// unknown fields and leaves missing ones zeroed, so a geth V3 keystore (or any
+// other JSON object) would otherwise decode "successfully" into an empty
+// Keystore and fail later as a confusing decryption error rather than as the
+// wrong format. Callers distinguishing between formats depend on that.
+func Decode(data []byte) (*Keystore, error) {
 	var ks Keystore
 	if err := json.Unmarshal(data, &ks); err != nil {
-		return nil, fmt.Errorf("keystore: parse %s: %w", path, err)
+		return nil, fmt.Errorf("keystore: parse: %w", err)
+	}
+	if ks.Version != Version || ks.KDF != kdfScrypt || ks.Cipher != cipherAESGCM {
+		return nil, fmt.Errorf("keystore: not a Callisto keystore (version %d, kdf %q, cipher %q)",
+			ks.Version, ks.KDF, ks.Cipher)
+	}
+	if ks.Ciphertext == "" || ks.Nonce == "" || ks.KDFParams.Salt == "" {
+		return nil, errors.New("keystore: incomplete (missing ciphertext, nonce, or salt)")
 	}
 	return &ks, nil
 }

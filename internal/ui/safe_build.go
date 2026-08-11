@@ -320,12 +320,14 @@ func (b *safeBuildView) showSafeReview(desc safe.Descriptor, prepared actions.Pr
 	if prepared.Note != "" {
 		body.Add(cautionBox(prepared.Note))
 	}
+	body.Add(newSimSection(b.app, safeSimRun(desc, stx)).object())
 	body.Add(widget.NewSeparator())
 	info := widget.NewLabel("This creates a Safe proposal — collect owner signatures and execute it under Proposals.")
 	info.Wrapping = fyne.TextWrapWord
 	body.Add(info)
 
-	d := dialog.NewCustomConfirm("Review proposal — "+prepared.Summary, "Create proposal", "Cancel", body,
+	d := dialog.NewCustomConfirm("Review proposal — "+prepared.Summary, "Create proposal", "Cancel",
+		container.NewVScroll(body),
 		func(confirm bool) {
 			if confirm {
 				b.createSafeProposal(desc, prepared, stx, nonce, hash)

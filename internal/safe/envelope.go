@@ -30,12 +30,12 @@ const envelopeTextPrefix = "callisto-safe-proposal-v1:"
 // signer from it, keeping only signatures that recover to a current owner.
 type Envelope struct {
 	Version     int          `json:"version"`
-	SafeAddress string       `json:"safe"`         // EIP-55
+	SafeAddress string       `json:"safe"` // EIP-55
 	ChainID     uint64       `json:"chain_id"`
-	To          string       `json:"to"`           // EIP-55
-	Value       string       `json:"value"`        // decimal string (wei / base units)
-	Data        string       `json:"data"`         // 0x-hex ("0x" if none)
-	Operation   uint8        `json:"operation"`    // 0 = Call (only supported value)
+	To          string       `json:"to"`        // EIP-55
+	Value       string       `json:"value"`     // decimal string (wei / base units)
+	Data        string       `json:"data"`      // 0x-hex ("0x" if none)
+	Operation   uint8        `json:"operation"` // 0 = Call (only supported value)
 	SafeNonce   uint64       `json:"safe_nonce"`
 	Kind        ProposalKind `json:"kind"`
 	Description string       `json:"description"`

@@ -9,6 +9,131 @@ changes; `v1.0.0` marks the first stable, documented release.
 
 ## [Unreleased]
 
+### Added
+- **Default transaction priority** (Settings › Transaction fees) — a **Standard /
+  Fast / Rapid** selector, defaulting to **Fast**, applied to every transaction
+  Callisto prepares (Send, WalletConnect, Safe execution, approval revocation).
+  It sets the **priority fee only**; the base fee is fixed by the protocol from the
+  parent block's gas usage and is identical for every transaction in a block.
+  - Tiers blend two different measurements rather than bidding either one alone.
+    The node's `eth_maxPriorityFeePerGas` is the **price of inclusion** — what the
+    cheapest transaction that still got into recent blocks paid — and sets each
+    tier's floor (×1 / ×2 / ×4). `eth_feeHistory`'s 20th / 60th / 90th percentile
+    is **willingness to pay** — what transactions chose to bid — taking the median
+    across the last 20 blocks so one desperate transaction can't drag the estimate
+    up.
+  - The percentile is approached only to the degree blocks are actually contested,
+    weighted by the gas-used ratios `eth_feeHistory` returns anyway. Bidding what
+    others chose to pay is only meaningful when there is competition for space: in
+    a half-empty block every transaction is included whatever it paid, so paying a
+    competitive rate there is paying for nothing. Empty blocks bid the floor, full
+    blocks bid the percentile, and the common case interpolates.
+  - Consequently a tier costs what the moment demands: on a quiet chain all three
+    sit near the price of inclusion, and they separate as the network fills up.
+    Endpoints that don't serve `eth_feeHistory` use the tier floor, which is
+    exactly what the blend converges to without congestion, so the two paths agree
+    instead of diverging.
+  - A percentile of zero — valid post-merge, but widely dropped by builders —
+    needs no special case: it falls below the floor and is clamped away to it.
+  - The review step now names the tier next to the tip (`0.025 gwei (Fast)`), so a
+    mis-set default is visible before signing.
+- **Transaction simulation before signing** (`internal/sim`) — every pre-sign review
+  now shows what a transaction would actually do, simulated against current chain
+  state through your own RPC. No third-party simulation service; nothing leaves the
+  machine except the call to the endpoint you already chose.
+  - **Automatic revert check.** Opening a review runs one `eth_call` (for Safe
+    transactions, `simulateAndRevert` via the Safe's `SimulateTxAccessor` — no
+    signatures and no met threshold required). A transaction that would fail is
+    flagged prominently with its decoded reason (`Error(string)` require messages,
+    Solidity `Panic` codes, or the raw selector of a custom error), so you don't
+    sign something that burns gas and changes nothing. Works on every endpoint.
+  - **Asset-change preview**, behind an explicit **Simulate…** button. Shows the
+    signed balance and allowance changes for your account — `-1 ETH`,
+    `+0.998 stETH`, `Approve UNLIMITED USDC -> 0x2222...222b` — with unlimited
+    allowances called out as a warning. Needs a capable endpoint: `eth_simulateV1`
+    (preferred; its `traceTransfers` reports native ETH moves alongside event logs)
+    or `debug_traceCall` with `callTracer` on an archive node such as Ganymede.
+    Endpoint capability is probed once per connection and cached; bare RPCs say so
+    rather than showing an empty preview.
+  - Wired into all four review surfaces: **Send**, **WalletConnect**
+    `eth_sendTransaction` (the highest-value case — arbitrary dApp calldata, where
+    the existing static decode only recognizes known call shapes), the Safe
+    **Build** tab, and Safe **Proposals** (actionable proposals only).
+  - Deltas are netted per token, so a multi-hop swap reads as one line per asset and
+    tokens that net to zero (flash loans, pass-through hops) are omitted; logs from
+    reverted sub-calls are discarded, since they never took effect. Token symbols are
+    sanitized through `internal/textsafe` before display.
+  - Safe `DelegateCall`/MultiSend batches get the revert check but not yet an asset
+    preview — that needs signature-bypass state overrides (planned as P3b in
+    `docs/transaction-simulation.md`).
+  - A simulation never blocks signing and is always labelled as a snapshot of
+    current state, not a guarantee about the block the transaction lands in. A
+    simulation that fails to run says explicitly that it proves nothing.
+  - Verified against every endpoint Callisto ships (`internal/sim`'s
+    `integration` test sweeps the chain catalog). Asset previews work on **all
+    supported L2s** — the public PublicNode endpoints serve `eth_simulateV1`,
+    which the design had assumed they would not.
+  - An endpoint that cannot simulate now says so. **Flashbots Protect** — where
+    Callisto lands after a mainnet connection failure — serves no `eth_call` at
+    all, and previously produced an error on every review; it now reports the
+    limitation and points at switching RPC. On a **Safe**, that same case used to
+    read as "this Safe returned no revert data", blaming the Safe for the
+    endpoint.
+  - Simulation no longer fails outright when an endpoint rejects one particular
+    method: it falls back to the revert check and names what went wrong. This
+    fixes **Optimism** (a gas budget above its 40M block limit had every
+    simulation rejected) and **zkSync Era** (its tracer requires a config field
+    geth treats as optional) — both now produce full asset previews.
+
+### Fixed
+- **Touch ID unlock was offered in builds where it cannot work.** The check that
+  hides the feature until Callisto is Developer-ID-signed probed by writing and
+  deleting a throwaway keychain item, on the theory that an unsigned build could
+  not create one. It can — measured — so the check passed in local `go build`
+  binaries. Enrolling there stores a secret whose keychain ACL is bound to a code
+  identity that does not survive the next rebuild, and unlocking then produces
+  macOS password prompts instead of a fingerprint tap. Callisto now checks its own
+  signing identity directly, so Touch ID appears only where it works. This also
+  stops the check writing to the user's keychain on every launch.
+- **Touch ID unlock asked for the macOS login password anyway.** When a keychain
+  item had been written by a different build of Callisto, the fingerprint scan
+  succeeded and macOS then demanded the login keychain password to authorize the
+  read — the exact prompt Touch ID exists to replace. Callisto now suppresses that
+  OS dialog, recognizes the condition, and says what actually happened: the
+  enrolment belongs to another build, so it is dropped and the wallet falls back to
+  its passphrase, ready to re-enable Touch ID. Nothing was ever at risk — the
+  keystore file remains the source of truth — but the enrolment was unusable and
+  retried on every unlock.
+- **Callisto's own encrypted backups could not be imported.** "Import keystore
+  file…" only understood the geth/MetaMask V3 format, so restoring a file produced
+  by "Export encrypted backup" failed with "wrong password or unsupported format"
+  however correct the password was — leaving the one feature meant for recovery
+  unable to recover anything. Both formats are now accepted, and an unrecognized
+  file says so rather than blaming the password.
+- **Two dialogs to dismiss per transaction.** The "included" result now *replaces*
+  the "submitted" dialog instead of stacking on top of it — closing the result no
+  longer reveals a stale "Waiting for inclusion…" dialog underneath, still waiting
+  for the thing that just happened. Affects Send and Safe execution; WalletConnect
+  already updated a single dialog in place.
+- **Simulation showed native ETH as an unknown token.** A plain ETH send previewed as
+  `-10000000000000 0xEeee...EEeE` instead of `-0.00001 ETH`: `eth_simulateV1`
+  attributes native transfers to the ERC-7528 placeholder address, while
+  go-ethereum's own doc comment for that constant still describes the zero address
+  it used previously. Both are now recognized. (Unreleased regression — simulation
+  has not shipped.)
+
+### Changed
+- **Consistent actions wherever Callisto hands you a transaction hash.** Every such
+  dialog now shows the full hash in monospace with the same three actions —
+  **Copy hash**, **View on explorer**, **Close**. Previously some rendered the hash
+  as a clickable link (WalletConnect, approval revocation, history detail, Safe
+  executed-tx) and others as a plain label with an explorer button (Send, Safe
+  execution), and none offered a way to copy the hash without selecting it by hand.
+  One shared implementation (`App.showTxResult` / `txActionRow`) now backs Send,
+  WalletConnect, Safe execution, approval revocation, the inclusion reports that
+  follow each, the History detail dialog, and a Safe proposal's executed-tx row. The
+  explorer button is omitted rather than shown dead on a chain with no known explorer.
+
 ## [0.15.0] - 2026-07-27
 
 ### Added

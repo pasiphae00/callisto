@@ -4,11 +4,13 @@ import (
 	"path/filepath"
 	"testing"
 
+	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/test"
 	"fyne.io/fyne/v2/widget"
 
 	"github.com/pasiphae00/callisto/internal/config"
 	"github.com/pasiphae00/callisto/internal/rpc"
+	"github.com/pasiphae00/callisto/internal/tx"
 )
 
 func TestSetDefaultSelected(t *testing.T) {
@@ -88,4 +90,61 @@ func TestMonoHyperlink(t *testing.T) {
 	if _, ok := monoHyperlink("0xabc", "").(*widget.Label); !ok {
 		t.Error("empty URL should fall back to a mono label")
 	}
+}
+
+// TestFeesBoxBuildsAndReflectsConfig checks the priority picker constructs under
+// the headless driver and opens on the configured tier.
+func TestFeesBoxBuildsAndReflectsConfig(t *testing.T) {
+	test.NewApp()
+	cfg := &config.Config{}
+	cfg.SetTxPriorityTier(tx.PriorityRapid)
+
+	p := &settingsPane{app: New(cfg, nil)}
+	box := p.buildFeesBox()
+	if box == nil {
+		t.Fatal("buildFeesBox returned nil")
+	}
+	w := test.NewWindow(box)
+	defer w.Close()
+
+	sel := findSelect(box)
+	if sel == nil {
+		t.Fatal("no Select in the fees box")
+	}
+	if sel.Selected != tx.PriorityRapid.Label() {
+		t.Errorf("picker shows %q; want the configured %q", sel.Selected, tx.PriorityRapid.Label())
+	}
+	if len(sel.Options) != len(tx.Priorities()) {
+		t.Errorf("picker has %d options; want %d", len(sel.Options), len(tx.Priorities()))
+	}
+}
+
+// TestFeesPickerWritesConfig checks choosing a tier persists it.
+func TestFeesPickerWritesConfig(t *testing.T) {
+	test.NewApp()
+	cfg := &config.Config{}
+	p := &settingsPane{app: New(cfg, nil)}
+	sel := findSelect(p.buildFeesBox())
+	if sel == nil {
+		t.Fatal("no Select in the fees box")
+	}
+
+	sel.SetSelected(tx.PriorityStandard.Label())
+	if got := cfg.TxPriorityTier(); got != tx.PriorityStandard {
+		t.Errorf("config tier = %v after selecting Standard; want Standard", got)
+	}
+}
+
+func findSelect(o fyne.CanvasObject) *widget.Select {
+	switch v := o.(type) {
+	case *widget.Select:
+		return v
+	case *fyne.Container:
+		for _, child := range v.Objects {
+			if got := findSelect(child); got != nil {
+				return got
+			}
+		}
+	}
+	return nil
 }

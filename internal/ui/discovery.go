@@ -12,6 +12,7 @@ import (
 
 	"github.com/pasiphae00/callisto/internal/assets"
 	"github.com/pasiphae00/callisto/internal/rpc"
+	"github.com/pasiphae00/callisto/internal/sim"
 )
 
 // tokenDiscovery keeps, per (chain, account), the set of ERC-20 tokens the wallet
@@ -248,4 +249,28 @@ func (a *App) assetService(chainID uint64, client rpc.Client) *assets.Service {
 		a.svcKey = key
 	}
 	return a.svc
+}
+
+// simulator returns a sim.Simulator cached per client, so the endpoint
+// capability probe and token-metadata lookups are paid for once rather than on
+// every review dialog. Rebuilt when the connection changes (reconnect, chain
+// switch, failover), since both caches describe that specific endpoint.
+func (a *App) simulator() (*sim.Simulator, uint64, bool) {
+	conn, ok := a.rpc.Active()
+	if !ok || conn == nil {
+		return nil, 0, false
+	}
+	client, ok := a.rpc.Client()
+	if !ok || client == nil {
+		return nil, 0, false
+	}
+
+	a.simMu.Lock()
+	defer a.simMu.Unlock()
+	key := fmt.Sprintf("%p", client)
+	if a.sim == nil || a.simKey != key {
+		a.sim = sim.NewSimulator(client)
+		a.simKey = key
+	}
+	return a.sim, conn.ChainInfo.ID, true
 }

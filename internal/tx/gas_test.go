@@ -8,6 +8,7 @@ import (
 	ethereum "github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	gethrpc "github.com/ethereum/go-ethereum/rpc"
 )
 
 // txMock implements rpc.Client for prepare/estimate tests.
@@ -62,7 +63,8 @@ func (m *txMock) SubscribeFilterLogs(context.Context, ethereum.FilterQuery, chan
 func (m *txMock) SubscribeNewHead(context.Context, chan<- *types.Header) (ethereum.Subscription, error) {
 	return nil, nil
 }
-func (m *txMock) Close() {}
+func (m *txMock) RawClient() *gethrpc.Client { return nil }
+func (m *txMock) Close()                     {}
 
 func TestEstimateFees(t *testing.T) {
 	m := &txMock{
@@ -73,7 +75,7 @@ func TestEstimateFees(t *testing.T) {
 	from := common.HexToAddress("0x1")
 	call := Call{To: common.HexToAddress("0x2"), Value: big.NewInt(1), Data: nil}
 
-	fees, err := EstimateFees(context.Background(), m, from, call)
+	fees, err := EstimateFees(context.Background(), m, from, call, PriorityFast)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,15 +83,17 @@ func TestEstimateFees(t *testing.T) {
 	if fees.GasLimit != 25200 {
 		t.Errorf("gas limit = %d, want 25200", fees.GasLimit)
 	}
-	if fees.GasTipCap.Cmp(big.NewInt(1_000_000_000)) != 0 {
-		t.Errorf("tip = %s", fees.GasTipCap)
+	// No raw client on the mock, so no eth_feeHistory: the tier falls to its
+	// floor, and Fast's floor is 2x the node's marginal-price suggestion.
+	if fees.GasTipCap.Cmp(big.NewInt(2_000_000_000)) != 0 {
+		t.Errorf("tip = %s, want 2e9", fees.GasTipCap)
 	}
-	// maxFee = 2*10gwei + 1gwei = 21 gwei
-	if fees.GasFeeCap.Cmp(big.NewInt(21_000_000_000)) != 0 {
-		t.Errorf("maxFee = %s, want 21e9", fees.GasFeeCap)
+	// maxFee = 2*10gwei + 2gwei = 22 gwei
+	if fees.GasFeeCap.Cmp(big.NewInt(22_000_000_000)) != 0 {
+		t.Errorf("maxFee = %s, want 22e9", fees.GasFeeCap)
 	}
-	// maxFeeWei = 25200 * 21e9
-	wantMax := new(big.Int).Mul(big.NewInt(25200), big.NewInt(21_000_000_000))
+	// maxFeeWei = 25200 * 22e9
+	wantMax := new(big.Int).Mul(big.NewInt(25200), big.NewInt(22_000_000_000))
 	if fees.MaxFeeWei().Cmp(wantMax) != 0 {
 		t.Errorf("maxFeeWei = %s, want %s", fees.MaxFeeWei(), wantMax)
 	}
@@ -98,7 +102,7 @@ func TestEstimateFees(t *testing.T) {
 func TestEstimateFeesNoBaseFee(t *testing.T) {
 	m := &txMock{gasEstimate: 21000, tip: big.NewInt(1), baseFee: nil}
 	_, err := EstimateFees(context.Background(), m, common.HexToAddress("0x1"),
-		Call{To: common.HexToAddress("0x2"), Value: big.NewInt(1)})
+		Call{To: common.HexToAddress("0x2"), Value: big.NewInt(1)}, PriorityFast)
 	if err != ErrNoBaseFee {
 		t.Errorf("err = %v, want ErrNoBaseFee", err)
 	}
@@ -116,7 +120,7 @@ func TestPrepareAssemblesDynamicTx(t *testing.T) {
 	send, _ := BuildNativeSend(from, to, big.NewInt(1_000_000_000_000_000_000), "ETH", 18)
 
 	chainID := big.NewInt(11155111)
-	prep, err := Prepare(context.Background(), m, chainID, send)
+	prep, err := Prepare(context.Background(), m, chainID, send, PriorityFast)
 	if err != nil {
 		t.Fatal(err)
 	}

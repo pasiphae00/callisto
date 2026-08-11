@@ -110,6 +110,7 @@ func (p *settingsPane) build() fyne.CanvasObject {
 
 	content := container.NewVBox(
 		rpcBox,
+		p.buildFeesBox(),
 		p.buildSecurityBox(),
 		p.buildUpdatesBox(),
 	)

@@ -27,6 +27,7 @@ import (
 	"github.com/pasiphae00/callisto/internal/history"
 	"github.com/pasiphae00/callisto/internal/safe"
 	"github.com/pasiphae00/callisto/internal/signer"
+	"github.com/pasiphae00/callisto/internal/sim"
 	"github.com/pasiphae00/callisto/internal/tx"
 )
 
@@ -44,8 +45,8 @@ type safePane struct {
 	detailsBox   *fyne.Container    // Overview tab body
 	proposalBox  *fyne.Container    // Proposals tab body
 	status       *widget.Label
-	assetsView   *assetsView     // Assets tab: balances for the selected Safe
-	buildView    *safeBuildView  // Build tab: curated ecosystem actions as proposals
+	assetsView   *assetsView    // Assets tab: balances for the selected Safe
+	buildView    *safeBuildView // Build tab: curated ecosystem actions as proposals
 
 	proposals []safe.Proposal
 
@@ -914,13 +915,10 @@ func (p *safePane) reviewObjects(desc safe.Descriptor, prop safe.Proposal, rende
 	// For an executed proposal, link the execution tx; for a failed one, show why.
 	if prop.ExecutedTxHash != "" {
 		info, _ := chain.Lookup(prop.ChainID)
-		if url := info.TxURL(prop.ExecutedTxHash); url != "" {
-			objs = append(objs, container.NewHBox(
-				widget.NewLabelWithStyle("Executed tx", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
-				monoHyperlink(prop.ExecutedTxHash, url)))
-		} else {
-			objs = append(objs, monoLabel("Executed tx: "+prop.ExecutedTxHash))
-		}
+		objs = append(objs,
+			widget.NewLabelWithStyle("Executed tx", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
+			monoLabel(prop.ExecutedTxHash),
+			p.app.txActionRow(prop.ExecutedTxHash, info))
 	}
 	if prop.Error != "" {
 		errLbl := widget.NewLabel("Error: " + prop.Error)
@@ -928,10 +926,39 @@ func (p *safePane) reviewObjects(desc safe.Descriptor, prop safe.Proposal, rende
 		objs = append(objs, errLbl)
 	}
 
+	// Simulate only while the proposal is still actionable. Re-simulating an
+	// executed or rejected proposal against today's state would be misleading:
+	// it describes a hypothetical execution that already happened, or never will.
+	if prop.Status == safe.StatusCollecting || prop.Status == safe.StatusReady {
+		objs = append(objs, newSimSection(p.app, safeSimRun(desc, prop.SafeTx())).object())
+	}
+
 	signMsg := widget.NewLabel(p.signGuidance(desc, prop))
 	signMsg.Wrapping = fyne.TextWrapWord
 	objs = append(objs, signMsg, p.reviewButtons(desc, prop, render))
 	return objs
+}
+
+// safeSimRun builds the simulation closure for a Safe transaction, shared by the
+// Build tab (a proposal about to be created) and the Proposals tab (one awaiting
+// signatures). Neither needs signatures or a met threshold to simulate.
+func safeSimRun(desc safe.Descriptor, stx safe.SafeTx) simRun {
+	safeAddr, _ := address.Parse(desc.Address)
+	return func(ctx context.Context, sm *sim.Simulator, rich bool) (sim.Result, error) {
+		req := sim.SafeRequest{
+			Safe:      safeAddr,
+			Version:   desc.Version,
+			ChainID:   desc.ChainID,
+			To:        stx.To,
+			Value:     stx.Value,
+			Data:      stx.Data,
+			Operation: uint8(stx.Operation),
+		}
+		if rich {
+			return sm.SimulateSafe(ctx, req)
+		}
+		return sm.RevertCheckSafe(ctx, req)
+	}
 }
 
 // --- distributed signing: export / import proposals + signatures ------------
@@ -1380,11 +1407,13 @@ func (p *safePane) executeProposal(desc safe.Descriptor, prop safe.Proposal, aft
 	from := executor.Address()
 	send := tx.Send{From: from, Call: tx.Call{To: safeAddr, Value: big.NewInt(0), Data: execData}}
 
+	priority := p.app.cfg.TxPriorityTier()
+
 	p.status.SetText("Estimating gas for execution…")
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		prep, perr := tx.Prepare(ctx, client, new(big.Int).Set(conn.ChainID), send)
+		prep, perr := tx.Prepare(ctx, client, new(big.Int).Set(conn.ChainID), send, priority)
 		if perr != nil {
 			fyne.Do(func() {
 				p.status.SetText("")
@@ -1415,21 +1444,23 @@ func (p *safePane) executeProposal(desc safe.Descriptor, prop safe.Proposal, aft
 		fyne.Do(func() {
 			p.status.SetText("Execution submitted: " + hash.Hex())
 			p.refreshProposals(desc)
-			p.showExecResult(hash.Hex(), info)
+			execDlg := p.showExecResult(hash.Hex(), info)
 			p.notifyHistory()
 			if after != nil {
 				after()
 			}
+			// Started from here so the dialog handle is already assigned; the
+			// inclusion result replaces this dialog rather than stacking on it.
+			go p.trackExecInclusion(desc, prop, recID, hash, info, execDlg)
 		})
-		go p.trackExecInclusion(desc, prop, recID, hash, info)
 	}()
 }
 
 // trackExecInclusion waits for the execution receipt and reflects the outcome: it
 // marks the history record included/failed, updates the proposal on a revert, and
-// pops a result dialog (matching the Send flow) so the user gets clear confirmation
-// that the execution landed — the "Execution submitted" dialog itself is static.
-func (p *safePane) trackExecInclusion(desc safe.Descriptor, prop safe.Proposal, recID int64, hash common.Hash, info chain.Info) {
+// replaces the "Execution submitted" dialog with a result dialog (matching the
+// Send flow) so the user gets clear confirmation that the execution landed.
+func (p *safePane) trackExecInclusion(desc safe.Descriptor, prop safe.Proposal, recID int64, hash common.Hash, info chain.Info, execDlg *dialog.CustomDialog) {
 	conn, ok := p.app.rpc.Active()
 	if !ok {
 		return
@@ -1463,6 +1494,7 @@ func (p *safePane) trackExecInclusion(desc safe.Descriptor, prop safe.Proposal, 
 		p.status.SetText(fmt.Sprintf("Execution %s in block %d", outcome, blockNum))
 		p.refreshProposals(desc)
 		p.notifyHistory()
+		dismissTxResult(execDlg)
 		p.showExecInclusionResult(hash.Hex(), blockNum, blockTime, success, info)
 	})
 }
@@ -1487,11 +1519,7 @@ func (p *safePane) showExecInclusionResult(hash string, block, blockTime int64, 
 		grid.Add(widget.NewLabel(r[0]))
 		grid.Add(monoLabel(r[1]))
 	}
-	body := container.NewVBox(grid)
-	if link := info.TxURL(hash); link != "" {
-		body.Add(widget.NewButton("View on explorer", func() { p.app.openURL(link) }))
-	}
-	dialog.ShowCustom(title, "Close", body, p.app.window)
+	p.app.showTxResult(title, hash, info, grid)
 }
 
 // rejectProposal creates a rejection proposal at the same Safe nonce.
@@ -1548,15 +1576,9 @@ func (p *safePane) createRejection(desc safe.Descriptor, prop safe.Proposal) {
 
 // --- helpers ----------------------------------------------------------------
 
-func (p *safePane) showExecResult(hash string, info chain.Info) {
-	body := container.NewVBox(
-		widget.NewLabel("Execution submitted. Waiting for inclusion…"),
-		monoLabel(hash),
-	)
-	if link := info.TxURL(hash); link != "" {
-		body.Add(widget.NewButton("View on explorer", func() { p.app.openURL(link) }))
-	}
-	dialog.ShowCustom("Safe execution", "Close", body, p.app.window)
+func (p *safePane) showExecResult(hash string, info chain.Info) *dialog.CustomDialog {
+	return p.app.showTxResult("Safe execution", hash, info,
+		widget.NewLabel("Execution submitted. Waiting for inclusion…"))
 }
 
 // recordExecHistory inserts a history record for a Safe execution and returns its

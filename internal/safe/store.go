@@ -15,10 +15,10 @@ type ProposalStatus string
 
 const (
 	StatusCollecting ProposalStatus = "collecting" // gathering owner signatures
-	StatusReady      ProposalStatus = "ready"       // threshold met, awaiting execution
-	StatusExecuted   ProposalStatus = "executed"    // execTransaction mined successfully
-	StatusRejected   ProposalStatus = "rejected"    // superseded by an executed rejection
-	StatusFailed     ProposalStatus = "failed"      // execution reverted or errored
+	StatusReady      ProposalStatus = "ready"      // threshold met, awaiting execution
+	StatusExecuted   ProposalStatus = "executed"   // execTransaction mined successfully
+	StatusRejected   ProposalStatus = "rejected"   // superseded by an executed rejection
+	StatusFailed     ProposalStatus = "failed"     // execution reverted or errored
 )
 
 // ProposalKind classifies what a proposal does (for display and history).

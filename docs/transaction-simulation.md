@@ -144,7 +144,10 @@ auto-simulate.
 The asset-change preview is the deliverable; the revert warning falls out of the same
 engine and degrades to bare RPCs.
 
-- **P3a — The engine + both surfaces (EOA + Safe-`Call`).** Simulate the prepared tx and
+**Status: P3a is built** (`internal/sim`, `internal/ui/sim_section.go`), wired into all
+four review surfaces. P3b and P3c remain open.
+
+- **P3a — The engine + both surfaces (EOA + Safe-`Call`).** ✅ **Done.** Simulate the prepared tx and
   render the **asset-change preview** on capable RPCs (`eth_simulateV1` `traceTransfers` +
   logs → decoded ETH/token/approval deltas; `debug_traceCall` fallback on Ganymede), **and**
   the **automatic revert warning** universally (`eth_call` for EOA, `simulateAndRevert` +
@@ -175,13 +178,84 @@ engine and degrades to bare RPCs.
   gas-poor account still simulates the *effect*; keep a separate real gas estimate for the
   fee display.
 
-## Open decisions
+## Decisions (all resolved)
 
-1. **Trigger** — the **revert warning** is always automatic. For the **asset-change
-   preview**, recommend it also runs automatically on review-open (non-blocking spinner →
-   result), with a Settings toggle. Confirm auto vs on-demand button for the preview.
-2. **Primary method** — `eth_simulateV1`-first with `debug_traceCall` fallback (recommended)
-   vs `debug`-first (richer but archive-only). Ganymede supports both.
-3. **Surfaces first** — WalletConnect (arbitrary dApp calldata, highest value), Safe
-   (the multisig case), and/or basic Send. Recommend WalletConnect + Safe first.
-4. **Decoding scope** — ERC-20 + native + approvals first; ERC-721/1155 in P3c.
+1. **Trigger** — the **revert check** runs automatically on review-open; the
+   **asset-change preview** is on demand, behind a **Simulate…** button. Auto-running the
+   rich call on every review would spend a rate-limited endpoint's budget on work the user
+   didn't ask for, and the cheap check already covers the "don't sign a doomed tx" case
+   universally. No Settings toggle was needed as a result.
+2. **Primary method** — `eth_simulateV1` first, `debug_traceCall` (`callTracer`,
+   `withLog`) second, `eth_call` last. `eth_simulateV1` is standardized, needs no `debug`
+   namespace, and its `traceTransfers` reports native ETH moves as pseudo-logs from the
+   zero address, so one call yields the whole picture. Capability is probed once per
+   connection (`sim.Prober`) and cached; `sim.Caps` records both bits, since an archive
+   node serves both and the UI needs to know whether a rich preview is possible at all.
+3. **Surfaces** — all four at once (Send, WalletConnect, Safe Build, Safe Proposals),
+   through one shared `simSection` widget. Four bespoke copies of the hedging wording
+   would have drifted, and the wording is itself part of the safety feature.
+4. **Decoding scope** — ERC-20 + native + approvals (incl. Permit2); ERC-721/1155 in P3c.
+
+## Implementation notes worth remembering
+
+- **`SimulateTxAccessor` addresses** are pinned from safe-deployments' raw
+  `simulate_tx_accessor.json`, not a paraphrase: 1.3.0 canonical
+  `0x59AD6735bCd8152B84860Cb256dD9e96b85F69Da`, 1.4.1 canonical
+  `0x3d4BA2E0884aa488718476ca2FB8Efc291A46199`, plus zkSync-Era-specific deployments for
+  both. Canonical is deployed on every chain in `config.ChainCatalog`. Safes older than
+  1.3.0 have no accessor (nor `simulateAndRevert`) and report simulation as unavailable.
+- **A delegatecall into a codeless address succeeds and returns nothing**, so "the
+  accessor isn't deployed here" and "the transaction is fine" look identical unless the
+  accessor's return-data length is checked explicitly. `parseSimulateAndRevert` does.
+- **Safe `Call` on a capable endpoint skips the accessor** and simulates the inner call
+  with `from: <safe>` — `msg.sender` is then exactly what `execTransaction` produces, and
+  one round trip gives both the revert check and the deltas. The accessor path is for bare
+  RPCs and for `DelegateCall`, where it is the only faithful option.
+- **`eth_simulateV1` attributes native transfers to the ERC-7528 placeholder**
+  `0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE`, not the zero address — and go-ethereum's
+  own doc comment in `internal/ethapi/logtracer.go` says `0x0`, describing an earlier
+  implementation. Trust the constant, not the comment. Both are accepted as native
+  markers, which is safe because neither address holds code and only executing code can
+  emit a log.
+- **`types.Log` cannot be used for simulated logs**: its `UnmarshalJSON` rejects anything
+  missing `transactionHash`/`blockHash`, which are meaningless for a transaction that was
+  never mined. The wire types use a minimal log struct and convert.
+- **Reverted sub-calls must be pruned from a `callTracer` tree** before their logs are
+  counted — a caught `try/catch` failure emits logs that never took effect.
+- **Serving a method is not the same as accepting our request.** Three endpoints in
+  `config.ChainCatalog` prove it, so fall-through in `SimulateEOA` is unconditional: any
+  failure of a richer method drops to the next, keeping the revert check. A downgraded
+  preview is a nuisance; an unanswered "would this revert?" is a hazard. The reason is
+  carried onto the downgraded result so a broken endpoint stays visible.
+  - **Never send `gas` to `eth_simulateV1`.** It sums the gas of every call in the block
+    and rejects the request with `-38015` when the total exceeds the chain's block gas
+    limit — Optimism's is 40M, below the 50M cap we used to send, so *every* simulation
+    on Optimism failed. Omitting it lets each node apply its own limit.
+  - **`callTracer`'s `tracerConfig` must always carry `onlyTopCall`.** geth defaults it
+    when absent; zkSync Era's Rust implementation deserializes strictly and rejects the
+    request with ``missing field `onlyTopCall` ``.
+- **`eth_call` is not universal.** Flashbots Protect — the mainnet failover target —
+  whitelists only the methods needed to submit a transaction and answers `-32601 "rpc
+  method is not whitelisted"`. Both `viaCall` and the Safe accessor path detect this and
+  report a stated limitation rather than an error, since an error dialog on every review
+  after a failover trains the user to dismiss them. (Without the check the Safe path was
+  worse: no revert payload reads as "this Safe returned no revert data", blaming the Safe
+  for the endpoint's limitation.)
+
+### Measured endpoint capabilities
+
+From `go test -tags integration -run TestIntegrationProbeCatalogEndpoints ./internal/sim/`,
+which probes every chain in `config.ChainCatalog` and then re-issues each capability the
+probe claimed. Re-run it when the catalog changes — the design's assumptions about
+endpoint tiers have been wrong twice.
+
+| endpoint | `eth_simulateV1` | `debug_traceCall` | effective tier |
+|---|---|---|---|
+| Ganymede archive | ✓ | ✗ | `eth_simulateV1` |
+| Flashbots Protect | ✗ | ✗ | none — no `eth_call` either |
+| Base, Arbitrum, Optimism, Polygon, BSC, Robinhood (PublicNode) | ✓ | ✗ | `eth_simulateV1` |
+| zkSync Era (official) | ✗ | ✓ | `debug_traceCall` |
+
+Two assumptions this corrected: public L2 endpoints are **not** Tier-0 — they all serve
+`eth_simulateV1`, so asset previews work on every supported L2 — and **Ganymede serves no
+`debug` namespace**, reaching the same tier via `eth_simulateV1` instead.

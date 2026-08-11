@@ -536,7 +536,47 @@ platform/CGo Keychain last):
   2-of-4) broadcast and confirmed. Ledger's eth_sign path uses upstream go-ethereum
   `SignText` unchanged; not separately device-tested but shares the same code path.
 
-### transaction simulation
+### transaction simulation — ✅ P3a built on `feat/tx-simulation` (not yet released)
+Original scope notes retained at the bottom of this entry.
+
+- **Full design + decisions:** `docs/transaction-simulation.md` (P3a/P3b/P3c phasing;
+  all four open decisions are now resolved and recorded there, along with the
+  implementation gotchas worth remembering).
+- **Built (P3a):**
+  1. `internal/rpc.Client` widened with `RawClient() *gethrpc.Client` (for
+     `eth_simulateV1`/`debug_traceCall`, which `ethclient` doesn't wrap). Named
+     `RawClient` not `Client`: a test mock in `internal/safe` embeds the `Client`
+     interface anonymously, creating an implicit field that would shadow a
+     same-named method.
+  2. `internal/sim` — `types.go`, `decode.go` (ERC-20 Transfer/Approval + Permit2),
+     `capability.go` (`Prober`/`Caps`, cached per connection), `rpcwire.go` (wire
+     types for both methods), `simulate.go` (`SimulateEOA` + `RevertCheckEOA`, three
+     strategies with fall-through), `safe.go` (`SimulateSafe`/`RevertCheckSafe`,
+     `simulateAndRevert` + `SimulateTxAccessor`), `aggregate.go` (netting),
+     `revert.go` (Error/Panic/custom-error decoding), `metadata.go` (symbol/decimals
+     + `textsafe`), `display.go` (`Result.Rows` — rendering kept out of Fyne so it is
+     testable). Unit-tested against a fake JSON-RPC node over HTTP, which exercises
+     the real wire encoding.
+  3. `internal/ui/sim_section.go` — one shared `simSection` widget wired into Send,
+     WalletConnect, Safe Build, and Safe Proposals. Auto revert-check on open;
+     **Simulate…** for the asset preview.
+- **Live-node verification — done (2026-07-29).** `internal/sim/integration_test.go`
+  (build tag `integration`) probes every chain in `config.ChainCatalog`, then
+  re-issues each capability the probe claimed and fails on a false positive. All
+  nine endpoints pass; a real Safe proposal was run end-to-end by hand. **Re-run it
+  whenever the chain catalog changes.** It found no probe false positives but three
+  real bugs, all fixed — see the capability table and notes in
+  `docs/transaction-simulation.md`. Two design assumptions were wrong: public L2
+  endpoints are not Tier-0 (they all serve `eth_simulateV1`), and Ganymede serves no
+  `debug` namespace.
+- **P3b (deferred):** Safe `DelegateCall`/MultiSend asset diffs, which need
+  `execTransaction` with a signature-bypass state override (`stateOverride.StateDiff`
+  is already modelled in `rpcwire.go` for this). Today those get the revert check
+  plus an explicit note that the preview is unavailable.
+- **P3c (deferred):** ERC-721/1155 in/out (`NFTDelta` already exists in `types.go`),
+  storage-diff niceties for un-logged effects.
+
+Original scope notes:
 - lets plan and figure out the best way to surface to the user the option to "simulate" a transaction against a blockchain snapshot
 - we can implement it ourself, we could also use tenderly
   - i lean towards keeping everything within callisto instead of relying on a external api

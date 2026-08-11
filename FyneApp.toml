@@ -4,5 +4,5 @@ Website = "https://callisto.pasiphae.io"
   Icon = "images/CALLISTO-LOGO.png"
   Name = "Callisto"
   ID = "io.pasiphae.callisto"
-  Version = "0.15.0"
-  Build = 15
+  Version = "0.16.0"
+  Build = 16

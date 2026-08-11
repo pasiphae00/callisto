@@ -9,6 +9,13 @@ changes; `v1.0.0` marks the first stable, documented release.
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-08-11
+
+**Transaction simulation before signing** — every pre-sign review now shows what a
+transaction would actually do against current chain state, simulated through your own
+RPC with no third-party service. Plus a configurable default transaction priority, and
+fixes for Touch ID unlock, importing Callisto's own backups, and stacked dialogs.
+
 ### Added
 - **Default transaction priority** (Settings › Transaction fees) — a **Standard /
   Fast / Rapid** selector, defaulting to **Fast**, applied to every transaction

@@ -536,7 +536,7 @@ platform/CGo Keychain last):
   2-of-4) broadcast and confirmed. Ledger's eth_sign path uses upstream go-ethereum
   `SignText` unchanged; not separately device-tested but shares the same code path.
 
-### transaction simulation — ✅ P3a built on `feat/tx-simulation` (not yet released)
+### transaction simulation — ✅ P3a shipped v0.16.0
 Original scope notes retained at the bottom of this entry.
 
 - **Full design + decisions:** `docs/transaction-simulation.md` (P3a/P3b/P3c phasing;

@@ -31,7 +31,7 @@ It manages hot wallets, Trezor and Ledger hardware wallets, and Safe multi-signa
 
 _Screenshots [here](./FEATURES.md)._
 
-> **Status: pre-1.0 (`v0.15.0`).** Distributed as a native, self-updating desktop app (see [Download](https://github.com/pasiphae00/callisto/releases)). The features below are in place and usable; transaction simulation and multi-step Safe recipes are still planned — see [Roadmap](#roadmap).
+> **Status: pre-1.0 (`v0.16.0`).** Distributed as a native, self-updating desktop app (see [Download](https://github.com/pasiphae00/callisto/releases)). The features below are in place and usable; multi-step Safe recipes are still planned — see [Roadmap](#roadmap).
 
 ## Features
 
@@ -47,7 +47,9 @@ _Screenshots [here](./FEATURES.md)._
 - **ENS everywhere.** 
   - Addresses display as their primary ENS name where set (forward-verified); recipient fields accept names or addresses with live resolution. All addresses are EIP-55 checksum-validated on entry.
 - **Transfers, broadcast & track.** 
-  - Send ETH or ERC-20 with a detailed pre-signature summary (decoded calldata, nonce, EIP-1559 fees, max total fee). After broadcast, Callisto tracks block inclusion and execution status live.
+  - Send ETH or ERC-20 with a detailed pre-signature summary (decoded calldata, nonce, EIP-1559 fees, max total fee). Pick a default fee priority — **Standard / Fast / Rapid**, derived from what recent blocks actually paid. After broadcast, Callisto tracks block inclusion and execution status live.
+- **Simulation before signing.**
+  - Every pre-sign review simulates the transaction against current chain state through your own RPC — no third-party simulation service. A transaction that would **revert** is flagged automatically with its decoded reason, before you spend gas on it; an optional **Simulate…** step previews the **asset changes** it would make (`-1 ETH`, `+0.998 stETH`, unlimited approvals called out). Covers Send, WalletConnect requests from dApps, and Safe proposals — including Safes below their signing threshold, which are simulated without any signatures at all.
 - **Approvals management.** 
   - See every outstanding token approval for the active wallet — direct ERC-20 *and* Uniswap Permit2 allowances — with spenders named where known and unlimited allowances flagged, and **revoke** any with a reviewed, tracked transaction. Discovery scans on-chain logs (needs an archive RPC for full history), bounded to the wallet's first tx; re-scans are incremental and update live over WSS.
 - **Safe multisig.** 
@@ -155,6 +157,7 @@ The GUI (`internal/ui`) is a thin layer over independent domain packages; the do
 | `internal/keystore` | scrypt + AES-256-GCM encryption of hot-wallet seeds at rest |
 | `internal/assets` | ETH + ERC-20 detection, discovery, metadata, unit conversion |
 | `internal/tx` | Build, gas estimation, assembly, broadcast, inclusion |
+| `internal/sim` | Pre-sign simulation: endpoint capability probe, revert check, asset diffs |
 | `internal/safe` | Safe multisig: reads, safeTxHash, exec/admin encoding, proposals |
 | `internal/walletconnect` | WalletConnect v2 Sign (relay, envelope crypto, session engine) |
 | `internal/history` | Transaction lifecycle records |
@@ -168,7 +171,7 @@ Contributions follow the workflow in [`RELEASING.md`](RELEASING.md).
 
 Still to come (designed, pending implementation):
 
-- **Transaction simulation** before signing: `eth_call` + `debug_traceCall` state-diff, showing the before/after balance changes a transaction would make.
+- **Simulation for Safe batches**: `DelegateCall`/MultiSend proposals get the revert check today, but an asset preview needs a signature-bypass state override; ERC-721/1155 deltas to follow.
 - **More curated Safe actions** (e.g. Uniswap V3 trades, Aave v3) and **multi-step Safe recipes** (MultiSend for fixed sequences; DeFiSaver-style parameter piping later).
 - **OS keychain on more platforms**: Touch ID / macOS Keychain ships today; Linux Secret Service and Windows DPAPI backends to follow.
 - **More signer types**: support for more hardware signers (incl. GridPlus Lattice, pending a Go SDK) and additional account types.
